@@ -129,7 +129,7 @@ def format_remaining_time(expire_time_str):
 
 import html
 
-def format_subscription_info(info):
+def format_subscription_info(info, url=None):
     """
     格式化订阅信息为友好的消息文本
     """
@@ -196,5 +196,9 @@ def format_subscription_info(info):
     if info.get('node_count') is not None:
          message += f"\n<b>📍 节点总数:</b> {info['node_count']}\n"
     
+    # 添加原始链接（点击复制）
+    if url:
+        message += f"\n<b>📋 原始链接 (点击复制):</b>\n<code>{url}</code>"
+         
     return message
 
