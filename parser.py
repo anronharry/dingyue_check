@@ -81,7 +81,7 @@ class SubscriptionParser:
     
     def _download_subscription(self, url):
         """
-        下载订阅内容（可选使用代理）
+        下载订阅内容（带重试机制）
         
         Args:
             url: 订阅链接
@@ -89,20 +89,26 @@ class SubscriptionParser:
         Returns:
             Response: HTTP 响应对象
         """
+        from retry_utils import retry_on_failure
+        
         # 伪装成 Clash 客户端，以便服务器返回流量信息
         headers = {
             'User-Agent': 'ClashForAndroid/2.5.12'
         }
         
-        response = requests.get(
-            url,
-            headers=headers,
-            proxies=self.proxies,  # 如果 use_proxy=False，这里会是 None
-            timeout=30,
-            verify=False  # 跳过 SSL 验证，支持自签证书
-        )
-        response.raise_for_status()
-        return response
+        @retry_on_failure(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
+        def _fetch():
+            response = requests.get(
+                url,
+                headers=headers,
+                proxies=self.proxies,  # 如果 use_proxy=False，这里会是 None
+                timeout=30,
+                verify=False  # 跳过 SSL 验证，支持自签证书
+            )
+            response.raise_for_status()
+            return response
+        
+        return _fetch()
     
     def _parse_traffic_info(self, headers):
         """

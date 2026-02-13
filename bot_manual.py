@@ -258,6 +258,34 @@ def handle_subscription(chat_id, text):
             send_message(chat_id, error_message)
 
 
+def process_update(update):
+    """处理单个更新"""
+    try:
+        if 'message' not in update:
+            return
+        
+        message = update['message']
+        chat_id = message['chat']['id']
+        
+        # 处理文本消息
+        if 'text' in message:
+            text = message['text'].strip()
+            
+            # 处理命令
+            if text.startswith('/start'):
+                handle_start(chat_id)
+            elif text.startswith('/help'):
+                handle_help(chat_id)
+            elif text.startswith('/check'):
+                handle_check_all(chat_id)
+            else:
+                # 处理订阅链接
+                handle_subscription(chat_id, text)
+    
+    except Exception as e:
+        logger.error(f"处理更新失败: {e}")
+
+
 def main():
     """主函数"""
     # 检查 Token
