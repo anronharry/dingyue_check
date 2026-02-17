@@ -353,22 +353,75 @@ class SubscriptionParser:
     
     def _analyze_nodes(self, nodes):
         """
-        分析节点统计信息
+        分析节点统计信息(使用真实IP地理位置查询)
         
         Args:
             nodes: 节点列表
             
         Returns:
-            dict: 统计信息（国家/地区、协议分布）
+            dict: 统计信息(国家/地区、协议分布、详细位置)
         """
         from collections import Counter
+        from node_extractor import NodeIPExtractor
+        from geo_service import GeoLocationService
         
         # 统计协议
         protocols = [node.get('protocol', 'unknown') for node in nodes]
         protocol_stats = dict(Counter(protocols))
         
-        # 统计国家/地区
+        # 初始化服务
+        ip_extractor = NodeIPExtractor()
+        geo_service = GeoLocationService()
+        
+        # 统计国家/地区(使用真实IP查询)
         countries = []
+        locations_detail = []  # 详细位置信息
+        
+        for node in nodes:
+            # 提取IP
+            ip = ip_extractor.extract_ip(node)
+            
+            if ip and ip_extractor.is_valid_ip(ip):
+                # 查询地理位置
+                location = geo_service.get_location(ip)
+                if location:
+                    country = location['country']
+                    countries.append(country)
+                    
+                    # 保存详细信息
+                    locations_detail.append({
+                        'name': node.get('name', '未知'),
+                        'country': country,
+                        'city': location['city'],
+                        'isp': location['isp'],
+                        'country_code': location['country_code'],
+                        'flag': geo_service.get_country_flag(location['country_code'])
+                    })
+                    continue
+            
+            # 如果IP查询失败,回退到关键词匹配
+            node_name = node.get('name', '')
+            country = self._match_country_by_keyword(node_name)
+            countries.append(country)
+            locations_detail.append({
+                'name': node.get('name', '未知'),
+                'country': country,
+                'city': '未知',
+                'isp': '未知',
+                'country_code': '',
+                'flag': '🌐'
+            })
+        
+        country_stats = dict(Counter(countries))
+        
+        return {
+            'protocols': protocol_stats,
+            'countries': country_stats,
+            'locations': locations_detail  # 新增:详细位置列表
+        }
+    
+    def _match_country_by_keyword(self, node_name: str) -> str:
+        """通过关键词匹配国家(备用方案)"""
         country_keywords = {
             '香港': ['香港', 'HK', 'Hong Kong', 'Hongkong'],
             '台湾': ['台湾', 'TW', 'Taiwan'],
@@ -376,37 +429,11 @@ class SubscriptionParser:
             '美国': ['美国', 'US', 'USA', 'America'],
             '新加坡': ['新加坡', 'SG', 'Singapore'],
             '韩国': ['韩国', 'KR', 'Korea'],
-            '英国': ['英国', 'UK', 'Britain'],
-            '德国': ['德国', 'DE', 'Germany'],
-            '法国': ['法国', 'FR', 'France'],
-            '加拿大': ['加拿大', 'CA', 'Canada'],
-            '澳大利亚': ['澳大利亚', 'AU', 'Australia'],
-            '俄罗斯': ['俄罗斯', 'RU', 'Russia'],
-            '印度': ['印度', 'IN', 'India'],
-            '荷兰': ['荷兰', 'NL', 'Netherlands'],
-            '土耳其': ['土耳其', 'TR', 'Turkey'],
         }
         
-        for node in nodes:
-            node_name = node.get('name', '')
-            matched = False
-            
-            for country, keywords in country_keywords.items():
-                for keyword in keywords:
-                    if keyword in node_name:
-                        countries.append(country)
-                        matched = True
-                        break
-                if matched:
-                    break
-            
-            if not matched:
-                countries.append('其他')
+        for country, keywords in country_keywords.items():
+            if any(kw in node_name for kw in keywords):
+                return country
         
-        country_stats = dict(Counter(countries))
-        
-        return {
-            'protocols': protocol_stats,
-            'countries': country_stats
-        }
+        return '其他'
 

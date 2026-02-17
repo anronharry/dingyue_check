@@ -22,6 +22,8 @@ from telegram.ext import (
 from parser import SubscriptionParser
 from storage_enhanced import SubscriptionStorage
 from utils import is_valid_url, format_subscription_info, format_traffic
+from input_detector import InputDetector
+from file_handler import FileHandler
 
 # 加载环境变量
 load_dotenv()
@@ -63,22 +65,27 @@ def get_storage():
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
     welcome_message = """
-👋 <b>欢迎使用机场订阅解析机器人！</b>
+👋 <b>欢迎使用智能订阅检测机器人!</b>
 
 🔍 <b>功能说明:</b>
-• 解析订阅链接，提取流量和节点信息
-• 支持订阅分组管理（标签）
-• 批量检测和导出导入
-• 交互式按钮操作
+• 🌍 真实IP地理位置查询(城市、ISP)
+• 📊 智能识别订阅链接、文件、节点文本
+• 📄 支持上传txt/yaml文件自动解析
+• 🏷️ 订阅分组管理(标签)
+• 📤 批量检测和导出导入
 
-🛠️ <b>常用命令:</b>
+🛠️ <b>使用方式:</b>
+• 直接发送订阅链接
+• 上传txt/yaml文件
+• 粘贴节点列表文本
+
+📋 <b>常用命令:</b>
 /check - 检测所有订阅
-/list - 查看订阅列表（按标签分组）
-/export - 导出所有订阅
+/list - 查看订阅列表
 /stats - 查看统计信息
 /help - 查看帮助
 
-🚀 <b>直接发送订阅链接即可开始！</b>
+🚀 <b>现在就发送订阅链接或上传文件试试!</b>
 """
     await update.message.reply_text(welcome_message, parse_mode='HTML')
 
@@ -262,6 +269,95 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ 导出失败")
 
 
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理文件上传"""
+    document = update.message.document
+    file_type = InputDetector.detect_file_type(document.file_name)
+    
+    if file_type == 'unknown':
+        await update.message.reply_text("❌ 不支持的文件类型,请上传txt或yaml文件")
+        return
+    
+    processing_msg = await update.message.reply_text(f"📄 正在处理{file_type.upper()}文件...")
+    
+    try:
+        # 下载文件
+        file = await document.get_file()
+        file_content = await file.download_as_bytearray()
+        
+        # 解析文件
+        if file_type == 'txt':
+            nodes = FileHandler.parse_txt_file(bytes(file_content))
+        elif file_type == 'yaml':
+            nodes = FileHandler.parse_yaml_file(bytes(file_content))
+        else:
+            await processing_msg.edit_text("❌ 文件格式错误")
+            return
+        
+        if not nodes:
+            await processing_msg.edit_text("❌ 未能从文件中解析出节点")
+            return
+        
+        # 分析节点
+        parser_instance = get_parser()
+        node_stats = parser_instance._analyze_nodes(nodes)
+        
+        # 构建结果
+        result = {
+            'name': f"{document.file_name} (文件)",
+            'node_count': len(nodes),
+            'nodes': nodes,
+            'node_stats': node_stats
+        }
+        
+        # 格式化消息
+        message = format_subscription_info(result)
+        
+        await processing_msg.delete()
+        await update.message.reply_text(message, parse_mode='HTML')
+        
+    except Exception as e:
+        logger.error(f"文件处理失败: {e}")
+        await processing_msg.edit_text(f"❌ 文件处理失败: {str(e)}")
+
+
+async def handle_node_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理节点文本列表"""
+    text = update.message.text.strip()
+    
+    processing_msg = await update.message.reply_text("📝 正在解析节点列表...")
+    
+    try:
+        # 解析节点文本
+        nodes = FileHandler.parse_txt_file(text.encode('utf-8'))
+        
+        if not nodes:
+            await processing_msg.edit_text("❌ 未能解析出有效节点")
+            return
+        
+        # 分析节点
+        parser_instance = get_parser()
+        node_stats = parser_instance._analyze_nodes(nodes)
+        
+        # 构建结果
+        result = {
+            'name': '节点列表',
+            'node_count': len(nodes),
+            'nodes': nodes,
+            'node_stats': node_stats
+        }
+        
+        # 格式化消息
+        message = format_subscription_info(result)
+        
+        await processing_msg.delete()
+        await update.message.reply_text(message, parse_mode='HTML')
+        
+    except Exception as e:
+        logger.error(f"节点文本解析失败: {e}")
+        await processing_msg.edit_text(f"❌ 解析失败: {str(e)}")
+
+
 async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理订阅链接"""
     text = update.message.text.strip()
@@ -363,7 +459,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理普通消息（可能是标签输入）"""
+    """处理普通消息(智能识别输入类型)"""
     # 检查是否是回复标签请求的消息
     if 'pending_tag_url' in context.user_data:
         url = context.user_data['pending_tag_url']
@@ -376,9 +472,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ 添加标签失败")
         
         del context.user_data['pending_tag_url']
-    else:
-        # 否则当作订阅链接处理
+        return
+    
+    # 智能检测输入类型
+    input_type = InputDetector.detect_message_type(update)
+    
+    if input_type == 'file':
+        await handle_document(update, context)
+    elif input_type == 'url':
         await handle_subscription(update, context)
+    elif input_type == 'node_text':
+        await handle_node_text(update, context)
+    else:
+        await update.message.reply_text(
+            "❌ 无法识别的输入类型\n\n"
+            "请发送:\n"
+            "• 订阅链接(http/https)\n"
+            "• 上传txt/yaml文件\n"
+            "• 粘贴节点列表(vmess://, ss://, 等)"
+        )
 
 
 def main():
@@ -388,8 +500,8 @@ def main():
         return
     
     logger.info("=" * 60)
-    logger.info("正在启动机器人（异步版本）...")
-    logger.info("支持: 交互式按钮、订阅分组、导出导入")
+    logger.info("正在启动智能订阅检测机器人...")
+    logger.info("支持: IP地理位置、文件处理、智能输入识别")
     logger.info("=" * 60)
     
     # 创建应用
@@ -403,6 +515,11 @@ def main():
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CallbackQueryHandler(button_callback))
+    
+    # 文件处理器(优先级高)
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    
+    # 文本消息处理器
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # 启动机器人

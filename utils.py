@@ -4,7 +4,9 @@
 """
 
 import re
+import html
 from urllib.parse import urlparse
+from collections import defaultdict
 
 
 def bytes_to_gb(bytes_value):
@@ -172,8 +174,34 @@ def format_subscription_info(info, url=None):
     if info.get('node_stats'):
         stats = info['node_stats']
         
+        # 详细地理位置信息(使用真实IP查询结果)
+        if stats.get('locations'):
+            locations = stats['locations']
+            # 按国家分组显示
+            country_groups = defaultdict(list)
+            
+            for loc in locations:
+                country_groups[loc['country']].append(loc)
+            
+            message += "<b>🌍 节点地理位置(真实IP):</b>\n"
+            for country, locs in sorted(country_groups.items(), key=lambda x: len(x[1]), reverse=True):
+                flag = locs[0]['flag'] if locs[0]['flag'] != '🌐' else get_country_flag(country)
+                message += f"\n{flag} <b>{country}</b> ({len(locs)}个):\n"
+                
+                # 显示前3个节点的详细信息
+                for loc in locs[:3]:
+                    city = loc['city'] if loc['city'] != '未知' else ''
+                    isp = loc['isp'] if loc['isp'] != '未知' else ''
+                    detail = f"{city} - {isp}" if city and isp else (city or isp or '详情未知')
+                    message += f"  • {html.escape(loc['name'][:20])}... ({detail})\n"
+                
+                if len(locs) > 3:
+                    message += f"  ... 还有 {len(locs) - 3} 个节点\n"
+            
+            message += "\n"
+        
         # 国家/地区分布 (带国旗)
-        if stats.get('countries'):
+        elif stats.get('countries'):
             message += "<b>🌍 节点区域分布:</b>\n"
             countries = stats['countries']
             # 按数量排序
@@ -201,4 +229,3 @@ def format_subscription_info(info, url=None):
         message += f"\n<b>📋 原始链接 (点击复制):</b>\n<code>{url}</code>"
          
     return message
-
