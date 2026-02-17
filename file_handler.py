@@ -15,6 +15,36 @@ class FileHandler:
     """文件处理器"""
     
     @staticmethod
+    def extract_subscription_urls(content: bytes) -> List[str]:
+        """
+        从文件内容中提取订阅链接
+        
+        Args:
+            content: 文件内容(字节)
+            
+        Returns:
+            list: 订阅链接列表
+        """
+        try:
+            text = content.decode('utf-8')
+        except UnicodeDecodeError:
+            text = content.decode('gbk', errors='ignore')
+        
+        # 提取所有http/https链接
+        import re
+        urls = re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', text)
+        
+        # 过滤出可能的订阅链接
+        subscription_urls = []
+        for url in urls:
+            # 排除明显不是订阅的链接
+            if any(ext in url.lower() for ext in ['.jpg', '.png', '.gif', '.mp4', '.pdf']):
+                continue
+            subscription_urls.append(url)
+        
+        return subscription_urls
+    
+    @staticmethod
     def parse_txt_file(content: bytes) -> List[Dict]:
         """
         解析TXT文件

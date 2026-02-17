@@ -270,7 +270,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理文件上传"""
+    """处理文件上传(智能检测订阅链接)"""
     document = update.message.document
     file_type = InputDetector.detect_file_type(document.file_name)
     
@@ -278,24 +278,103 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ 不支持的文件类型,请上传txt或yaml文件")
         return
     
-    processing_msg = await update.message.reply_text(f"📄 正在处理{file_type.upper()}文件...")
+    processing_msg = await update.message.reply_text(f"📄 正在分析{file_type.upper()}文件...")
     
     try:
         # 下载文件
         file = await document.get_file()
         file_content = await file.download_as_bytearray()
+        content_bytes = bytes(file_content)
         
-        # 解析文件
+        # 智能检测: 优先查找订阅链接
         if file_type == 'txt':
-            nodes = FileHandler.parse_txt_file(bytes(file_content))
+            subscription_urls = FileHandler.extract_subscription_urls(content_bytes)
+            
+            if subscription_urls:
+                # 发现订阅链接 -> 解析订阅获取流量信息
+                await processing_msg.edit_text(
+                    f"🔗 发现 {len(subscription_urls)} 个订阅链接,正在解析...\n"
+                    f"这可能需要一些时间,请稍候..."
+                )
+                
+                results = []
+                for idx, url in enumerate(subscription_urls, 1):
+                    try:
+                        # 异步解析订阅
+                        loop = asyncio.get_event_loop()
+                        result = await loop.run_in_executor(None, get_parser().parse, url)
+                        
+                        # 保存到存储
+                        get_storage().add_or_update(url, result)
+                        
+                        results.append({
+                            'index': idx,
+                            'url': url,
+                            'data': result,
+                            'status': 'success'
+                        })
+                    except Exception as e:
+                        logger.error(f"订阅解析失败 {url}: {e}")
+                        results.append({
+                            'index': idx,
+                            'url': url,
+                            'error': str(e),
+                            'status': 'failed'
+                        })
+                
+                # 生成汇总报告
+                await processing_msg.delete()
+                
+                # 发送每个订阅的详细信息
+                for res in results:
+                    if res['status'] == 'success':
+                        data = res['data']
+                        message = f"<b>📊 订阅 {res['index']}</b>\n\n"
+                        message += format_subscription_info(data, res['url'])
+                        
+                        # 创建交互按钮
+                        keyboard = [
+                            [
+                                InlineKeyboardButton("🔄 重新检测", callback_data=f"recheck:{res['url']}"),
+                                InlineKeyboardButton("🗑️ 删除", callback_data=f"delete:{res['url']}")
+                            ],
+                            [
+                                InlineKeyboardButton("🏷️ 添加标签", callback_data=f"tag:{res['url']}")
+                            ]
+                        ]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                        
+                        await update.message.reply_text(message, parse_mode='HTML', reply_markup=reply_markup)
+                    else:
+                        await update.message.reply_text(
+                            f"❌ <b>订阅 {res['index']}</b> 解析失败\n"
+                            f"错误: {res['error']}",
+                            parse_mode='HTML'
+                        )
+                
+                # 发送汇总
+                summary = f"<b>✅ 文件分析完成</b>\n\n"
+                summary += f"总订阅数: {len(subscription_urls)}\n"
+                summary += f"成功解析: {sum(1 for r in results if r['status'] == 'success')}\n"
+                summary += f"解析失败: {sum(1 for r in results if r['status'] == 'failed')}"
+                await update.message.reply_text(summary, parse_mode='HTML')
+                
+                return
+        
+        # 没有订阅链接 -> 解析节点列表
+        if file_type == 'txt':
+            nodes = FileHandler.parse_txt_file(content_bytes)
         elif file_type == 'yaml':
-            nodes = FileHandler.parse_yaml_file(bytes(file_content))
+            nodes = FileHandler.parse_yaml_file(content_bytes)
         else:
             await processing_msg.edit_text("❌ 文件格式错误")
             return
         
         if not nodes:
-            await processing_msg.edit_text("❌ 未能从文件中解析出节点")
+            await processing_msg.edit_text(
+                "❌ 未能从文件中解析出内容\n\n"
+                "提示: 如果文件包含订阅链接,请确保链接格式正确(http/https开头)"
+            )
             return
         
         # 分析节点
@@ -304,14 +383,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # 构建结果
         result = {
-            'name': f"{document.file_name} (文件)",
+            'name': f"{document.file_name} (节点列表)",
             'node_count': len(nodes),
             'nodes': nodes,
             'node_stats': node_stats
         }
         
         # 格式化消息
-        message = format_subscription_info(result)
+        message = "📝 <b>节点列表分析</b>\n\n"
+        message += format_subscription_info(result)
+        message += "\n\n<i>💡 提示: 节点列表无法显示流量信息,如需查看流量请发送订阅链接</i>"
         
         await processing_msg.delete()
         await update.message.reply_text(message, parse_mode='HTML')
