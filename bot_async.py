@@ -7,6 +7,7 @@ Telegram 机场订阅解析机器人 - 异步版本
 import os
 import logging
 import asyncio
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -58,6 +59,28 @@ def get_storage():
     if storage is None:
         storage = SubscriptionStorage()
     return storage
+
+async def send_long_message(update: Update, text: str, **kwargs):
+    """安全发送长消息，超过 3500 字按块切割，防止 Telegram API 报错"""
+    MAX_LENGTH = 3500
+    if len(text) <= MAX_LENGTH:
+        await update.message.reply_text(text, **kwargs)
+        return
+        
+    # 按行分割尽量保证不切断 HTML 标签
+    lines = text.split('\n')
+    current_chunk = ""
+    
+    for line in lines:
+        if len(current_chunk) + len(line) + 1 > MAX_LENGTH:
+            await update.message.reply_text(current_chunk, **kwargs)
+            current_chunk = line + "\n"
+            await asyncio.sleep(0.5)  # 防限流
+        else:
+            current_chunk += line + "\n"
+            
+    if current_chunk.strip():
+        await update.message.reply_text(current_chunk, **kwargs)
 
 
 # ==================== 命令处理器 ====================
@@ -145,7 +168,12 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = []
     semaphore = asyncio.Semaphore(3)  # 最多同时3个请求
     
+    total_count = len(subscriptions)
+    completed_count = 0
+    last_update_time = time.time()
+    
     async def check_one(url, data):
+        nonlocal completed_count, last_update_time
         async with semaphore:
             try:
                 # 在线程池中执行同步解析（避免阻塞）
@@ -155,7 +183,7 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # 更新存储
                 store.add_or_update(url, result)
                 
-                return {
+                res = {
                     'name': result.get('name', '未知'),
                     'remaining': result.get('remaining', 0),
                     'expire_time': result.get('expire_time'),
@@ -163,18 +191,32 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 }
             except Exception as e:
                 logger.error(f"检测失败 {url}: {e}")
-                return {
+                res = {
                     'name': data.get('name', '未知'),
                     'status': 'failed',
                     'error': str(e)
                 }
+                
+            # UX优化：动态更新进度条
+            completed_count += 1
+            current_time = time.time()
+            if current_time - last_update_time > 2.0 or completed_count == total_count:
+                try:
+                    await progress_msg.edit_text(f"⏳ 正在检测: {completed_count} / {total_count} 完成...")
+                    last_update_time = current_time
+                except:
+                    pass
+            return res
     
     # 并发检测
     tasks = [check_one(url, data) for url, data in subscriptions.items()]
     results = await asyncio.gather(*tasks)
     
     # 删除进度消息
-    await progress_msg.delete()
+    try:
+        await progress_msg.delete()
+    except Exception as exc:
+        logger.warning(f"删除进度消息失败: {exc}")
     
     # 生成报告
     report = f"<b>📊 订阅检测报告</b>\n\n"
@@ -192,7 +234,11 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 report += f"到期: {item['expire_time']}\n"
             report += "\n"
     
-    await update.message.reply_text(report, parse_mode='HTML')
+    await send_long_message(update, report, parse_mode='HTML')
+    
+    # 低内存优化：主动清理垃圾
+    import gc
+    gc.collect()
 
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -225,7 +271,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for url, data in untagged.items():
             message += f"  • {data['name']}\n"
     
-    await update.message.reply_text(message, parse_mode='HTML')
+    await send_long_message(update, message, parse_mode='HTML')
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -253,8 +299,12 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 导出到临时文件
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     export_file = f"data/export_{timestamp}.json"
+    loop = asyncio.get_event_loop()
     
-    if store.export_to_file(export_file):
+    # 在线程中执行导出，防止阻塞事件循环
+    export_success = await loop.run_in_executor(None, store.export_to_file, export_file)
+    
+    if export_success:
         # 发送文件
         with open(export_file, 'rb') as f:
             await update.message.reply_document(
@@ -264,7 +314,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         
         # 删除临时文件
-        os.remove(export_file)
+        await loop.run_in_executor(None, os.remove, export_file)
     else:
         await update.message.reply_text("❌ 导出失败")
 
@@ -323,7 +373,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         })
                 
                 # 生成汇总报告
-                await processing_msg.delete()
+                try:
+                    await processing_msg.delete()
+                except Exception as exc:
+                    logger.warning(f"删除进度消息失败: {exc}")
                 
                 # 发送每个订阅的详细信息
                 for res in results:
@@ -381,11 +434,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parser_instance = get_parser()
         node_stats = parser_instance._analyze_nodes(nodes)
         
-        # 构建结果
+        # 构建结果 (低内存优化：剥离原始 nodes 数组)
         result = {
             'name': f"{document.file_name} (节点列表)",
             'node_count': len(nodes),
-            'nodes': nodes,
             'node_stats': node_stats
         }
         
@@ -394,12 +446,21 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += format_subscription_info(result)
         message += "\n\n<i>💡 提示: 节点列表无法显示流量信息,如需查看流量请发送订阅链接</i>"
         
-        await processing_msg.delete()
+        try:
+            await processing_msg.delete()
+        except Exception as exc:
+            logger.warning(f"删除进度消息失败: {exc}")
         await update.message.reply_text(message, parse_mode='HTML')
         
     except Exception as e:
         logger.error(f"文件处理失败: {e}")
-        await processing_msg.edit_text(f"❌ 文件处理失败: {str(e)}")
+        error_msg = str(e)
+        if len(error_msg) > 500:
+            error_msg = error_msg[:500] + "..."
+        try:
+            await processing_msg.edit_text(f"❌ 文件处理失败: {error_msg}")
+        except Exception:
+            await update.message.reply_text(f"❌ 文件处理失败: {error_msg}")
 
 
 async def handle_node_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -420,23 +481,31 @@ async def handle_node_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parser_instance = get_parser()
         node_stats = parser_instance._analyze_nodes(nodes)
         
-        # 构建结果
+        # 构建结果 (低内存优化：剥离原始 nodes 数组)
         result = {
             'name': '节点列表',
             'node_count': len(nodes),
-            'nodes': nodes,
             'node_stats': node_stats
         }
         
         # 格式化消息
         message = format_subscription_info(result)
         
-        await processing_msg.delete()
+        try:
+            await processing_msg.delete()
+        except Exception as exc:
+            logger.warning(f"删除进度消息失败: {exc}")
         await update.message.reply_text(message, parse_mode='HTML')
         
     except Exception as e:
         logger.error(f"节点文本解析失败: {e}")
-        await processing_msg.edit_text(f"❌ 解析失败: {str(e)}")
+        error_msg = str(e)
+        if len(error_msg) > 500:
+            error_msg = error_msg[:500] + "..."
+        try:
+            await processing_msg.edit_text(f"❌ 解析失败: {error_msg}")
+        except Exception:
+            await update.message.reply_text(f"❌ 解析失败: {error_msg}")
 
 
 async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -474,7 +543,10 @@ async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await processing_msg.delete()
+            try:
+                await processing_msg.delete()
+            except Exception as exc:
+                logger.warning(f"删除进度消息失败: {exc}")
             await update.message.reply_text(
                 message,
                 parse_mode='HTML',
@@ -482,8 +554,13 @@ async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             
         except Exception as e:
-            await processing_msg.delete()
-            await update.message.reply_text(f"❌ 解析失败: {str(e)}")
+            error_msg = str(e)
+            if len(error_msg) > 500:
+                error_msg = error_msg[:500] + "..."
+            try:
+                await processing_msg.edit_text(f"❌ 解析失败: {error_msg}")
+            except Exception:
+                await update.message.reply_text(f"❌ 解析失败: {error_msg}")
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

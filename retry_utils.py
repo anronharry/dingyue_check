@@ -73,8 +73,10 @@ def retry_on_failure(
                         f"(第 {attempt + 1}/{max_retries} 次): {str(e)}"
                     )
                     
-                    # 等待后重试
-                    time.sleep(delay)
+                    # 等待后重试 (带随机抖动防止雪崩)
+                    import random
+                    jitter = delay * 0.25 * random.random()
+                    time.sleep(delay + jitter)
                     delay *= backoff_factor  # 指数退避
                     
             # 理论上不会到这里，但为了类型安全

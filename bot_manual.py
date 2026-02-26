@@ -248,7 +248,10 @@ def handle_subscription(chat_id, text):
                 delete_message(chat_id, processing_msg_id)
             
             # 发送错误消息
-            error_message = f"❌ 解析失败 (<code>{url[:50]}...</code>)\n\n错误信息: {str(e)}\n\n"
+            error_str = str(e)
+            if len(error_str) > 500:
+                error_str = error_str[:500] + "..."
+            error_message = f"❌ 解析失败 (<code>{url[:50]}...</code>)\n\n错误信息: {error_str}\n\n"
             error_message += "可能的原因:\n"
             error_message += "• 订阅链接无效或已过期\n"
             error_message += "• 网络连接问题\n"

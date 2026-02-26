@@ -63,11 +63,10 @@ class SubscriptionParser:
             # 统计节点信息
             node_stats = self._analyze_nodes(nodes)
             
-            # 组合结果
+            # 组合结果 (低内存优化：不再保存所有的原始节点配置，只需保存统计)
             result = {
                 'name': airport_name,
                 'node_count': len(nodes),
-                'nodes': nodes,
                 'node_stats': node_stats,  # 新增：节点统计
                 **traffic_info
             }
@@ -169,14 +168,20 @@ class SubscriptionParser:
             list: 节点列表
         """
         nodes = []
+        MAX_NODES = 300  # 内存优化：强制最大解析节点数，防 OOM
         
         # 检测是否为 Clash YAML 配置
         if content.strip().startswith('#') or 'proxies:' in content[:1000] or 'proxy-groups:' in content[:1000]:
-            # 解析 Clash YAML 配置
+            # 内存优化：直接截断超过 300KB 的文件部分（通常够存几千个节点了）
+            if len(content) > 300 * 1024:
+                content = content[:300 * 1024]
+                
             try:
                 config = yaml.safe_load(content)
                 if config and 'proxies' in config:
                     for proxy in config['proxies']:
+                        if len(nodes) >= MAX_NODES:
+                            break
                         if isinstance(proxy, dict):
                             node = {
                                 'name': proxy.get('name', '未知节点'),
@@ -201,6 +206,9 @@ class SubscriptionParser:
         lines = decoded_content.strip().split('\n')
         
         for line in lines:
+            if len(nodes) >= MAX_NODES:
+                break
+                
             line = line.strip()
             if not line:
                 continue
@@ -377,40 +385,55 @@ class SubscriptionParser:
         countries = []
         locations_detail = []  # 详细位置信息
         
+        # 内存优化：记录每个国家已经保存的详细节点数，仅保留前3个，不再把所有300个详情塞进内存
+        country_detail_count = Counter()
+        
+        geo_queries_count = 0
+        MAX_GEO_QUERIES = 50  # 限制最大查询数，防止触发限制和导致僵死
+        
         for node in nodes:
             # 提取IP
             ip = ip_extractor.extract_ip(node)
+            country = None
+            detail_obj = None
             
-            if ip and ip_extractor.is_valid_ip(ip):
+            if ip and ip_extractor.is_valid_ip(ip) and geo_queries_count < MAX_GEO_QUERIES:
+                geo_queries_count += 1
                 # 查询地理位置
                 location = geo_service.get_location(ip)
                 if location:
                     country = location['country']
                     countries.append(country)
                     
-                    # 保存详细信息
-                    locations_detail.append({
+                    if country_detail_count[country] < 3:
+                        detail_obj = {
+                            'name': node.get('name', '未知'),
+                            'country': country,
+                            'city': location['city'],
+                            'isp': location['isp'],
+                            'country_code': location['country_code'],
+                            'flag': geo_service.get_country_flag(location['country_code'])
+                        }
+                    
+            if not country:
+                # 如果IP查询失败,回退到关键词匹配
+                node_name = node.get('name', '')
+                country = self._match_country_by_keyword(node_name)
+                countries.append(country)
+                
+                if country_detail_count[country] < 3:
+                    detail_obj = {
                         'name': node.get('name', '未知'),
                         'country': country,
-                        'city': location['city'],
-                        'isp': location['isp'],
-                        'country_code': location['country_code'],
-                        'flag': geo_service.get_country_flag(location['country_code'])
-                    })
-                    continue
-            
-            # 如果IP查询失败,回退到关键词匹配
-            node_name = node.get('name', '')
-            country = self._match_country_by_keyword(node_name)
-            countries.append(country)
-            locations_detail.append({
-                'name': node.get('name', '未知'),
-                'country': country,
-                'city': '未知',
-                'isp': '未知',
-                'country_code': '',
-                'flag': '🌐'
-            })
+                        'city': '未知',
+                        'isp': '未知',
+                        'country_code': '',
+                        'flag': '🌐'
+                    }
+                    
+            if detail_obj:
+                locations_detail.append(detail_obj)
+                country_detail_count[country] += 1
         
         country_stats = dict(Counter(countries))
         

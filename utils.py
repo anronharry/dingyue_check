@@ -155,6 +155,12 @@ def format_subscription_info(info, url=None):
             bar = create_progress_bar(percent, length=10)
             message += f"<b>使用进度:</b> {bar} {percent:.1f}%\n"
             
+            # 添加智能警报
+            if percent >= 100:
+                message += "<b>状态警报:</b> ❌ 流量已完全耗尽\n"
+            elif percent >= 90:
+                message += "<b>状态警报:</b> ⚠️ 流量即将耗尽\n"
+            
         if info.get('remaining') is not None:
             message += f"<b>剩余可用:</b> {remaining}\n"
             
@@ -167,6 +173,17 @@ def format_subscription_info(info, url=None):
         remaining_time = format_remaining_time(info['expire_time'])
         if remaining_time:
             message += f"<b>剩余时间:</b> {remaining_time}\n"
+            
+            # 添加智能警报
+            if remaining_time == "已过期":
+                message += "<b>状态警报:</b> ❌ 订阅已过期\n"
+            elif "天" in remaining_time:
+                try:
+                    days_left = int(remaining_time.split("天")[0])
+                    if days_left < 3:
+                        message += "<b>状态警报:</b> ⚠️ 订阅距过期不足3天\n"
+                except:
+                    pass
             
     message += "\n" + "—" * 20 + "\n\n"
 
