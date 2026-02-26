@@ -191,13 +191,18 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(None, get_parser().parse, url)
                 
+                # 检查流量是否已耗完
+                remaining = result.get('remaining')
+                if remaining is not None and remaining <= 0:
+                    raise Exception("当前订阅流量已完全耗尽 (剩余 0 B)")
+                    
                 # 更新存储
                 store.add_or_update(url, result)
                 
                 res = {
                     'url': url,
                     'name': result.get('name', '未知'),
-                    'remaining': result.get('remaining', 0),
+                    'remaining': remaining if remaining is not None else 0,
                     'expire_time': result.get('expire_time'),
                     'status': 'success'
                 }

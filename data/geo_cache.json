@@ -130,5 +130,23 @@
     "city": "Austin",
     "isp": "Cloudflare London, LLC",
     "country_code": "US"
+  },
+  "tw-taian.cdn-yx.buzz": {
+    "country": "Taiwan",
+    "city": "Taipei",
+    "isp": "Chunghwa Telecom Co., Ltd.",
+    "country_code": "TW"
+  },
+  "hk-hgc.cdn-yx.buzz": {
+    "country": "Hong Kong",
+    "city": "Tsing Yi",
+    "isp": "HGC Global Communications Limited",
+    "country_code": "HK"
+  },
+  "hk-hkbn.cdn-yx.buzz": {
+    "country": "Hong Kong",
+    "city": "Kwai Chung",
+    "isp": "Hong Kong Broadband Network Ltd",
+    "country_code": "HK"
   }
 }

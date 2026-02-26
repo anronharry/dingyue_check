@@ -175,10 +175,15 @@ class SubscriptionParser:
         MAX_NODES = 300  # 内存优化：强制最大解析节点数，防 OOM
         
         # 检测是否为 Clash YAML 配置
-        if content.strip().startswith('#') or 'proxies:' in content[:1000] or 'proxy-groups:' in content[:1000]:
+        if content.strip().startswith('#') or 'proxies:' in content[:5000] or 'proxy-groups:' in content[:5000]:
             # 内存优化：直接截断超过 300KB 的文件部分（通常够存几千个节点了）
             if len(content) > 300 * 1024:
-                content = content[:300 * 1024]
+                # 尽量截取在行尾，防止切断 yaml 导致抛错
+                truncate_idx = content.rfind('\n', 0, 300 * 1024)
+                if truncate_idx != -1:
+                    content = content[:truncate_idx]
+                else:
+                    content = content[:300 * 1024]
                 
             try:
                 config = yaml.safe_load(content)
