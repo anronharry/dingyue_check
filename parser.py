@@ -63,6 +63,10 @@ class SubscriptionParser:
             # 统计节点信息
             node_stats = self._analyze_nodes(nodes)
             
+            # 如果节点数为 0，视为订阅失效或无法解析
+            if len(nodes) == 0:
+                raise Exception("未解析到任何有效节点（可能无流量或链接失效）")
+                
             # 组合结果 (低内存优化：不再保存所有的原始节点配置，只需保存统计)
             result = {
                 'name': airport_name,

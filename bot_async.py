@@ -203,6 +203,10 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 }
             except Exception as e:
                 logger.error(f"检测失败 {url}: {e}")
+                
+                # UX优化：自动无感清理坏死订阅
+                store.remove(url)
+                
                 res = {
                     'url': url,
                     'name': data.get('name', '未知'),
@@ -247,6 +251,17 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if item.get('expire_time'):
                 report += f"到期: {item['expire_time']}\n"
             report += "\n"
+            
+    failed_results = [r for r in results if r['status'] == 'failed']
+    if failed_results:
+        report += "<b>❌ 失效订阅 (已自动清理):</b>\n\n"
+        for item in failed_results:
+            report += f"<b>{item['name']}</b>\n"
+            report += f"<code>{item['url']}</code>\n"
+            error_text = str(item.get('error', '未知错误'))
+            if len(error_text) > 200:
+                error_text = error_text[:200] + "..."
+            report += f"原因: {error_text}\n\n"
     
     await send_long_message(update, report, parse_mode='HTML')
     
@@ -276,14 +291,14 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if tagged_subs:
             message += f"<b>🏷️ {tag} ({len(tagged_subs)})</b>\n"
             for url, data in tagged_subs.items():
-                message += f"  • {data['name']}\n"
+                message += f"  • {data['name']}\n    <code>{url}</code>\n"
             message += "\n"
     
     # 显示无标签的订阅
     if untagged:
         message += f"<b>📦 未分组 ({len(untagged)})</b>\n"
         for url, data in untagged.items():
-            message += f"  • {data['name']}\n"
+            message += f"  • {data['name']}\n    <code>{url}</code>\n"
     
     await send_long_message(update, message, parse_mode='HTML')
 
