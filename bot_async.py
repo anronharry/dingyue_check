@@ -8,6 +8,7 @@ import os
 import logging
 import asyncio
 import time
+import hashlib
 from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -38,12 +39,22 @@ logger = logging.getLogger(__name__)
 
 # 获取配置
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+# 读取初始环境变量
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 PROXY_PORT = int(os.getenv('PROXY_PORT', 7890))
 
 # 初始化（延迟加载，节省内存）
 parser = None
 storage = None
 
+# 短链接缓存池 (解决 Telegram <= 64 bytes 按钮数据限制)
+url_cache = {}
+
+def get_short_callback_data(action, url):
+    """计算短 hash 突破回调长度限制"""
+    hash_key = hashlib.md5(url.encode('utf-8')).hexdigest()[:16]
+    url_cache[hash_key] = url
+    return f"{action}:{hash_key}"
 
 def get_parser():
     """懒加载解析器"""
@@ -184,6 +195,7 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 store.add_or_update(url, result)
                 
                 res = {
+                    'url': url,
                     'name': result.get('name', '未知'),
                     'remaining': result.get('remaining', 0),
                     'expire_time': result.get('expire_time'),
@@ -192,6 +204,7 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.error(f"检测失败 {url}: {e}")
                 res = {
+                    'url': url,
                     'name': data.get('name', '未知'),
                     'status': 'failed',
                     'error': str(e)
@@ -229,6 +242,7 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for item in success_results:
             remaining = format_traffic(item['remaining'])
             report += f"<b>{item['name']}</b>\n"
+            report += f"<code>{item['url']}</code>\n"
             report += f"剩余: {remaining}\n"
             if item.get('expire_time'):
                 report += f"到期: {item['expire_time']}\n"
@@ -388,11 +402,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         # 创建交互按钮
                         keyboard = [
                             [
-                                InlineKeyboardButton("🔄 重新检测", callback_data=f"recheck:{res['url']}"),
-                                InlineKeyboardButton("🗑️ 删除", callback_data=f"delete:{res['url']}")
+                                InlineKeyboardButton("🔄 重新检测", callback_data=get_short_callback_data("recheck", res['url'])),
+                                InlineKeyboardButton("🗑️ 删除", callback_data=get_short_callback_data("delete", res['url']))
                             ],
                             [
-                                InlineKeyboardButton("🏷️ 添加标签", callback_data=f"tag:{res['url']}")
+                                InlineKeyboardButton("🏷️ 添加标签", callback_data=get_short_callback_data("tag", res['url']))
                             ]
                         ]
                         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -534,11 +548,11 @@ async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
             # 创建交互式按钮
             keyboard = [
                 [
-                    InlineKeyboardButton("🔄 重新检测", callback_data=f"recheck:{url}"),
-                    InlineKeyboardButton("🗑️ 删除", callback_data=f"delete:{url}")
+                    InlineKeyboardButton("🔄 重新检测", callback_data=get_short_callback_data("recheck", url)),
+                    InlineKeyboardButton("🗑️ 删除", callback_data=get_short_callback_data("delete", url))
                 ],
                 [
-                    InlineKeyboardButton("🏷️ 添加标签", callback_data=f"tag:{url}")
+                    InlineKeyboardButton("🏷️ 添加标签", callback_data=get_short_callback_data("tag", url))
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -569,7 +583,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     data = query.data
-    action, url = data.split(':', 1)
+    try:
+        action, hash_key = data.split(':', 1)
+    except ValueError:
+        await query.answer("数据异常", show_alert=True)
+        return
+        
+    url = url_cache.get(hash_key)
+    if not url:
+        await query.answer("交互按钮已过期，请重新发送链接进行操作！", show_alert=True)
+        return
     
     store = get_storage()
     
@@ -584,11 +607,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message = format_subscription_info(result, url)
             keyboard = [
                 [
-                    InlineKeyboardButton("🔄 重新检测", callback_data=f"recheck:{url}"),
-                    InlineKeyboardButton("🗑️ 删除", callback_data=f"delete:{url}")
+                    InlineKeyboardButton("🔄 重新检测", callback_data=get_short_callback_data("recheck", url)),
+                    InlineKeyboardButton("🗑️ 删除", callback_data=get_short_callback_data("delete", url))
                 ],
                 [
-                    InlineKeyboardButton("🏷️ 添加标签", callback_data=f"tag:{url}")
+                    InlineKeyboardButton("🏷️ 添加标签", callback_data=get_short_callback_data("tag", url))
                 ]
             ]
             await query.edit_message_text(

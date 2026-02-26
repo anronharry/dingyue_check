@@ -253,6 +253,7 @@ systemctl status dingyue-bot
 - **更新代码**:
   ```bash
   cd /opt/dingyue_TG
+  rm data/geo_cache.json
   git pull
   systemctl restart dingyue-bot
   ```
