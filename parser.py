@@ -195,12 +195,30 @@ class SubscriptionParser:
                 # YAML 解析失败，尝试 Base64
                 pass
         
-        try:
-            # 尝试 Base64 解码
-            decoded_content = base64.b64decode(content).decode('utf-8')
-        except:
-            # 如果解码失败，使用原始内容
-            decoded_content = content
+        # 尝试 Base64 解码 (增强版：支持自动补位、URL-safe 格式)
+        decoded_content = content
+        cleaned_content = content.replace('\n', '').replace('\r', '').replace(' ', '').strip()
+        
+        # 尝试 Base64 解码的闭包
+        def try_b64_decode(data):
+            # 补齐末尾的 '='
+            missing_padding = len(data) % 4
+            if missing_padding:
+                data += '=' * (4 - missing_padding)
+            
+            try:
+                # 尝试标准解码
+                return base64.b64decode(data).decode('utf-8', errors='ignore')
+            except:
+                try:
+                    # 尝试 URL-safe 解码
+                    return base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
+                except:
+                    return None
+
+        temp_decoded = try_b64_decode(cleaned_content)
+        if temp_decoded:
+            decoded_content = temp_decoded
         
         # 按行分割
         lines = decoded_content.strip().split('\n')
