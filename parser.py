@@ -7,6 +7,7 @@ import base64
 import re
 import requests
 import yaml
+from requests.adapters import HTTPAdapter
 from urllib.parse import urlparse, parse_qs, unquote
 from datetime import datetime
 
@@ -36,6 +37,11 @@ class SubscriptionParser:
             }
         else:
             self.proxies = None
+
+        self.session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=1)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
     
     def parse(self, url):
         """
@@ -101,7 +107,7 @@ class SubscriptionParser:
         
         @retry_on_failure(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
         def _fetch():
-            response = requests.get(
+            response = self.session.get(
                 url,
                 headers=headers,
                 proxies=self.proxies,  # 如果 use_proxy=False，这里会是 None
@@ -388,50 +394,70 @@ class SubscriptionParser:
     
     def _analyze_nodes(self, nodes):
         """
-        分析节点统计信息(使用真实IP地理位置查询)
-        
+        分析节点统计信息(使用真实IP地理位置查询，并发版本)
+
         Args:
             nodes: 节点列表
-            
+
         Returns:
             dict: 统计信息(国家/地区、协议分布、详细位置)
         """
         from collections import Counter
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         from node_extractor import NodeIPExtractor
         from geo_service import GeoLocationService
-        
+
         # 统计协议
         protocols = [node.get('protocol', 'unknown') for node in nodes]
         protocol_stats = dict(Counter(protocols))
-        
+
         # 初始化服务
         ip_extractor = NodeIPExtractor()
         geo_service = GeoLocationService()
-        
-        # 统计国家/地区(使用真实IP查询)
-        countries = []
-        locations_detail = []  # 详细位置信息
-        
-        # 内存优化：记录每个国家已经保存的详细节点数，仅保留前3个，不再把所有300个详情塞进内存
-        country_detail_count = Counter()
-        
-        geo_queries_count = 0
-        MAX_GEO_QUERIES = 50  # 限制最大查询数，防止触发限制和导致僵死
-        
+
+        MAX_GEO_QUERIES = 50  # 限制最大并发查询数，防止触发 ip-api.com 频率限制
+
+        # 第一步：提取每个节点的 IP（串行，纯内存操作，无 IO）
+        node_ip_pairs = []
         for node in nodes:
-            # 提取IP
             ip = ip_extractor.extract_ip(node)
+            if ip and ip_extractor.is_valid_ip(ip):
+                node_ip_pairs.append((node, ip))
+            else:
+                node_ip_pairs.append((node, None))
+
+        # 第二步：并发查询需要真实 IP 查询的节点（最多 MAX_GEO_QUERIES 个）
+        geo_nodes = [(node, ip) for node, ip in node_ip_pairs if ip is not None][:MAX_GEO_QUERIES]
+        geo_results = {}  # ip -> location
+
+        if geo_nodes:
+            unique_ips = list({ip for _, ip in geo_nodes})
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                future_to_ip = {executor.submit(geo_service.get_location, ip): ip for ip in unique_ips}
+                for future in as_completed(future_to_ip):
+                    ip = future_to_ip[future]
+                    try:
+                        geo_results[ip] = future.result()
+                    except Exception:
+                        geo_results[ip] = None
+
+        # 第三步：组合结果，保持原节点顺序
+        countries = []
+        locations_detail = []
+        country_detail_count = Counter()
+        geo_query_used = 0
+
+        for node, ip in node_ip_pairs:
             country = None
             detail_obj = None
-            
-            if ip and ip_extractor.is_valid_ip(ip) and geo_queries_count < MAX_GEO_QUERIES:
-                geo_queries_count += 1
-                # 查询地理位置
-                location = geo_service.get_location(ip)
+
+            if ip and geo_query_used < MAX_GEO_QUERIES:
+                geo_query_used += 1
+                location = geo_results.get(ip)
                 if location:
                     country = location['country']
                     countries.append(country)
-                    
+
                     if country_detail_count[country] < 3:
                         detail_obj = {
                             'name': node.get('name', '未知'),
@@ -441,13 +467,13 @@ class SubscriptionParser:
                             'country_code': location['country_code'],
                             'flag': geo_service.get_country_flag(location['country_code'])
                         }
-                    
+
             if not country:
-                # 如果IP查询失败,回退到关键词匹配
+                # IP 查询失败，回退到关键词匹配
                 node_name = node.get('name', '')
                 country = self._match_country_by_keyword(node_name)
                 countries.append(country)
-                
+
                 if country_detail_count[country] < 3:
                     detail_obj = {
                         'name': node.get('name', '未知'),
@@ -457,17 +483,17 @@ class SubscriptionParser:
                         'country_code': '',
                         'flag': '🌐'
                     }
-                    
+
             if detail_obj:
                 locations_detail.append(detail_obj)
                 country_detail_count[country] += 1
-        
+
         country_stats = dict(Counter(countries))
-        
+
         return {
             'protocols': protocol_stats,
             'countries': country_stats,
-            'locations': locations_detail  # 新增:详细位置列表
+            'locations': locations_detail
         }
     
     def _match_country_by_keyword(self, node_name: str) -> str:
@@ -486,4 +512,10 @@ class SubscriptionParser:
                 return country
         
         return '其他'
+
+
+
+
+
+
 

@@ -39,7 +39,7 @@ TELEGRAM_BOT_TOKEN=你的机器人Token
 
 ### 启动机器人
 ```bash
-python bot_manual.py
+python bot_async.py
 ```
 
 ### 在 Telegram 中使用
@@ -107,7 +107,7 @@ while True:
 
 ```
 dingyue_TG/
-├── bot_manual.py          # 主程序（Windows 兼容版）
+├── bot_async.py           # 主程序（异步版本）
 ├── parser.py              # 订阅解析核心
 ├── utils.py               # 工具函数
 ├── requirements.txt       # 依赖列表
@@ -136,7 +136,7 @@ PROXY_PORT=7890  # 可选，默认不使用代理
 ## 🐛 常见问题
 
 ### Windows 上无法启动？
-使用 `bot_manual.py` 而不是 `bot.py`，它使用手动轮询绕过 asyncio 问题。
+使用 `bot_async.py` 启动主程序。
 
 ### 流量信息显示为空？
 确保订阅服务商提供流量信息。有些订阅不在响应头中包含流量数据。
@@ -219,7 +219,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/dingyue_TG
-ExecStart=/opt/dingyue_TG/venv/bin/python /opt/dingyue_TG/bot_manual.py
+ExecStart=/opt/dingyue_TG/venv/bin/python /opt/dingyue_TG/bot_async.py
 Restart=always
 RestartSec=10
 
@@ -261,3 +261,4 @@ systemctl status dingyue-bot
 ## 📄 许可证
 
 MIT License
+

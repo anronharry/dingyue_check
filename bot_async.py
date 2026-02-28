@@ -9,6 +9,7 @@ import logging
 import asyncio
 import time
 import hashlib
+from collections import OrderedDict
 from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -23,8 +24,7 @@ from telegram.ext import (
 
 from parser import SubscriptionParser
 from storage_enhanced import SubscriptionStorage
-from utils import is_valid_url, format_subscription_info, format_traffic
-from input_detector import InputDetector
+from utils import is_valid_url, format_subscription_info, format_traffic, InputDetector
 from file_handler import FileHandler
 
 # 加载环境变量
@@ -39,23 +39,54 @@ logger = logging.getLogger(__name__)
 
 # 获取配置
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-# 读取初始环境变量
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 PROXY_PORT = int(os.getenv('PROXY_PORT', 7890))
+URL_CACHE_MAX_SIZE = int(os.getenv('URL_CACHE_MAX_SIZE', 500))
+URL_CACHE_TTL_SECONDS = int(os.getenv('URL_CACHE_TTL_SECONDS', 86400))
 
 # 初始化（延迟加载，节省内存）
 parser = None
 storage = None
 
 # 短链接缓存池 (解决 Telegram <= 64 bytes 按钮数据限制)
-url_cache = {}
+# key: short hash, value: {'url': str, 'ts': float}
+url_cache = OrderedDict()
+
+
+def make_sub_keyboard(url: str) -> InlineKeyboardMarkup:
+    """构建订阅操作内联键盘（重检 / 删除 / 标签），消除重复代码"""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🔄 重新检测", callback_data=get_short_callback_data("recheck", url)),
+            InlineKeyboardButton("🗑️ 删除", callback_data=get_short_callback_data("delete", url))
+        ],
+        [
+            InlineKeyboardButton("🏷️ 添加标签", callback_data=get_short_callback_data("tag", url))
+        ]
+    ])
+
+
+def _cleanup_url_cache():
+    """清理过期和超量缓存，防止长期运行内存增长。"""
+    now = time.time()
+
+    expired_keys = [
+        key for key, value in url_cache.items()
+        if now - value.get('ts', 0) > URL_CACHE_TTL_SECONDS
+    ]
+    for key in expired_keys:
+        url_cache.pop(key, None)
+
+    while len(url_cache) > URL_CACHE_MAX_SIZE:
+        url_cache.popitem(last=False)
+
 
 def get_short_callback_data(action, url):
     """计算短 hash 突破回调长度限制"""
+    _cleanup_url_cache()
     hash_key = hashlib.md5(url.encode('utf-8')).hexdigest()[:16]
-    url_cache[hash_key] = url
+    url_cache[hash_key] = {'url': url, 'ts': time.time()}
+    url_cache.move_to_end(hash_key)
     return f"{action}:{hash_key}"
-
 def get_parser():
     """懒加载解析器"""
     global parser
@@ -116,6 +147,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📋 <b>常用命令:</b>
 /check - 检测所有订阅
 /list - 查看订阅列表
+/delete - 删除订阅
 /stats - 查看统计信息
 /help - 查看帮助
 
@@ -141,13 +173,17 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 <b>3️⃣ 批量操作</b>
 /check - 检测所有订阅
 /check [标签] - 检测指定标签的订阅
-/list - 查看所有订阅（按标签分组）
+/list - 查看所有订阅（按标签分组，可直接操作）
 
-<b>4️⃣ 导出导入</b>
+<b>4️⃣ 删除订阅</b>
+/delete - 显示删除帮助
+/delete &lt;订阅链接&gt; - 直接删除指定订阅
+
+<b>5️⃣ 导出导入</b>
 /export - 导出所有订阅为 JSON 文件
 /import - 回复导出的文件进行导入
 
-<b>5️⃣ 统计信息</b>
+<b>6️⃣ 统计信息</b>
 /stats - 查看订阅统计（总数、流量等）
 """
     await update.message.reply_text(help_message, parse_mode='HTML')
@@ -230,36 +266,28 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     pass
             return res
     
-    # 并发检测
+    # 并发检测（批处理写盘：多次 add_or_update 只触发一次 IO）
+    store.begin_batch()
     tasks = [check_one(url, data) for url, data in subscriptions.items()]
     results = await asyncio.gather(*tasks)
-    
+    store.end_batch(save=True)
+
     # 删除进度消息
     try:
         await progress_msg.delete()
     except Exception as exc:
         logger.warning(f"删除进度消息失败: {exc}")
-    
-    # 生成报告
+
+    # 生成汇总报告头
+    success_count = sum(1 for r in results if r['status'] == 'success')
+    failed_count = sum(1 for r in results if r['status'] == 'failed')
     report = f"<b>📊 订阅检测报告</b>\n\n"
-    report += f"总计: {len(results)} | 成功: {sum(1 for r in results if r['status'] == 'success')}\n"
-    report += "—" * 20 + "\n\n"
-    
-    success_results = [r for r in results if r['status'] == 'success']
-    if success_results:
-        report += "<b>✅ 可用订阅:</b>\n\n"
-        for item in success_results:
-            remaining = format_traffic(item['remaining'])
-            report += f"<b>{item['name']}</b>\n"
-            report += f"<code>{item['url']}</code>\n"
-            report += f"剩余: {remaining}\n"
-            if item.get('expire_time'):
-                report += f"到期: {item['expire_time']}\n"
-            report += "\n"
-            
+    report += f"总计: {len(results)} | ✅ 成功: {success_count} | ❌ 失效: {failed_count}\n"
+    report += "—" * 20 + "\n"
+
     failed_results = [r for r in results if r['status'] == 'failed']
     if failed_results:
-        report += "<b>❌ 失效订阅 (已自动清理):</b>\n\n"
+        report += "\n<b>❌ 失效订阅 (已自动清理):</b>\n\n"
         for item in failed_results:
             report += f"<b>{item['name']}</b>\n"
             report += f"<code>{item['url']}</code>\n"
@@ -267,45 +295,64 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if len(error_text) > 200:
                 error_text = error_text[:200] + "..."
             report += f"原因: {error_text}\n\n"
-    
+
     await send_long_message(update, report, parse_mode='HTML')
-    
+
+    # 成功的订阅逐条发送，附带操作按钮
+    success_results = [r for r in results if r['status'] == 'success']
+    for item in success_results:
+        remaining = format_traffic(item['remaining'])
+        url = item['url']
+        msg = f"<b>✅ {item['name']}</b>\n"
+        msg += f"剩余: {remaining}"
+        if item.get('expire_time'):
+            msg += f" | 到期: {item['expire_time']}"
+        msg += f"\n<code>{url}</code>"
+
+        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=make_sub_keyboard(url))
+
     # 低内存优化：主动清理垃圾
     import gc
     gc.collect()
 
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理 /list 命令（按标签分组显示）"""
+    """处理 /list 命令（按标签分组，每条附带删除按钮）"""
     store = get_storage()
     subscriptions = store.get_all()
-    
+
     if not subscriptions:
         await update.message.reply_text("📭 暂无订阅")
         return
-    
-    # 按标签分组
+
     tags = store.get_all_tags()
     untagged = {url: data for url, data in subscriptions.items() if not data.get('tags')}
-    
-    message = f"<b>📋 订阅列表 (共 {len(subscriptions)} 个)</b>\n\n"
-    
+
+    header = f"<b>📋 订阅列表 (共 {len(subscriptions)} 个)</b>"
+    await update.message.reply_text(header, parse_mode='HTML')
+
+    async def send_sub_item(url, data, tag_label=""):
+        """发送单条订阅，附带操作按钮"""
+        label = f"{tag_label}" if tag_label else "📦 未分组"
+        msg = f"{label} — <b>{data['name']}</b>\n<code>{url}</code>"
+        keyboard = [
+            [
+                InlineKeyboardButton("🔄 重检", callback_data=get_short_callback_data("recheck", url)),
+                InlineKeyboardButton("🏷️ 标签", callback_data=get_short_callback_data("tag", url)),
+                InlineKeyboardButton("🗑️ 删除", callback_data=get_short_callback_data("delete", url))
+            ]
+        ]
+        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+
     # 显示有标签的订阅
     for tag in tags:
         tagged_subs = store.get_by_tag(tag)
-        if tagged_subs:
-            message += f"<b>🏷️ {tag} ({len(tagged_subs)})</b>\n"
-            for url, data in tagged_subs.items():
-                message += f"  • {data['name']}\n    <code>{url}</code>\n"
-            message += "\n"
-    
+        for url, data in tagged_subs.items():
+            await send_sub_item(url, data, tag_label=f"🏷️ {tag}")
+
     # 显示无标签的订阅
-    if untagged:
-        message += f"<b>📦 未分组 ({len(untagged)})</b>\n"
-        for url, data in untagged.items():
-            message += f"  • {data['name']}\n    <code>{url}</code>\n"
-    
-    await send_long_message(update, message, parse_mode='HTML')
+    for url, data in untagged.items():
+        await send_sub_item(url, data)
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -324,6 +371,29 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += f"<b>标签:</b> {', '.join(stats['tags'])}\n"
     
     await update.message.reply_text(message, parse_mode='HTML')
+
+
+async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理 /delete 命令 - 根据参数删除指定订阅"""
+    store = get_storage()
+
+    if not context.args:
+        subscriptions = store.get_all()
+        if not subscriptions:
+            await update.message.reply_text("📭 暂无订阅可删除")
+            return
+        await update.message.reply_text(
+            "📋 请使用 /list 查看订阅列表，点击每条下方的 🗑️ 按钮直接删除\n"
+            "或使用: <code>/delete &lt;订阅链接&gt;</code>",
+            parse_mode='HTML'
+        )
+        return
+
+    url = context.args[0].strip()
+    if store.remove(url):
+        await update.message.reply_text(f"✅ 已删除订阅: <code>{url}</code>", parse_mode='HTML')
+    else:
+        await update.message.reply_text("❌ 未找到该订阅，请确认链接是否正确")
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -353,13 +423,21 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ 导出失败")
 
 
+
+async def import_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理 /import 命令"""
+    context.user_data['awaiting_import'] = True
+    await update.message.reply_text(
+        "请上传由 /export 导出的 JSON 文件，我会自动导入到当前订阅列表。"
+    )
+
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理文件上传(智能检测订阅链接)"""
     document = update.message.document
     file_type = InputDetector.detect_file_type(document.file_name)
     
     if file_type == 'unknown':
-        await update.message.reply_text("❌ 不支持的文件类型,请上传txt或yaml文件")
+        await update.message.reply_text("❌ 不支持的文件类型,请上传 txt/yaml 文件；导入请使用 /import 后上传 json")
         return
     
     processing_msg = await update.message.reply_text(f"📄 正在分析{file_type.upper()}文件...")
@@ -370,82 +448,79 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_content = await file.download_as_bytearray()
         content_bytes = bytes(file_content)
         
+        # JSON 导入（需先执行 /import）
+        if file_type == 'json':
+            if not context.user_data.get('awaiting_import'):
+                await processing_msg.edit_text("❌ 请先发送 /import，再上传导出的 JSON 文件")
+                return
+
+            loop = asyncio.get_event_loop()
+            os.makedirs('data', exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            import_file = f"data/import_{timestamp}.json"
+
+            with open(import_file, 'wb') as f:
+                f.write(content_bytes)
+
+            imported_count = await loop.run_in_executor(None, get_storage().import_from_file, import_file)
+            await loop.run_in_executor(None, os.remove, import_file)
+            context.user_data.pop('awaiting_import', None)
+
+            await processing_msg.edit_text(f"✅ 导入完成，共导入 {imported_count} 条订阅")
+            return
         # 智能检测: 优先查找订阅链接
         if file_type == 'txt':
             subscription_urls = FileHandler.extract_subscription_urls(content_bytes)
-            
+
             if subscription_urls:
-                # 发现订阅链接 -> 解析订阅获取流量信息
                 await processing_msg.edit_text(
-                    f"🔗 发现 {len(subscription_urls)} 个订阅链接,正在解析...\n"
-                    f"这可能需要一些时间,请稍候..."
+                    f"🔗 发现 {len(subscription_urls)} 个订阅链接，并发解析中..."
                 )
-                
-                results = []
-                for idx, url in enumerate(subscription_urls, 1):
-                    try:
-                        # 异步解析订阅
-                        loop = asyncio.get_event_loop()
-                        result = await loop.run_in_executor(None, get_parser().parse, url)
-                        
-                        # 保存到存储
-                        get_storage().add_or_update(url, result)
-                        
-                        results.append({
-                            'index': idx,
-                            'url': url,
-                            'data': result,
-                            'status': 'success'
-                        })
-                    except Exception as e:
-                        logger.error(f"订阅解析失败 {url}: {e}")
-                        results.append({
-                            'index': idx,
-                            'url': url,
-                            'error': str(e),
-                            'status': 'failed'
-                        })
-                
-                # 生成汇总报告
+
+                store = get_storage()
+                store.begin_batch()
+                semaphore = asyncio.Semaphore(3)
+
+                async def parse_one(idx, url):
+                    async with semaphore:
+                        try:
+                            loop = asyncio.get_running_loop()
+                            result = await loop.run_in_executor(None, get_parser().parse, url)
+                            store.add_or_update(url, result)
+                            return {'index': idx, 'url': url, 'data': result, 'status': 'success'}
+                        except Exception as e:
+                            logger.error(f"订阅解析失败 {url}: {e}")
+                            return {'index': idx, 'url': url, 'error': str(e), 'status': 'failed'}
+
+                try:
+                    tasks = [parse_one(i, url) for i, url in enumerate(subscription_urls, 1)]
+                    results = await asyncio.gather(*tasks)
+                finally:
+                    store.end_batch(save=True)
+
                 try:
                     await processing_msg.delete()
                 except Exception as exc:
                     logger.warning(f"删除进度消息失败: {exc}")
-                
+
                 # 发送每个订阅的详细信息
-                for res in results:
+                for res in sorted(results, key=lambda r: r['index']):
                     if res['status'] == 'success':
                         data = res['data']
                         message = f"<b>📊 订阅 {res['index']}</b>\n\n"
                         message += format_subscription_info(data, res['url'])
-                        
-                        # 创建交互按钮
-                        keyboard = [
-                            [
-                                InlineKeyboardButton("🔄 重新检测", callback_data=get_short_callback_data("recheck", res['url'])),
-                                InlineKeyboardButton("🗑️ 删除", callback_data=get_short_callback_data("delete", res['url']))
-                            ],
-                            [
-                                InlineKeyboardButton("🏷️ 添加标签", callback_data=get_short_callback_data("tag", res['url']))
-                            ]
-                        ]
-                        reply_markup = InlineKeyboardMarkup(keyboard)
-                        
-                        await update.message.reply_text(message, parse_mode='HTML', reply_markup=reply_markup)
+                        await update.message.reply_text(message, parse_mode='HTML', reply_markup=make_sub_keyboard(res['url']))
                     else:
                         await update.message.reply_text(
-                            f"❌ <b>订阅 {res['index']}</b> 解析失败\n"
-                            f"错误: {res['error']}",
+                            f"❌ <b>订阅 {res['index']}</b> 解析失败\n错误: {res['error']}",
                             parse_mode='HTML'
                         )
-                
-                # 发送汇总
+
                 summary = f"<b>✅ 文件分析完成</b>\n\n"
                 summary += f"总订阅数: {len(subscription_urls)}\n"
                 summary += f"成功解析: {sum(1 for r in results if r['status'] == 'success')}\n"
                 summary += f"解析失败: {sum(1 for r in results if r['status'] == 'failed')}"
                 await update.message.reply_text(summary, parse_mode='HTML')
-                
                 return
         
         # 没有订阅链接 -> 解析节点列表
@@ -543,79 +618,115 @@ async def handle_node_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理订阅链接"""
+    """处理订阅链接（支持受控并发）"""
     text = update.message.text.strip()
     urls = [line.strip() for line in text.split('\n') if line.strip()]
-    
-    for url in urls:
+
+    semaphore = asyncio.Semaphore(3)
+    store = get_storage()
+    store.begin_batch()
+
+    async def process_one(url):
         if not is_valid_url(url):
             await update.message.reply_text(f"❌ 无效的 URL: {url[:50]}...")
-            continue
-        
-        processing_msg = await update.message.reply_text(f"⏳ 正在解析...")
-        
-        try:
-            # 异步解析
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, get_parser().parse, url)
-            
-            # 保存
-            get_storage().add_or_update(url, result)
-            
-            # 格式化消息
-            message = format_subscription_info(result, url)
-            
-            # 创建交互式按钮
-            keyboard = [
-                [
-                    InlineKeyboardButton("🔄 重新检测", callback_data=get_short_callback_data("recheck", url)),
-                    InlineKeyboardButton("🗑️ 删除", callback_data=get_short_callback_data("delete", url))
-                ],
-                [
-                    InlineKeyboardButton("🏷️ 添加标签", callback_data=get_short_callback_data("tag", url))
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
+            return
+
+        processing_msg = await update.message.reply_text("⏳ 正在解析...")
+
+        async with semaphore:
             try:
-                await processing_msg.delete()
-            except Exception as exc:
-                logger.warning(f"删除进度消息失败: {exc}")
-            await update.message.reply_text(
-                message,
-                parse_mode='HTML',
-                reply_markup=reply_markup
-            )
-            
-        except Exception as e:
-            error_msg = str(e)
-            if len(error_msg) > 500:
-                error_msg = error_msg[:500] + "..."
-            try:
-                await processing_msg.edit_text(f"❌ 解析失败: {error_msg}")
-            except Exception:
-                await update.message.reply_text(f"❌ 解析失败: {error_msg}")
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(None, get_parser().parse, url)
+
+                store.add_or_update(url, result)
+                message = format_subscription_info(result, url)
+
+                try:
+                    await processing_msg.delete()
+                except Exception as exc:
+                    logger.warning(f"删除进度消息失败: {exc}")
+
+                await update.message.reply_text(
+                    message,
+                    parse_mode='HTML',
+                    reply_markup=make_sub_keyboard(url)
+                )
+
+            except Exception as e:
+                error_msg = str(e)
+                if len(error_msg) > 500:
+                    error_msg = error_msg[:500] + "..."
+                try:
+                    await processing_msg.edit_text(f"❌ 解析失败: {error_msg}")
+                except Exception:
+                    await update.message.reply_text(f"❌ 解析失败: {error_msg}")
+
+    try:
+        tasks = [process_one(url) for url in urls]
+        await asyncio.gather(*tasks)
+    finally:
+        store.end_batch(save=True)
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理按钮回调"""
     query = update.callback_query
     await query.answer()
-    
+
     data = query.data
     try:
         action, hash_key = data.split(':', 1)
     except ValueError:
         await query.answer("数据异常", show_alert=True)
         return
-        
-    url = url_cache.get(hash_key)
+
+    # tag_apply 只需要 hash_key 存的是 url:tag，单独处理
+    if action == 'tag_apply':
+        # hash_key 此处存储 "url_hash|tag" 格式
+        parts = hash_key.split('|', 1)
+        if len(parts) != 2:
+            await query.answer("数据异常", show_alert=True)
+            return
+        url_hash, tag = parts[0], parts[1]
+        _cleanup_url_cache()
+        cache_entry = url_cache.get(url_hash)
+        url = cache_entry.get('url') if cache_entry else None
+        if not url:
+            await query.answer("按钮已过期，请重新操作", show_alert=True)
+            return
+        store = get_storage()
+        if store.add_tag(url, tag):
+            await query.edit_message_text(f"✅ 已添加标签: {tag}\n订阅: {store.get_all().get(url, {}).get('name', url)}")
+        else:
+            await query.answer(f"标签 '{tag}' 已存在", show_alert=True)
+            await query.edit_message_text(f"ℹ️ 标签 '{tag}' 已存在，无需重复添加")
+        return
+
+    if action == 'tag_new':
+        # 用户选择「新建标签」，回退到手动输入流程
+        _cleanup_url_cache()
+        cache_entry = url_cache.get(hash_key)
+        url = cache_entry.get('url') if cache_entry else None
+        if not url:
+            await query.answer("按钮已过期，请重新操作", show_alert=True)
+            return
+        store = get_storage()
+        sub_name = store.get_all().get(url, {}).get('name', url)
+        await query.edit_message_text(
+            f"请发送新标签名称：\n订阅: {sub_name}"
+        )
+        context.user_data['pending_tag_url'] = url
+        return
+
+    _cleanup_url_cache()
+    cache_entry = url_cache.get(hash_key)
+    url = cache_entry.get('url') if cache_entry else None
     if not url:
         await query.answer("交互按钮已过期，请重新发送链接进行操作！", show_alert=True)
         return
-    
+
     store = get_storage()
-    
+
     if action == 'recheck':
         # 重新检测
         await query.edit_message_text("⏳ 正在重新检测...")
@@ -623,40 +734,55 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, get_parser().parse, url)
             store.add_or_update(url, result)
-            
+
             message = format_subscription_info(result, url)
-            keyboard = [
-                [
-                    InlineKeyboardButton("🔄 重新检测", callback_data=get_short_callback_data("recheck", url)),
-                    InlineKeyboardButton("🗑️ 删除", callback_data=get_short_callback_data("delete", url))
-                ],
-                [
-                    InlineKeyboardButton("🏷️ 添加标签", callback_data=get_short_callback_data("tag", url))
-                ]
-            ]
             await query.edit_message_text(
                 message,
                 parse_mode='HTML',
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=make_sub_keyboard(url)
             )
         except Exception as e:
             await query.edit_message_text(f"❌ 检测失败: {str(e)}")
-    
+
     elif action == 'delete':
         # 删除订阅
         if store.remove(url):
             await query.edit_message_text("✅ 已删除订阅")
         else:
             await query.edit_message_text("❌ 删除失败")
-    
+
     elif action == 'tag':
-        # 添加标签（请求用户输入）
-        await query.edit_message_text(
-            "请回复此消息并输入标签名（如：主力、备用）\n"
-            f"订阅: {store.get_all().get(url, {}).get('name', 'Unknown')}"
-        )
-        # 保存上下文
-        context.user_data['pending_tag_url'] = url
+        # 弹出已有标签候选按钮，或「新建标签」
+        existing_tags = store.get_all_tags()
+        sub_name = store.get_all().get(url, {}).get('name', url)
+        url_hash = hash_key  # hash_key 就是 url 的短 hash
+
+        if existing_tags:
+            # 构造候选按钮：每行2个，末尾加「新建」
+            tag_buttons = []
+            row = []
+            for tag in existing_tags:
+                # callback_data 格式: tag_apply:<url_hash>|<tag>
+                cb = f"tag_apply:{url_hash}|{tag}"
+                if len(cb) <= 64:
+                    row.append(InlineKeyboardButton(f"🏷 {tag}", callback_data=cb))
+                if len(row) == 2:
+                    tag_buttons.append(row)
+                    row = []
+            if row:
+                tag_buttons.append(row)
+            tag_buttons.append([InlineKeyboardButton("✏️ 新建标签", callback_data=get_short_callback_data("tag_new", url))])
+            await query.edit_message_text(
+                f"为 <b>{sub_name}</b> 选择或新建标签：",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup(tag_buttons)
+            )
+        else:
+            # 没有已有标签，直接进入手动输入
+            await query.edit_message_text(
+                f"请发送标签名称：\n订阅: {sub_name}"
+            )
+            context.user_data['pending_tag_url'] = url
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -699,30 +825,32 @@ def main():
     if not BOT_TOKEN:
         logger.error("错误: 未设置 TELEGRAM_BOT_TOKEN")
         return
-    
+
     logger.info("=" * 60)
     logger.info("正在启动智能订阅检测机器人...")
     logger.info("支持: IP地理位置、文件处理、智能输入识别")
     logger.info("=" * 60)
-    
+
     # 创建应用
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # 注册处理器
+
+    # 注册命令处理器
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("check", check_command))
     application.add_handler(CommandHandler("list", list_command))
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("export", export_command))
+    application.add_handler(CommandHandler("import", import_command))
+    application.add_handler(CommandHandler("delete", delete_command))
     application.add_handler(CallbackQueryHandler(button_callback))
-    
+
     # 文件处理器(优先级高)
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    
+
     # 文本消息处理器
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
+
     # 启动机器人
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 

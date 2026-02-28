@@ -1,12 +1,13 @@
 """
 工具函数模块
-提供流量转换、URL 验证等辅助功能
+提供流量转换、URL 验证、输入类型检测等辅助功能
 """
 
 import re
 import html
 from urllib.parse import urlparse
 from collections import defaultdict
+from typing import Literal
 
 
 def bytes_to_gb(bytes_value):
@@ -60,7 +61,7 @@ def is_valid_url(url):
     """
     try:
         result = urlparse(url)
-        return all([result.scheme, result.netloc])
+        return result.scheme in ("http", "https") and bool(result.netloc)
     except Exception:
         return False
 
@@ -128,8 +129,6 @@ def format_remaining_time(expire_time_str):
     except:
         return ""
 
-
-import html
 
 def format_subscription_info(info, url=None):
     """
@@ -244,5 +243,53 @@ def format_subscription_info(info, url=None):
     # 添加原始链接（点击复制）
     if url:
         message += f"\n<b>📋 原始链接 (点击复制):</b>\n<code>{url}</code>"
-         
+
     return message
+
+
+class InputDetector:
+    """智能输入类型检测器（原 input_detector.py）"""
+
+    @staticmethod
+    def detect_message_type(update) -> Literal['file', 'url', 'node_text', 'unknown']:
+        """检测消息类型，返回 'file' / 'url' / 'node_text' / 'unknown'"""
+        if update.message.document:
+            return 'file'
+        if update.message.text:
+            text = update.message.text.strip()
+            if InputDetector.is_subscription_url(text):
+                return 'url'
+            if InputDetector.is_node_text(text):
+                return 'node_text'
+        return 'unknown'
+
+    @staticmethod
+    def is_subscription_url(text: str) -> bool:
+        """判断是否为订阅链接（支持多行）"""
+        if not text.startswith(('http://', 'https://')):
+            return False
+        url_pattern = r'^https?://[^\s]+$'
+        lines = text.split('\n')
+        return all(re.match(url_pattern, line.strip()) for line in lines if line.strip())
+
+    @staticmethod
+    def is_node_text(text: str) -> bool:
+        """判断是否为节点文本列表（>=50% 行匹配协议前缀）"""
+        protocols = ['vmess://', 'vless://', 'ss://', 'ssr://', 'trojan://', 'hysteria://', 'hysteria2://']
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        if not lines:
+            return False
+        node_count = sum(1 for line in lines if any(line.startswith(p) for p in protocols))
+        return node_count >= len(lines) * 0.5
+
+    @staticmethod
+    def detect_file_type(filename: str) -> Literal['txt', 'yaml', 'json', 'unknown']:
+        """检测文件类型，返回 'txt' / 'yaml' / 'json' / 'unknown'"""
+        name = filename.lower()
+        if name.endswith('.txt'):
+            return 'txt'
+        if name.endswith(('.yaml', '.yml')):
+            return 'yaml'
+        if name.endswith('.json'):
+            return 'json'
+        return 'unknown'

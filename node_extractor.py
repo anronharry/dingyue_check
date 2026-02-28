@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 class NodeIPExtractor:
     """节点IP提取器"""
+
+    # 预编译正则，避免 is_valid_ip 每次调用都重新编译
+    _IPV4_RE = re.compile(r'^(\d{1,3}\.){3}\d{1,3}$')
+    _DOMAIN_RE = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$')
     
     @staticmethod
     def extract_ip(node: dict) -> Optional[str]:
@@ -116,16 +120,14 @@ class NodeIPExtractor:
     
     @staticmethod
     def is_valid_ip(ip: str) -> bool:
-        """验证是否为有效的IP地址"""
+        """验证是否为有效的IP地址或域名（使用预编译正则）"""
         if not ip:
             return False
-        
-        # IPv4验证
-        ipv4_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
-        if re.match(ipv4_pattern, ip):
+
+        # IPv4 验证
+        if NodeIPExtractor._IPV4_RE.match(ip):
             parts = ip.split('.')
             return all(0 <= int(part) <= 255 for part in parts)
-        
-        # 域名验证(简单检查)
-        domain_pattern = r'^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$'
-        return bool(re.match(domain_pattern, ip))
+
+        # 域名验证
+        return bool(NodeIPExtractor._DOMAIN_RE.match(ip))

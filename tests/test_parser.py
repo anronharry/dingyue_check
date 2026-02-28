@@ -101,7 +101,7 @@ class TestSubscriptionParser:
         
         assert traffic_info == {}
     
-    @patch('requests.get')
+    @patch('requests.Session.get')
     def test_download_subscription_with_retry(self, mock_get, parser):
         """测试下载订阅（带重试）"""
         # 模拟响应
@@ -162,3 +162,4 @@ proxies:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
