@@ -37,6 +37,17 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 PROXY_PORT = int(os.getenv('PROXY_PORT', 7890))
 
+# 用户白名单：从环境变量读取允许的 Telegram User ID
+# 格式：ALLOWED_USER_IDS=123456789,987654321（多个用英文逗号分隔）
+_raw_ids = os.getenv('ALLOWED_USER_IDS', '').strip()
+ALLOWED_USER_IDS = {
+    int(uid) for uid in _raw_ids.split(',') if uid.strip().isdigit()
+}
+if not ALLOWED_USER_IDS:
+    logger.warning("⚠️  ALLOWED_USER_IDS 未配置！任何人都可以使用本机器人，存在安全风险！")
+else:
+    logger.info(f"✅ 用户白名单已启用，共 {len(ALLOWED_USER_IDS)} 个授权用户")
+
 # 初始化（延迟加载，节省内存）
 parser = None
 storage = None
@@ -58,10 +69,26 @@ def get_storage():
     return storage
 
 
+def is_authorized(update: Update) -> bool:
+    """
+    检查用户是否在白名单中
+    如果未配置白名单（ALLOWED_USER_IDS 为空），则放行所有用户
+    """
+    if not ALLOWED_USER_IDS:
+        return True  # 未配置白名单，不限制（已在启动时打印警告）
+    user = update.effective_user
+    if user is None:
+        return False
+    return user.id in ALLOWED_USER_IDS
+
+
 # ==================== 命令处理器 ====================
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
+    if not is_authorized(update):
+        logger.warning(f"未授权访问 /start，用户 ID: {update.effective_user.id}")
+        return
     welcome_message = """
 👋 <b>欢迎使用机场订阅解析机器人！</b>
 
@@ -85,6 +112,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /help 命令"""
+    if not is_authorized(update):
+        return
     help_message = """
 📖 <b>使用帮助</b>
 
@@ -114,6 +143,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /check 命令（支持按标签检测）"""
+    if not is_authorized(update):
+        return
     store = get_storage()
     
     # 检查是否指定了标签
@@ -190,6 +221,8 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /list 命令（按标签分组显示）"""
+    if not is_authorized(update):
+        return
     store = get_storage()
     subscriptions = store.get_all()
     
@@ -223,6 +256,8 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /stats 命令（统计信息）"""
+    if not is_authorized(update):
+        return
     store = get_storage()
     stats = store.get_statistics()
     
@@ -241,6 +276,8 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /export 命令"""
+    if not is_authorized(update):
+        return
     store = get_storage()
     
     # 导出到临时文件
@@ -264,6 +301,8 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理订阅链接"""
+    if not is_authorized(update):
+        return
     text = update.message.text.strip()
     urls = [line.strip() for line in text.split('\n') if line.strip()]
     
@@ -313,6 +352,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理按钮回调"""
     query = update.callback_query
     await query.answer()
+    # 按钮回调同样需要鉴权（防止其他用户伪造 callback_data）
+    if not is_authorized(update):
+        await query.answer("⛔ 无权限", show_alert=True)
+        return
     
     data = query.data
     action, url = data.split(':', 1)
@@ -364,6 +407,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理普通消息（可能是标签输入）"""
+    if not is_authorized(update):
+        return
     # 检查是否是回复标签请求的消息
     if 'pending_tag_url' in context.user_data:
         url = context.user_data['pending_tag_url']

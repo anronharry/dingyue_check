@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 PROXY_PORT = int(os.getenv('PROXY_PORT', 7890))
 
+# 用户白名单：从环境变量读取允许的 Telegram User ID
+_raw_ids = os.getenv('ALLOWED_USER_IDS', '').strip()
+ALLOWED_USER_IDS = {
+    int(uid) for uid in _raw_ids.split(',') if uid.strip().isdigit()
+}
+if not ALLOWED_USER_IDS:
+    logger.warning("⚠️  ALLOWED_USER_IDS 未配置！任何人都可以使用本机器人，存在安全风险！")
+else:
+    logger.info(f"✅ 用户白名单已启用，共 {len(ALLOWED_USER_IDS)} 个授权用户")
+
 from storage import SubscriptionStorage
 from datetime import datetime
 
@@ -258,6 +268,16 @@ def handle_subscription(chat_id, text):
             send_message(chat_id, error_message)
 
 
+def is_authorized(user_id: int) -> bool:
+    """
+    检查用户 ID 是否在白名单中
+    如果未配置白名单，则放行所有用户
+    """
+    if not ALLOWED_USER_IDS:
+        return True
+    return user_id in ALLOWED_USER_IDS
+
+
 def process_update(update):
     """处理单个更新"""
     try:
@@ -266,6 +286,13 @@ def process_update(update):
         
         message = update['message']
         chat_id = message['chat']['id']
+        
+        # 鉴权检查：获取请求者 ID，静默忽略未授权用户
+        sender_id = message.get('from', {}).get('id')
+        if sender_id is None or not is_authorized(sender_id):
+            if sender_id is not None:
+                logger.warning(f"未授权访问，用户 ID: {sender_id}")
+            return
         
         # 处理文本消息
         if 'text' in message:

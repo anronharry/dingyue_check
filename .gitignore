@@ -12,6 +12,7 @@ __pycache__/
 venv/
 env/
 ENV/
+.venv/
 
 # IDE
 .vscode/
@@ -25,3 +26,6 @@ ENV/
 # 操作系统
 .DS_Store
 Thumbs.db
+
+# 数据目录（含订阅链接等敏感信息，不应提交到版本库）
+data/
