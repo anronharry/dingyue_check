@@ -252,10 +252,12 @@ systemctl status dingyue-bot
 - **重启机器人**: `systemctl restart dingyue-bot`
 - **更新代码**:
   ```bash
+  systemctl stop dingyue-bot
   cd /opt/dingyue_TG
   rm data/geo_cache.json
   git pull
   systemctl restart dingyue-bot
+  systemctl status dingyue-bot
   ```
 
 ## 📄 许可证
