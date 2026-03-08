@@ -7,6 +7,7 @@ import base64
 import re
 import requests
 import yaml
+from requests.adapters import HTTPAdapter
 from urllib.parse import urlparse, parse_qs, unquote
 from datetime import datetime
 
@@ -36,6 +37,11 @@ class SubscriptionParser:
             }
         else:
             self.proxies = None
+
+        self.session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=1)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
     
     def parse(self, url):
         """
@@ -63,11 +69,14 @@ class SubscriptionParser:
             # 统计节点信息
             node_stats = self._analyze_nodes(nodes)
             
-            # 组合结果
+            # 如果节点数为 0，视为订阅失效或无法解析
+            if len(nodes) == 0:
+                raise Exception("未解析到任何有效节点（可能无流量或链接失效）")
+                
+            # 组合结果 (低内存优化：不再保存所有的原始节点配置，只需保存统计)
             result = {
                 'name': airport_name,
                 'node_count': len(nodes),
-                'nodes': nodes,
                 'node_stats': node_stats,  # 新增：节点统计
                 **traffic_info
             }
@@ -98,7 +107,7 @@ class SubscriptionParser:
         
         @retry_on_failure(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
         def _fetch():
-            response = requests.get(
+            response = self.session.get(
                 url,
                 headers=headers,
                 proxies=self.proxies,  # 如果 use_proxy=False，这里会是 None
@@ -169,14 +178,25 @@ class SubscriptionParser:
             list: 节点列表
         """
         nodes = []
+        MAX_NODES = 300  # 内存优化：强制最大解析节点数，防 OOM
         
         # 检测是否为 Clash YAML 配置
-        if content.strip().startswith('#') or 'proxies:' in content[:1000] or 'proxy-groups:' in content[:1000]:
-            # 解析 Clash YAML 配置
+        if content.strip().startswith('#') or 'proxies:' in content[:5000] or 'proxy-groups:' in content[:5000]:
+            # 内存优化：直接截断超过 300KB 的文件部分（通常够存几千个节点了）
+            if len(content) > 300 * 1024:
+                # 尽量截取在行尾，防止切断 yaml 导致抛错
+                truncate_idx = content.rfind('\n', 0, 300 * 1024)
+                if truncate_idx != -1:
+                    content = content[:truncate_idx]
+                else:
+                    content = content[:300 * 1024]
+                
             try:
                 config = yaml.safe_load(content)
                 if config and 'proxies' in config:
                     for proxy in config['proxies']:
+                        if len(nodes) >= MAX_NODES:
+                            break
                         if isinstance(proxy, dict):
                             node = {
                                 'name': proxy.get('name', '未知节点'),
@@ -190,17 +210,38 @@ class SubscriptionParser:
                 # YAML 解析失败，尝试 Base64
                 pass
         
-        try:
-            # 尝试 Base64 解码
-            decoded_content = base64.b64decode(content).decode('utf-8')
-        except:
-            # 如果解码失败，使用原始内容
-            decoded_content = content
+        # 尝试 Base64 解码 (增强版：支持自动补位、URL-safe 格式)
+        decoded_content = content
+        cleaned_content = content.replace('\n', '').replace('\r', '').replace(' ', '').strip()
+        
+        # 尝试 Base64 解码的闭包
+        def try_b64_decode(data):
+            # 补齐末尾的 '='
+            missing_padding = len(data) % 4
+            if missing_padding:
+                data += '=' * (4 - missing_padding)
+            
+            try:
+                # 尝试标准解码
+                return base64.b64decode(data).decode('utf-8', errors='ignore')
+            except:
+                try:
+                    # 尝试 URL-safe 解码
+                    return base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
+                except:
+                    return None
+
+        temp_decoded = try_b64_decode(cleaned_content)
+        if temp_decoded:
+            decoded_content = temp_decoded
         
         # 按行分割
         lines = decoded_content.strip().split('\n')
         
         for line in lines:
+            if len(nodes) >= MAX_NODES:
+                break
+                
             line = line.strip()
             if not line:
                 continue
@@ -353,22 +394,110 @@ class SubscriptionParser:
     
     def _analyze_nodes(self, nodes):
         """
-        分析节点统计信息
-        
+        分析节点统计信息(使用真实IP地理位置查询，并发版本)
+
         Args:
             nodes: 节点列表
-            
+
         Returns:
-            dict: 统计信息（国家/地区、协议分布）
+            dict: 统计信息(国家/地区、协议分布、详细位置)
         """
         from collections import Counter
-        
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from node_extractor import NodeIPExtractor
+        from geo_service import GeoLocationService
+
         # 统计协议
         protocols = [node.get('protocol', 'unknown') for node in nodes]
         protocol_stats = dict(Counter(protocols))
-        
-        # 统计国家/地区
+
+        # 初始化服务
+        ip_extractor = NodeIPExtractor()
+        geo_service = GeoLocationService()
+
+        MAX_GEO_QUERIES = 50  # 限制最大并发查询数，防止触发 ip-api.com 频率限制
+
+        # 第一步：提取每个节点的 IP（串行，纯内存操作，无 IO）
+        node_ip_pairs = []
+        for node in nodes:
+            ip = ip_extractor.extract_ip(node)
+            if ip and ip_extractor.is_valid_ip(ip):
+                node_ip_pairs.append((node, ip))
+            else:
+                node_ip_pairs.append((node, None))
+
+        # 第二步：并发查询需要真实 IP 查询的节点（最多 MAX_GEO_QUERIES 个）
+        geo_nodes = [(node, ip) for node, ip in node_ip_pairs if ip is not None][:MAX_GEO_QUERIES]
+        geo_results = {}  # ip -> location
+
+        if geo_nodes:
+            unique_ips = list({ip for _, ip in geo_nodes})
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                future_to_ip = {executor.submit(geo_service.get_location, ip): ip for ip in unique_ips}
+                for future in as_completed(future_to_ip):
+                    ip = future_to_ip[future]
+                    try:
+                        geo_results[ip] = future.result()
+                    except Exception:
+                        geo_results[ip] = None
+
+        # 第三步：组合结果，保持原节点顺序
         countries = []
+        locations_detail = []
+        country_detail_count = Counter()
+        geo_query_used = 0
+
+        for node, ip in node_ip_pairs:
+            country = None
+            detail_obj = None
+
+            if ip and geo_query_used < MAX_GEO_QUERIES:
+                geo_query_used += 1
+                location = geo_results.get(ip)
+                if location:
+                    country = location['country']
+                    countries.append(country)
+
+                    if country_detail_count[country] < 3:
+                        detail_obj = {
+                            'name': node.get('name', '未知'),
+                            'country': country,
+                            'city': location['city'],
+                            'isp': location['isp'],
+                            'country_code': location['country_code'],
+                            'flag': geo_service.get_country_flag(location['country_code'])
+                        }
+
+            if not country:
+                # IP 查询失败，回退到关键词匹配
+                node_name = node.get('name', '')
+                country = self._match_country_by_keyword(node_name)
+                countries.append(country)
+
+                if country_detail_count[country] < 3:
+                    detail_obj = {
+                        'name': node.get('name', '未知'),
+                        'country': country,
+                        'city': '未知',
+                        'isp': '未知',
+                        'country_code': '',
+                        'flag': '🌐'
+                    }
+
+            if detail_obj:
+                locations_detail.append(detail_obj)
+                country_detail_count[country] += 1
+
+        country_stats = dict(Counter(countries))
+
+        return {
+            'protocols': protocol_stats,
+            'countries': country_stats,
+            'locations': locations_detail
+        }
+    
+    def _match_country_by_keyword(self, node_name: str) -> str:
+        """通过关键词匹配国家(备用方案)"""
         country_keywords = {
             '香港': ['香港', 'HK', 'Hong Kong', 'Hongkong'],
             '台湾': ['台湾', 'TW', 'Taiwan'],
@@ -376,37 +505,17 @@ class SubscriptionParser:
             '美国': ['美国', 'US', 'USA', 'America'],
             '新加坡': ['新加坡', 'SG', 'Singapore'],
             '韩国': ['韩国', 'KR', 'Korea'],
-            '英国': ['英国', 'UK', 'Britain'],
-            '德国': ['德国', 'DE', 'Germany'],
-            '法国': ['法国', 'FR', 'France'],
-            '加拿大': ['加拿大', 'CA', 'Canada'],
-            '澳大利亚': ['澳大利亚', 'AU', 'Australia'],
-            '俄罗斯': ['俄罗斯', 'RU', 'Russia'],
-            '印度': ['印度', 'IN', 'India'],
-            '荷兰': ['荷兰', 'NL', 'Netherlands'],
-            '土耳其': ['土耳其', 'TR', 'Turkey'],
         }
         
-        for node in nodes:
-            node_name = node.get('name', '')
-            matched = False
-            
-            for country, keywords in country_keywords.items():
-                for keyword in keywords:
-                    if keyword in node_name:
-                        countries.append(country)
-                        matched = True
-                        break
-                if matched:
-                    break
-            
-            if not matched:
-                countries.append('其他')
+        for country, keywords in country_keywords.items():
+            if any(kw in node_name for kw in keywords):
+                return country
         
-        country_stats = dict(Counter(countries))
-        
-        return {
-            'protocols': protocol_stats,
-            'countries': country_stats
-        }
+        return '其他'
+
+
+
+
+
+
 

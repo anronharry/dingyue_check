@@ -1,10 +1,13 @@
 """
 工具函数模块
-提供流量转换、URL 验证等辅助功能
+提供流量转换、URL 验证、输入类型检测等辅助功能
 """
 
 import re
+import html
 from urllib.parse import urlparse
+from collections import defaultdict
+from typing import Literal
 
 
 def bytes_to_gb(bytes_value):
@@ -58,7 +61,7 @@ def is_valid_url(url):
     """
     try:
         result = urlparse(url)
-        return all([result.scheme, result.netloc])
+        return result.scheme in ("http", "https") and bool(result.netloc)
     except Exception:
         return False
 
@@ -127,8 +130,6 @@ def format_remaining_time(expire_time_str):
         return ""
 
 
-import html
-
 def format_subscription_info(info, url=None):
     """
     格式化订阅信息为友好的消息文本
@@ -153,6 +154,12 @@ def format_subscription_info(info, url=None):
             bar = create_progress_bar(percent, length=10)
             message += f"<b>使用进度:</b> {bar} {percent:.1f}%\n"
             
+            # 添加智能警报
+            if percent >= 100:
+                message += "<b>状态警报:</b> ❌ 流量已完全耗尽\n"
+            elif percent >= 90:
+                message += "<b>状态警报:</b> ⚠️ 流量即将耗尽\n"
+            
         if info.get('remaining') is not None:
             message += f"<b>剩余可用:</b> {remaining}\n"
             
@@ -166,14 +173,51 @@ def format_subscription_info(info, url=None):
         if remaining_time:
             message += f"<b>剩余时间:</b> {remaining_time}\n"
             
+            # 添加智能警报
+            if remaining_time == "已过期":
+                message += "<b>状态警报:</b> ❌ 订阅已过期\n"
+            elif "天" in remaining_time:
+                try:
+                    days_left = int(remaining_time.split("天")[0])
+                    if days_left < 3:
+                        message += "<b>状态警报:</b> ⚠️ 订阅距过期不足3天\n"
+                except:
+                    pass
+            
     message += "\n" + "—" * 20 + "\n\n"
 
     # 节点统计信息
     if info.get('node_stats'):
         stats = info['node_stats']
         
+        # 详细地理位置信息(使用真实IP查询结果)
+        if stats.get('locations'):
+            locations = stats['locations']
+            # 按国家分组显示
+            country_groups = defaultdict(list)
+            
+            for loc in locations:
+                country_groups[loc['country']].append(loc)
+            
+            message += "<b>🌍 节点地理位置(真实IP):</b>\n"
+            for country, locs in sorted(country_groups.items(), key=lambda x: len(x[1]), reverse=True):
+                flag = locs[0]['flag'] if locs[0]['flag'] != '🌐' else get_country_flag(country)
+                message += f"\n{flag} <b>{country}</b> ({len(locs)}个):\n"
+                
+                # 显示前3个节点的详细信息
+                for loc in locs[:3]:
+                    city = loc['city'] if loc['city'] != '未知' else ''
+                    isp = loc['isp'] if loc['isp'] != '未知' else ''
+                    detail = f"{city} - {isp}" if city and isp else (city or isp or '详情未知')
+                    message += f"  • {html.escape(loc['name'][:20])}... ({detail})\n"
+                
+                if len(locs) > 3:
+                    message += f"  ... 还有 {len(locs) - 3} 个节点\n"
+            
+            message += "\n"
+        
         # 国家/地区分布 (带国旗)
-        if stats.get('countries'):
+        elif stats.get('countries'):
             message += "<b>🌍 节点区域分布:</b>\n"
             countries = stats['countries']
             # 按数量排序
@@ -199,6 +243,53 @@ def format_subscription_info(info, url=None):
     # 添加原始链接（点击复制）
     if url:
         message += f"\n<b>📋 原始链接 (点击复制):</b>\n<code>{url}</code>"
-         
+
     return message
 
+
+class InputDetector:
+    """智能输入类型检测器（原 input_detector.py）"""
+
+    @staticmethod
+    def detect_message_type(update) -> Literal['file', 'url', 'node_text', 'unknown']:
+        """检测消息类型，返回 'file' / 'url' / 'node_text' / 'unknown'"""
+        if update.message.document:
+            return 'file'
+        if update.message.text:
+            text = update.message.text.strip()
+            if InputDetector.is_subscription_url(text):
+                return 'url'
+            if InputDetector.is_node_text(text):
+                return 'node_text'
+        return 'unknown'
+
+    @staticmethod
+    def is_subscription_url(text: str) -> bool:
+        """判断是否为订阅链接（支持多行）"""
+        if not text.startswith(('http://', 'https://')):
+            return False
+        url_pattern = r'^https?://[^\s]+$'
+        lines = text.split('\n')
+        return all(re.match(url_pattern, line.strip()) for line in lines if line.strip())
+
+    @staticmethod
+    def is_node_text(text: str) -> bool:
+        """判断是否为节点文本列表（>=50% 行匹配协议前缀）"""
+        protocols = ['vmess://', 'vless://', 'ss://', 'ssr://', 'trojan://', 'hysteria://', 'hysteria2://']
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        if not lines:
+            return False
+        node_count = sum(1 for line in lines if any(line.startswith(p) for p in protocols))
+        return node_count >= len(lines) * 0.5
+
+    @staticmethod
+    def detect_file_type(filename: str) -> Literal['txt', 'yaml', 'json', 'unknown']:
+        """检测文件类型，返回 'txt' / 'yaml' / 'json' / 'unknown'"""
+        name = filename.lower()
+        if name.endswith('.txt'):
+            return 'txt'
+        if name.endswith(('.yaml', '.yml')):
+            return 'yaml'
+        if name.endswith('.json'):
+            return 'json'
+        return 'unknown'
