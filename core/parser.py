@@ -11,9 +11,11 @@ from requests.adapters import HTTPAdapter
 from urllib.parse import urlparse, parse_qs, unquote
 from datetime import datetime
 
-# 禁用 SSL 警告
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+from core import node_extractor as ip_extractor
+from core import geo_service
 
 
 class SubscriptionParser:
