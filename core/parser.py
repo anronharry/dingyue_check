@@ -431,8 +431,8 @@ class SubscriptionParser:
         # 第一步：提取每个节点的 IP（串行，纯内存操作，无 IO）
         node_ip_pairs = []
         for node in nodes:
-            ip = ip_extractor.extract_ip(node)
-            if ip and ip_extractor.is_valid_ip(ip):
+            ip = ip_extractor.NodeIPExtractor.extract_ip(node)
+            if ip and ip_extractor.NodeIPExtractor.is_valid_ip(ip):
                 node_ip_pairs.append((node, ip))
             else:
                 node_ip_pairs.append((node, None))
