@@ -51,10 +51,22 @@ dingyue_TG/
 
 ## 🚀 快速部署
 
+### 0. 环境准备 (非常重要)
+在极简的云服务器（如 Debian/Ubuntu 系统）上，可能缺失基础工具，请先执行：
+```bash
+# 1. 更新软件包列表
+apt update
+
+# 2. 安装 Git 和 Python3 基础环境
+apt install -y git python3 python3-pip python3-venv
+```
+
+*(CentOS/AlmaLinux 用户请使用 `yum install git python3`)*
+
 ### 1. 克隆项目
 ```bash
-git clone <your-repo-url>
-cd dingyue_TG
+git clone https://github.com/anronharry/dingyue_check.git
+cd dingyue_check
 ```
 
 ### 2. 配置环境变量

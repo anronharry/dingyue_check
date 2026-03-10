@@ -11,6 +11,8 @@ echo ""
 # ---- 1. Python 版本检查 ----
 if ! command -v python3 &>/dev/null; then
     echo "❌ 未找到 python3，请先安装 Python 3.10+"
+    echo "💡 提示: 在 Debian/Ubuntu 上可执行: apt update && apt install -y python3 python3-venv python3-pip"
+    echo "💡 提示: 在 CentOS/RHEL 上可执行: yum install -y python3"
     exit 1
 fi
 echo "✅ Python: $(python3 --version)"
