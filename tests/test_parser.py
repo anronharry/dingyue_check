@@ -3,8 +3,12 @@
 """
 
 import pytest
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from unittest.mock import Mock, patch
-from parser import SubscriptionParser
+from core.parser import SubscriptionParser
 
 
 class TestSubscriptionParser:
@@ -53,6 +57,8 @@ class TestSubscriptionParser:
     
     def test_analyze_nodes_countries(self, parser):
         """测试节点国家统计"""
+    def test_analyze_nodes_countries(self, parser):
+        """测试节点国家统计（关闭 GEO 查询，使用关键词匹配）"""
         nodes = [
             {'name': '香港-01', 'protocol': 'ss'},
             {'name': '香港-02', 'protocol': 'ss'},
@@ -60,21 +66,23 @@ class TestSubscriptionParser:
             {'name': '日本-01', 'protocol': 'trojan'},
         ]
         
-        stats = parser._analyze_nodes(nodes)
+        with patch('config.ENABLE_GEO_LOOKUP', False):
+            stats = parser._analyze_nodes(nodes)
         
         assert stats['countries']['香港'] == 2
         assert stats['countries']['美国'] == 1
         assert stats['countries']['日本'] == 1
     
     def test_analyze_nodes_protocols(self, parser):
-        """测试节点协议统计"""
+        """测试节点协议统计（关闭 GEO 查询）"""
         nodes = [
             {'name': '节点1', 'protocol': 'ss'},
             {'name': '节点2', 'protocol': 'ss'},
             {'name': '节点3', 'protocol': 'vmess'},
         ]
         
-        stats = parser._analyze_nodes(nodes)
+        with patch('config.ENABLE_GEO_LOOKUP', False):
+            stats = parser._analyze_nodes(nodes)
         
         assert stats['protocols']['ss'] == 2
         assert stats['protocols']['vmess'] == 1
@@ -101,7 +109,7 @@ class TestSubscriptionParser:
         
         assert traffic_info == {}
     
-    @patch('requests.Session.get')
+    @patch('core.parser.requests.Session.get')
     def test_download_subscription_with_retry(self, mock_get, parser):
         """测试下载订阅（带重试）"""
         # 模拟响应

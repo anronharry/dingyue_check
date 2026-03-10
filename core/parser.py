@@ -98,7 +98,7 @@ class SubscriptionParser:
         Returns:
             Response: HTTP 响应对象
         """
-        from retry_utils import retry_on_failure
+        from utils.retry_utils import retry_on_failure
         
         # 伪装成 Clash 客户端，以便服务器返回流量信息
         headers = {
@@ -404,18 +404,27 @@ class SubscriptionParser:
         """
         from collections import Counter
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        from node_extractor import NodeIPExtractor
-        from geo_service import GeoLocationService
+        import config
 
         # 统计协议
         protocols = [node.get('protocol', 'unknown') for node in nodes]
         protocol_stats = dict(Counter(protocols))
 
-        # 初始化服务
-        ip_extractor = NodeIPExtractor()
-        geo_service = GeoLocationService()
+        # 地理位置查询（受 ENABLE_GEO_LOOKUP 开关控制）
+        if not config.ENABLE_GEO_LOOKUP:
+            # 关闭地理查询：纯关键词匹配，零网络开销
+            countries = [self._match_country_by_keyword(n.get('name', '')) for n in nodes]
+            return {
+                'protocols': protocol_stats,
+                'countries': dict(Counter(countries)),
+                'locations': []
+            }
 
-        MAX_GEO_QUERIES = 50  # 限制最大并发查询数，防止触发 ip-api.com 频率限制
+        from core.node_extractor import NodeIPExtractor
+        from core.geo_service import GeoLocationService
+
+        MAX_GEO_QUERIES = config.MAX_GEO_QUERIES
+        MAX_WORKERS = config.GEO_LOOKUP_MAX_WORKERS
 
         # 第一步：提取每个节点的 IP（串行，纯内存操作，无 IO）
         node_ip_pairs = []
@@ -432,7 +441,7 @@ class SubscriptionParser:
 
         if geo_nodes:
             unique_ips = list({ip for _, ip in geo_nodes})
-            with ThreadPoolExecutor(max_workers=8) as executor:
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 future_to_ip = {executor.submit(geo_service.get_location, ip): ip for ip in unique_ips}
                 for future in as_completed(future_to_ip):
                     ip = future_to_ip[future]

@@ -29,3 +29,12 @@ Thumbs.db
 
 # 数据目录（含订阅链接等敏感信息，不应提交到版本库）
 data/
+
+# 测试 & 覆盖率产物
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+test_output.txt

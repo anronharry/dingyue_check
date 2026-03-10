@@ -7,11 +7,16 @@ Telegram 机场订阅解析机器人 - 异步版本
 import os
 import logging
 import asyncio
+import sys
 import time
 import hashlib
 from collections import OrderedDict
 from datetime import datetime
 from dotenv import load_dotenv
+
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -22,10 +27,18 @@ from telegram.ext import (
     ContextTypes
 )
 
-from parser import SubscriptionParser
-from storage_enhanced import SubscriptionStorage
-from utils import is_valid_url, format_subscription_info, format_traffic, InputDetector
-from file_handler import FileHandler
+from core.parser import SubscriptionParser
+from core.storage_enhanced import SubscriptionStorage
+from utils.utils import is_valid_url, format_subscription_info, format_traffic, InputDetector
+from core.file_handler import FileHandler
+
+# 导入高级体验模块
+from features import visualizer
+from features import latency_tester
+from features import monitor
+
+# 导入功能开关配置
+import config
 
 # 加载环境变量
 load_dotenv()
@@ -40,7 +53,7 @@ logger = logging.getLogger(__name__)
 # 获取配置
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 PROXY_PORT = int(os.getenv('PROXY_PORT', 7890))
-URL_CACHE_MAX_SIZE = int(os.getenv('URL_CACHE_MAX_SIZE', 500))
+URL_CACHE_MAX_SIZE = int(os.getenv('URL_CACHE_MAX_SIZE', 5000))
 URL_CACHE_TTL_SECONDS = int(os.getenv('URL_CACHE_TTL_SECONDS', 86400))
 
 # 用户白名单：从环境变量读取允许的 Telegram User ID
@@ -64,15 +77,18 @@ url_cache = OrderedDict()
 
 
 def make_sub_keyboard(url: str) -> InlineKeyboardMarkup:
-    """构建订阅操作内联键盘（重检 / 删除 / 标签），消除重复代码"""
+    """构建订阅操作内联键盘，按功能开关动态显示按钮"""
+    row1 = [
+        InlineKeyboardButton("🔄 重新检测", callback_data=get_short_callback_data("recheck", url)),
+    ]
+    # 测速按钮受功能开关控制
+    if config.ENABLE_LATENCY_TESTER:
+        row1.append(InlineKeyboardButton("⚡ 节点测速", callback_data=get_short_callback_data("ping", url)))
+    row1.append(InlineKeyboardButton("🗑️ 删除", callback_data=get_short_callback_data("delete", url)))
+
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🔄 重新检测", callback_data=get_short_callback_data("recheck", url)),
-            InlineKeyboardButton("🗑️ 删除", callback_data=get_short_callback_data("delete", url))
-        ],
-        [
-            InlineKeyboardButton("🏷️ 添加标签", callback_data=get_short_callback_data("tag", url))
-        ]
+        row1,
+        [InlineKeyboardButton("🏷️ 添加标签", callback_data=get_short_callback_data("tag", url))]
     ])
 
 
@@ -242,9 +258,9 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     progress_msg = await update.message.reply_text(msg_text)
     
-    # 异步并发检测（限制并发数，避免内存溢出）
+    # 异步并发检测（配合1GB内存，提升并发数以加快速度）
     results = []
-    semaphore = asyncio.Semaphore(3)  # 最多同时3个请求
+    semaphore = asyncio.Semaphore(20)  # 最大化利用网络IO，大幅提速
     
     total_count = len(subscriptions)
     completed_count = 0
@@ -340,11 +356,19 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f" | 到期: {item['expire_time']}"
         msg += f"\n<code>{url}</code>"
 
-        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=make_sub_keyboard(url))
+        # 发送图片报告 (如果有历史解析数据的话)
+        try:
+            cached_data = store._load_data().get(url)
+            if cached_data and cached_data.get('node_stats'):
+                img_buf = visualizer.generate_report_image(cached_data)
+                if img_buf:  # None 表示依赖缺失，降级为文本
+                    await update.message.reply_photo(photo=img_buf, caption=msg[:1000], parse_mode='HTML', reply_markup=make_sub_keyboard(url))
+                    continue
+        except Exception as e:
+            logger.error(f"图表生成失败 {url}: {e}")
 
-    # 低内存优化：主动清理垃圾
-    import gc
-    gc.collect()
+        # 图表生成失败或无详尽数据的退回纯文本打样
+        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=make_sub_keyboard(url))
 
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -519,7 +543,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 store = get_storage()
                 store.begin_batch()
-                semaphore = asyncio.Semaphore(3)
+                semaphore = asyncio.Semaphore(20)  # 提升文件批量解析时的并发度
 
                 async def parse_one(idx, url):
                     async with semaphore:
@@ -599,6 +623,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.delete()
         except Exception as exc:
             logger.warning(f"删除进度消息失败: {exc}")
+
+        # 尝试发送图片
+        try:
+            img_buf = visualizer.generate_report_image(result)
+            if img_buf:
+                await update.message.reply_photo(photo=img_buf, caption="📊 节点列表概览报告", parse_mode='HTML')
+        except Exception as e:
+            logger.error(f"图表生成失败: {e}")
+
         await update.message.reply_text(message, parse_mode='HTML')
         
     except Exception as e:
@@ -644,6 +677,14 @@ async def handle_node_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.delete()
         except Exception as exc:
             logger.warning(f"删除进度消息失败: {exc}")
+
+        try:
+            img_buf = visualizer.generate_report_image(result)
+            if img_buf:
+                await update.message.reply_photo(photo=img_buf, caption="📊 节点列表分析", parse_mode='HTML')
+        except Exception as e:
+            logger.error(f"图表生成失败: {e}")
+            
         await update.message.reply_text(message, parse_mode='HTML')
         
     except Exception as e:
@@ -662,7 +703,7 @@ async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = update.message.text.strip()
     urls = [line.strip() for line in text.split('\n') if line.strip()]
 
-    semaphore = asyncio.Semaphore(3)
+    semaphore = asyncio.Semaphore(20)
     store = get_storage()
     store.begin_batch()
 
@@ -780,13 +821,56 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             store.add_or_update(url, result)
 
             message = format_subscription_info(result, url)
-            await query.edit_message_text(
-                message,
-                parse_mode='HTML',
-                reply_markup=make_sub_keyboard(url)
-            )
+            try:
+                img_buf = visualizer.generate_report_image(result)
+                if img_buf:
+                    await query.message.reply_photo(
+                        photo=img_buf,
+                        caption=message[:1000],
+                        parse_mode='HTML',
+                        reply_markup=make_sub_keyboard(url)
+                    )
+                    await query.message.delete()
+                else:
+                    raise ValueError("dep missing")
+            except Exception as e:
+                await query.edit_message_text(
+                    message,
+                    parse_mode='HTML',
+                    reply_markup=make_sub_keyboard(url)
+                )
         except Exception as e:
             await query.edit_message_text(f"❌ 检测失败: {str(e)}")
+
+    elif action == 'ping':
+        # 并发 TCP 真实测速
+        await query.edit_message_text("⚡ 正在执行真实节点并发测速，请稍候...")
+        try:
+            loop = asyncio.get_event_loop()
+            # 需要再解析一次拿到 nodes 列表，或者从结果中直接测。此处采取再解析保障新鲜度
+            result = await loop.run_in_executor(None, get_parser().parse, url)
+            nodes = result.get('_raw_nodes', [])
+            if not nodes:
+                # 若解析没出raw nodes，回退一下
+                await query.edit_message_text("❌ 当前格式不支持直接获取节点列表测速。")
+                return
+
+            alive_count, total_count, alive_nodes = await latency_tester.ping_all_nodes(nodes, concurrency=20)
+            
+            ping_report = f"<b>⚡ 测速报告</b>\n"
+            ping_report += f"总计: {total_count} | ✅ 存活: {alive_count} | ❌ 失效: {total_count - alive_count}\n"
+            ping_report += "—" * 20 + "\n"
+            
+            if alive_nodes:
+                ping_report += "\n<b>🏆 Top 5 最快节点:</b>\n"
+                for i, n in enumerate(alive_nodes[:5]):
+                    ping_report += f"{i+1}. {n['name']} - <code>{n['latency']}ms</code>\n"
+            
+            # 由于可能很长，调用统一超长消息拦截器。这里简化发送总结，避免刷屏。
+            await query.message.reply_text(ping_report, parse_mode='HTML')
+            await query.message.delete()
+        except Exception as e:
+            await query.edit_message_text(f"❌ 测速过程发生错误: {str(e)}")
 
     elif action == 'delete':
         # 删除订阅
@@ -896,6 +980,15 @@ def main():
 
     # 文本消息处理器
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # 打印当前功能开关配置摘要
+    config.print_config_summary()
+
+    # 根据开关条件启动定时监控
+    if config.ENABLE_MONITOR:
+        monitor.start_monitor(application, get_storage(), get_parser, ALLOWED_USER_IDS)
+    else:
+        logger.info("🔕 定时监控已关闭（ENABLE_MONITOR=False）")
 
     # 启动机器人
     application.run_polling(allowed_updates=Update.ALL_TYPES)

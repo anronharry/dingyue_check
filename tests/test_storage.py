@@ -7,7 +7,7 @@ import os
 import json
 import tempfile
 from datetime import datetime
-from storage_enhanced import SubscriptionStorage
+from core.storage_enhanced import SubscriptionStorage
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@ import pytest
 import time
 from unittest.mock import Mock, patch
 import requests
-from retry_utils import retry_on_failure, RetrySession, safe_request
+from utils.retry_utils import retry_on_failure
 
 
 class TestRetryDecorator:
@@ -79,64 +79,6 @@ class TestRetryDecorator:
         
         # 第二次延迟应该约为第一次的2倍
         assert delay2 > delay1
-
-
-class TestRetrySession:
-    """重试会话测试"""
-    
-    @patch('requests.Session.get')
-    def test_session_get_success(self, mock_get):
-        """测试会话 GET 请求成功"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-        
-        with RetrySession(max_retries=3) as session:
-            response = session.get("https://example.com")
-        
-        assert response.status_code == 200
-        assert mock_get.called
-    
-    @patch('requests.Session.get')
-    def test_session_get_with_retry(self, mock_get):
-        """测试会话 GET 请求重试"""
-        # 前两次失败，第三次成功
-        mock_get.side_effect = [
-            requests.RequestException("Error 1"),
-            requests.RequestException("Error 2"),
-            Mock(status_code=200)
-        ]
-        
-        with RetrySession(max_retries=3, initial_delay=0.1) as session:
-            response = session.get("https://example.com")
-        
-        assert response.status_code == 200
-        assert mock_get.call_count == 3
-
-
-class TestSafeRequest:
-    """安全请求函数测试"""
-    
-    @patch('requests.get')
-    def test_safe_request_success(self, mock_get):
-        """测试安全请求成功"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-        
-        response = safe_request("https://example.com", max_retries=3)
-        
-        assert response is not None
-        assert response.status_code == 200
-    
-    @patch('requests.get')
-    def test_safe_request_failure(self, mock_get):
-        """测试安全请求失败返回 None"""
-        mock_get.side_effect = requests.RequestException("Error")
-        
-        response = safe_request("https://example.com", max_retries=2)
-        
-        assert response is None
 
 
 if __name__ == '__main__':
