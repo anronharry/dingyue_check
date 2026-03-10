@@ -6,6 +6,7 @@
 
 import io
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ def _check_dependencies() -> bool:
         return False
 
 
-def generate_report_image(data: dict) -> bytes | None:
+def generate_report_image(data: dict) -> Optional[bytes]:
     """
     根据节点解析数据生成聚合可视化长图。
     返回 PNG bytes 供 Telegram 直接发送；依赖缺失时返回 None。
@@ -30,7 +31,7 @@ def generate_report_image(data: dict) -> bytes | None:
         data: 包含 'traffic' 和 'node_stats' 的解析结果字典
 
     Returns:
-        bytes | None: PNG 图片数据，或在依赖不可用时返回 None
+        Optional[bytes]: PNG 图片数据，或在依赖不可用时返回 None
     """
     if not _check_dependencies():
         return None
