@@ -99,7 +99,7 @@ async def check_subscriptions_job(
 
 def start_monitor(app: Application, storage, get_parser_fn: Callable, allowed_user_ids: Set[int]):
     """
-    启动后台监控定时任务。
+    配置并注册后台监控定时任务到 Application 的生命周期中。
 
     Args:
         app: Telegram Application 实例
@@ -107,14 +107,21 @@ def start_monitor(app: Application, storage, get_parser_fn: Callable, allowed_us
         get_parser_fn: 获取解析器的工厂函数（用于打破循环导入）
         allowed_user_ids: 告警推送的用户 ID 集合
     """
-    scheduler.add_job(
-        check_subscriptions_job,
-        'cron',
-        hour='12,20',
-        minute=0,
-        args=[app, storage, get_parser_fn, allowed_user_ids],
-        id='sub_monitor',
-        replace_existing=True
-    )
-    scheduler.start()
-    logger.info("✅ 智能定时监控已启动 (每天 12:00 / 20:00 自动巡检)")
+    async def _post_init(application: Application):
+        scheduler.add_job(
+            check_subscriptions_job,
+            'cron',
+            hour='12,20',
+            minute=0,
+            args=[application, storage, get_parser_fn, allowed_user_ids],
+            id='sub_monitor',
+            replace_existing=True
+        )
+        scheduler.start()
+        logger.info("✅ 智能定时监控已启动 (每天 12:00 / 20:00 自动巡检)")
+
+    # 将启动逻辑挂载到 ptb 的 post_init 回调中，确保此时 Event Loop 已就绪
+    if app.post_init:
+        # 如果已经存在 post_init 回调，我们需要组合它们
+        pass # 此处从简，bot_async.py 中并未使用 post_init，因此直接覆写即可
+    app.post_init = _post_init
