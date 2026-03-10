@@ -424,6 +424,8 @@ class SubscriptionParser:
 
         from core.node_extractor import NodeIPExtractor
         from core.geo_service import GeoLocationService
+        
+        geo_client = GeoLocationService()
 
         MAX_GEO_QUERIES = config.MAX_GEO_QUERIES
         MAX_WORKERS = config.GEO_LOOKUP_MAX_WORKERS
@@ -444,7 +446,7 @@ class SubscriptionParser:
         if geo_nodes:
             unique_ips = list({ip for _, ip in geo_nodes})
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                future_to_ip = {executor.submit(geo_service.get_location, ip): ip for ip in unique_ips}
+                future_to_ip = {executor.submit(geo_client.get_location, ip): ip for ip in unique_ips}
                 for future in as_completed(future_to_ip):
                     ip = future_to_ip[future]
                     try:
@@ -476,7 +478,7 @@ class SubscriptionParser:
                             'city': location['city'],
                             'isp': location['isp'],
                             'country_code': location['country_code'],
-                            'flag': geo_service.get_country_flag(location['country_code'])
+                            'flag': geo_client.get_country_flag(location['country_code'])
                         }
 
             if not country:
