@@ -531,18 +531,33 @@ async def checkall_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await progress_msg.delete()
     except: pass
 
-    success_count = sum(1 for r in results if r['status'] == 'success')
-    failed_count = sum(1 for r in results if r['status'] == 'failed')
-    report = f"<b>🌍 全局巡检报告</b>\n\n总计: {len(results)} | ✅ 存活: {success_count} | ❌ 失效: {failed_count}\n" + "—" * 20 + "\n"
-
+    success_results = [r for r in results if r['status'] == 'success']
     failed_results = [r for r in results if r['status'] == 'failed']
+    owner_id = update.effective_user.id
+
+    report = f"<b>🌍 全局巡检报告</b>\n\n总计: {len(results)} | ✅ 存活: {len(success_results)} | ❌ 失效: {len(failed_results)}\n"
+    report += "—" * 20 + "\n"
+
+    # 1. 展示他人的存活订阅 (Owner 自身的略过)
+    others_success = [r for r in success_results if r['owner_uid'] != owner_id]
+    if others_success:
+        report += "\n<b>👥 其他用户的存活订阅:</b>\n\n"
+        for item in others_success:
+            report += f"👤 <code>{item['owner_uid']}</code>\n  └ <b>{item['name']}</b>\n  └ <code>{item['url']}</code>\n"
+
+    # 2. 展示失效订阅并指明归属
     if failed_results:
-        report += "\n<b>❌ 失效订阅 (已自动清理):</b>\n\n"
+        report += "\n<b>❌ 已清理的失效订阅:</b>\n"
         for item in failed_results:
-            report += f"<b>{item['name']}</b> (所属: <code>{item['owner_uid']}</code>/原因: {str(item.get('error', '未知'))[:50]})\n"
+            owner_label = "Owner" if item['owner_uid'] == owner_id else f"用户 {item['owner_uid']}"
+            report += f"• [{owner_label}] <b>{item['name']}</b>\n  └ 原因: {str(item.get('error', '未知'))[:50]}\n"
+
+    if not others_success and not failed_results:
+        report += "\n✨ 除 Owner 外无其他人的订阅变动。"
 
     report_msg = await update.message.reply_text(report, parse_mode='HTML')
     schedule_auto_delete(context, update.message, report_msg, delay=60)
+
 
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -850,36 +865,40 @@ async def globallist_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     store = get_storage()
     grouped = store.get_grouped_by_user()
+    owner_id = config.OWNER_ID
 
-    if not grouped:
-        reply_msg = await update.message.reply_text("📭 当前暂无任何订阅")
+    # 过滤掉 Owner 自己的数据，让管理员专注于看别人的
+    others_grouped = {uid: subs for uid, subs in grouped.items() if uid != owner_id}
+
+    if not others_grouped:
+        reply_msg = await update.message.reply_text("✨ 当前除了 Owner 外暂无其他用户的订阅")
         schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
 
-    total_subs = sum(len(subs) for subs in grouped.values())
-    report = f"👑 <b>全局订阅总览</b>\n共 <b>{total_subs}</b> 条订阅 / <b>{len(grouped)}</b> 个用户\n\n"
+    total_subs = sum(len(subs) for subs in others_grouped.values())
+    report = f"👑 <b>全局活跃订阅概览</b>\n共 <b>{total_subs}</b> 条订阅 / <b>{len(others_grouped)}</b> 个活跃用户\n"
+    report += "—" * 20 + "\n\n"
 
-    for uid, subs in grouped.items():
+    for uid, subs in others_grouped.items():
         report += f"🔹 <b>用户 <code>{uid}</code></b> ({len(subs)} 条)\n"
         for url, data in subs.items():
             name = data.get('name', '未知')
-            remaining = data.get('remaining', 0)
+            remaining = data.get('remaining')
             expire = data.get('expire_time', '')
+            # 状态判定：流量耗尽则红叉
             status = "❌" if remaining is not None and remaining <= 0 else "✅"
             
             line = f"  └ {status} <b>{name}</b>"
-            if remaining is not None:
-                line += f" | {format_traffic(remaining)}"
-            if expire:
-                line += f" | {expire[:10]}"
+            if remaining is not None: line += f" | {format_traffic(remaining)}"
+            if expire: line += f" | {expire[:10]}"
             
-            # 为 Owner 展示原始订阅 URL，方便排查和管理
+            # 为 Owner 展示原始订阅 URL，方便排查
             line += f"\n    <code>{url}</code>"
             report += line + "\n"
         report += "\n"
 
-
     reply_msg = await update.message.reply_text(report, parse_mode='HTML')
+
     schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
 

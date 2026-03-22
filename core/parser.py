@@ -60,8 +60,9 @@ class SubscriptionParser:
             # 解析节点信息
             nodes = self._parse_nodes(response_text)
             
-            # 提取机场名称（优先从响应头 Content-Disposition 提取）
-            airport_name = self._extract_airport_name(nodes, url, response_headers)
+            # 提取机场名称 (多维度：响应头、文件头注释、路径解析)
+            airport_name = self._extract_airport_name(nodes, url, response_headers, response_text)
+
             
             # 统计节点信息
             node_stats = await self._analyze_nodes(nodes)
@@ -98,9 +99,10 @@ class SubscriptionParser:
         from utils.retry_utils import async_retry_on_failure
         import aiohttp
         
-        # 伪装成 Clash 客户端，以便服务器返回流量信息
+        # 模拟 Clash Verge 客户端指纹，诱导更多机场返回详细 Metadata 响应头
         headers = {
-            'User-Agent': 'ClashForAndroid/2.5.12'
+            'User-Agent': 'Clash-verge/1.3.8 (Windows NT 10.0; Win64; x64) AppleWebkit/537.36',
+            'Accept': '*/*'
         }
         
         # 确保有可用的 session
@@ -367,87 +369,101 @@ class SubscriptionParser:
         
         return "未命名节点"
     
-    def _extract_airport_name(self, nodes, url, headers=None):
+    def _extract_airport_name(self, nodes, url, headers=None, content=None):
         """
-        提取机场名称 (深度优化版：支持路径提取与 TLD 过滤)
+        提取机场名称 (全维度：响应头 -> 文件注释 -> 路径 -> 域名 -> 节点前缀)
         """
-        # 1. 初始化黑名单与清洗函数
         BAD_KEYWORDS = [
             '过期', '到期', '流量', '剩余', 'GB', 'TB', '官网', '发布', '地址', 
             '通知', '维护', '重置', '套餐', '客服', '注册', '新加坡', '美国', '香港', 
-            '台湾', '日本', '韩国', '节点', '测速', 'v1', 'client', 'subscribe', 'api'
+            '台湾', '日本', '韩国', '节点', '测速', 'v1', 'client', 'subscribe', 'api', 'sub'
         ]
-        COMMON_TLDS = [
-            'com', 'net', 'org', 'me', 'io', 'cc', 'top', 'api', 'sub', 'www', 
-            'link', 'best', 'xyz', 'shop', 'info', 'site', 'work', 'cloud', 'vip'
-        ]
+        COMMON_TLDS = ['com', 'net', 'org', 'me', 'io', 'cc', 'top', 'xyz', 'shop', 'info', 'site', 'link', 'cloud', 'vip', 'best']
 
-        def is_bad_name(name):
-            if not name or len(name) < 2: return True
-            if name.isdigit() or len(name) > 20: return True # 纯数字或太长的通常不是好名字
-            if not re.search(r'[\u4e00-\u9fa5a-zA-Z]', name): return True
-            return any(kw in name for kw in BAD_KEYWORDS)
+        def is_trash(s):
+            if not s or len(s) < 2: return True
+            if s.isdigit() or len(s) > 30: return True 
+            # 如果没有中文字符，进行更严格的乱码检测
+            if not re.search(r'[\u4e00-\u9fa5]', s):
+                # 特征分析：高熵值（无意义组合）或明显的 Token 特征（数字+大小写混合长串）
+                has_digit = any(c.isdigit() for c in s)
+                has_upper = any(c.isupper() for c in s)
+                has_lower = any(c.islower() for c in s)
+                # 典型的 12/16 位乱码 token 过滤
+                if len(s) > 6 and has_digit and has_upper and has_lower: return True
+                # 香农熵阈值稍微拉低一点，对纯英文环境更敏感
+                if len(s) > 6 and self._shannon_entropy(s) > 3.0: return True
+            return any(kw in s for kw in BAD_KEYWORDS)
 
-        parsed_url = urlparse(url)
-        
-        # 2. 极高优先级：Content-Disposition
+
+        # 1. 维度一：响应头 (权重最高)
         if headers:
-            cd = headers.get('Content-Disposition', '')
-            if cd:
+            # profile-title / x-airport-name / x-profile-name 是目前最标准、可信度最高的自定义标题头
+            title = headers.get('profile-title') or headers.get('x-airport-name') or headers.get('x-profile-name')
+            if title:
+                title = unquote(title).strip()
+                if not is_trash(title): return title
+
+
+            # Content-Disposition 文件名提取
+            cd = headers.get('content-disposition', '')
+            if 'filename' in cd:
                 try:
-                    filename = None
+                    fn = None
                     if "filename*=" in cd:
-                        part = cd.split("filename*=")[1].split(";")[0].strip()
-                        if part.lower().startswith("utf-8''"): filename = unquote(part[7:])
-                    elif "filename=" in cd:
-                        filename = cd.split("filename=")[1].split(";")[0].strip('"')
-                    if filename:
-                        name = re.sub(r'\.(yaml|yml|txt|conf)$', '', filename, flags=re.IGNORECASE)
+                        fn = unquote(cd.split("filename*=")[1].split(";")[0].strip().replace("utf-8''", ""))
+                    else:
+                        fn = cd.split("filename=")[1].split(";")[0].strip('"')
+                    if fn:
+                        name = re.sub(r'\.(yaml|yml|txt|conf)$', '', fn, flags=re.IGNORECASE)
                         name = unquote(name).strip()
-                        if not is_bad_name(name): return name
+                        if not is_trash(name): return name
                 except: pass
 
-        # 3. 高优先级：从 URL 路径 (Path) 中提取（解决类似 /hui/ 这种场景）
-        path_parts = [p for p in parsed_url.path.split('/') if p]
-        for part in path_parts:
-            # 过滤掉已知的 API 路径和随机长字符串（可能是 token）
-            if not is_bad_name(part) and len(part) < 15 and not re.match(r'^[a-f0-9]{20,}$', part):
-                # 移除文件扩展名
-                clean_part = re.sub(r'\.(yaml|yml|txt|conf)$', '', part, flags=re.IGNORECASE)
-                if not is_bad_name(clean_part):
-                    return clean_part
+        # 2. 维度二：文件内容扫描 (针对 YAML 格式)
+        if content and (content.startswith('#') or 'proxies:' in content[:1000]):
+            first_line = content.split('\n', 1)[0].strip()
+            if first_line.startswith('#'):
+                # 很多机场首行是备注 # XXX机场
+                comment_title = first_line.lstrip('# ').strip()
+                if comment_title and not is_trash(comment_title):
+                    # 剔除常见的节点信息后缀
+                    comment_title = re.sub(r' (v1|v2|v3|update|check|node).*$', '', comment_title, flags=re.IGNORECASE)
+                    return comment_title
 
-        # 4. 中优先级：从域名中提取品牌名 (排除端口和通用 TLD)
+        # 3. 维度三：URL 路径 (Path)
+        parsed = urlparse(url)
+        path_parts = [p for p in parsed.path.split('/') if p]
+        for part in reversed(path_parts): # 倒着找更可能是文件名
+            clean = re.sub(r'\.(yaml|yml|txt|conf)$', '', part, flags=re.IGNORECASE)
+            if not is_trash(clean): return clean
+
+        # 4. 维度四：域名品牌 (Domain Brand)
         try:
-            domain = parsed_url.netloc.split(':')[0] # 彻底移除端口号
-            domain_parts = domain.split('.')
-            if len(domain_parts) >= 2:
-                brand_candidates = [p for p in domain_parts if p.lower() not in COMMON_TLDS]
-                if brand_candidates:
-                    # 优先取包含字母的品牌名
-                    for cand in reversed(brand_candidates):
-                        if not is_bad_name(cand): return cand
-                    # 如果全是数字（如 690423），那就取它
-                    final_cand = brand_candidates[-1]
-                    if len(final_cand) >= 2: return final_cand
+            domain = parsed.netloc.split(':')[0]
+            domain_parts = [p for p in domain.split('.') if p.lower() not in COMMON_TLDS and p.lower() not in ['api', 'sub', 'www', 'cdn']]
+            if domain_parts:
+                candidate = domain_parts[-1]
+                if not is_trash(candidate): return candidate
         except: pass
 
-        # 5. 低优先级：从节点前缀提取
+        # 5. 维度五：最末方案 - 节点共性
         if nodes:
-            node_names = [node['name'] for node in nodes if node.get('name')]
-            common_patterns = []
-            for name in node_names:
-                for sep in ['-', '|', ' ', ':', '/']:
+            prefixes = []
+            for n in nodes:
+                name = n.get('name', '')
+                for sep in ['-', '|', ' ', ':']:
                     if sep in name:
-                        prefix = name.split(sep)[0].strip()
-                        if prefix and not is_bad_name(prefix): common_patterns.append(prefix)
+                        p = name.split(sep)[0].strip()
+                        if p and not is_trash(p): prefixes.append(p)
                         break
-            if common_patterns:
+            if prefixes:
                 from collections import Counter
-                most_common = Counter(common_patterns).most_common(1)
-                if most_common and most_common[0][1] > (len(nodes) / 3): return most_common[0][0]
+                most = Counter(prefixes).most_common(1)
+                if most and most[0][1] > (len(nodes) / 3): return most[0][0]
 
         return "未知机场"
+
 
 
     
