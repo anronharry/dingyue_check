@@ -66,9 +66,10 @@ ALLOWED_USER_IDS = {
     int(uid) for uid in _raw_ids.split(',') if uid.strip().isdigit()
 }
 if not ALLOWED_USER_IDS:
-    logger.critical("🚨 ALLOWED_USER_IDS 未配置或为空！出于系统安全防范(Fail-Safe)，非 Owner 用户的访问已被锁死。")
+    logger.info("ℹ️ ALLOWED_USER_IDS 静态白名单为空，目前仅允许 Owner 或通过 /adduser 动态添加的用户使用机器人。")
 else:
-    logger.info(f"✅ 用户白名单已部分启用，当前共 {len(ALLOWED_USER_IDS)} 个授权用户")
+    logger.info(f"✅ 用户白名单已部分启用，当前共有 {len(ALLOWED_USER_IDS)} 个 ENV 级静态授权用户")
+
 
 # 初始化（延迟加载，节省内存）
 parser = None
@@ -200,11 +201,7 @@ def is_authorized(update: Update) -> bool:
     if user_manager.is_owner(uid):
         return True
         
-    # 规则 2: Default-Deny 原则。如果系统连一个白名单都没配，或者管理员列表为空，一律锁死防御。
-    if not ALLOWED_USER_IDS:
-        return False
-        
-    # 规则 3: 检查正常的用户授权池（通过 /adduser 动态添加或读取 ENV）
+    # 规则 2: 优先检查通过 /adduser 动态添加到数据库的用户池，以及环境变量设置的静态名单
     return user_manager.is_authorized(uid) or uid in ALLOWED_USER_IDS
 
 def is_owner(update: Update) -> bool:
