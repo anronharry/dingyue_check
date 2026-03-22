@@ -42,8 +42,8 @@
 sudo apt update && sudo apt install -y git python3 python3-pip python3-venv
 
 # 2. 克隆项目代码
-git clone https://github.com/anronharry/Gipson_check.git
-cd Gipson_check
+git clone https://github.com/anronharry/dingyue_check.git
+cd dingyue_check
 
 # 3. 创建虚拟环境 (隔离环境，防止冲突)
 python3 -m venv venv

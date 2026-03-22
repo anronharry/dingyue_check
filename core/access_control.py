@@ -71,7 +71,5 @@ class UserManager:
 
     def is_authorized(self, user_id: int) -> bool:
         """检查是否为授权用户"""
-        # 如果未配置任何权限（既没有 Owner 也没有授权用户），则默认为开放模式
-        if self.owner_id <= 0 and not self.authorized_users:
-            return True
+        # 移除危险的“未配置即开放”回退逻辑，强制依赖白名单与 Owner
         return user_id in self.authorized_users

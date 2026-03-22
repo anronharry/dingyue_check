@@ -830,7 +830,19 @@ async def list_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 
+async def refresh_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """手动刷新快捷菜单调试指令 (Owner Only)"""
+    if not is_owner(update):
+        return
+    await update.message.reply_text("⏳ 正在尝试重新推送快捷菜单...")
+    try:
+        await post_init(context.application)
+        await update.message.reply_text("✅ 菜单重新注册请求已发送。请尝试给机器人发送 /start 或『彻底退出并重启 Telegram App』来强制刷新手机缓存。")
+    except Exception as e:
+        await update.message.reply_text(f"❌ 菜单注册失败: {e}")
+
 async def globallist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     """全局订阅总览：按用户分组展示所有订阅 (Owner Only)"""
     if not is_owner(update):
         await update.message.reply_text("❌ 该操作仅限 Owner 使用")
@@ -1509,6 +1521,8 @@ def main():
     application.add_handler(CommandHandler("to_txt", to_txt_command))
     application.add_handler(CommandHandler("deepcheck", deepcheck_command))
     application.add_handler(CommandHandler("delete", delete_command))
+    application.add_handler(CommandHandler("refresh_menu", refresh_menu_command))
+
     application.add_handler(CallbackQueryHandler(button_callback))
 
     # [性能优化] 启动后台定期清理 URL 缓存任务 (每 10 分钟一次)
