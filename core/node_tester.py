@@ -11,6 +11,10 @@ import yaml
 import zipfile
 import subprocess
 import unicodedata
+import asyncio
+import importlib
+from pathlib import Path
+from dataclasses import dataclass
 # from tqdm import tqdm
 from core.converters.ss_converter import SSNodeConverter
 from core.session_logger import get_logger
@@ -26,7 +30,7 @@ print_lock = asyncio.Lock()
 # 归档目录：存放全节点失效的文件，供用户手动审查删除
 # 路径通过 config.OLD_FILE_DIR_NAME 统一管理，避免硬编码
 # 使用 Path 对象以支持 / 路径拼接运算符
-OLD_FILE_DIR = _cfg.BASE_DIR / _cfg.OLD_FILE_DIR_NAME
+OLD_FILE_DIR = Path(_cfg.BASE_DIR) / _cfg.OLD_FILE_DIR_NAME
 
 # ── 显示相关命名常量 ──────────────────────────────────────
 _NAME_TRUNCATE_LEN = 60   # 节点名称在测速输出中的最大字符数
@@ -300,7 +304,7 @@ async def _handle_url_file(
     # 导出有效订阅为 TXT
     if valid_sub_urls:
         try:
-            txt_dir   = _cfg.BASE_DIR / _cfg.TXT_FOLDER
+            txt_dir   = Path(_cfg.BASE_DIR) / _cfg.TXT_FOLDER
             txt_dir.mkdir(parents=True, exist_ok=True)
             base_name = Path(target_file).stem
             now_tag   = _dt.now().strftime('%Y%m%d_%H%M%S')
@@ -402,7 +406,7 @@ async def _process_single_file(ctx: _NodeTestContext) -> None:
         if do_export:
             try:
                 survived = [n for n in final_nodes if n["name"] in valid_names]
-                yaml_dir = _cfg.BASE_DIR / _cfg.YAML_FOLDER
+                yaml_dir = Path(_cfg.BASE_DIR) / _cfg.YAML_FOLDER
                 yaml_dir.mkdir(parents=True, exist_ok=True)
                 base     = Path(target_file).stem
                 out_path = yaml_dir / f"{base}_通过_{_dt.now().strftime('%Y%m%d_%H%M%S')}.yaml"
