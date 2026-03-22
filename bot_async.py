@@ -471,7 +471,8 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for item in success_results:
         remaining = format_traffic(item['remaining'])
         url = item['url']
-        msg = f"<b>✅ {item['name']}</b>\n剩余: {remaining}"
+        safe_name = html.escape(item['name'])
+        msg = f"<b>✅ {safe_name}</b>\n剩余: {remaining}"
         if item.get('expire_time'): msg += f" | 到期: {item['expire_time']}"
         msg += f"\n<code>{url}</code>"
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=make_sub_keyboard(url))
@@ -545,12 +546,13 @@ async def checkall_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for item in others_success:
             report += f"👤 <code>{item['owner_uid']}</code>\n  └ <b>{item['name']}</b>\n  └ <code>{item['url']}</code>\n"
 
-    # 2. 展示失效订阅并指明归属
-    if failed_results:
-        report += "\n<b>❌ 已清理的失效订阅:</b>\n"
-        for item in failed_results:
-            owner_label = "Owner" if item['owner_uid'] == owner_id else f"用户 {item['owner_uid']}"
-            report += f"• [{owner_label}] <b>{item['name']}</b>\n  └ 原因: {str(item.get('error', '未知'))[:50]}\n"
+    # 2. 展示他人的失效订阅并指明归属
+    others_failed = [r for r in failed_results if r['owner_uid'] != owner_id]
+    if others_failed:
+        report += "\n<b>❌ 已清理的他人的失效订阅:</b>\n"
+        for item in others_failed:
+            safe_name = html.escape(item['name'])
+            report += f"• [用户 {item['owner_uid']}] <b>{safe_name}</b>\n  └ 原因: {html.escape(str(item.get('error', '未知'))[:50])}\n"
 
     if not others_success and not failed_results:
         report += "\n✨ 除 Owner 外无其他人的订阅变动。"
@@ -887,8 +889,9 @@ async def globallist_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             expire = data.get('expire_time', '')
             # 状态判定：流量耗尽则红叉
             status = "❌" if remaining is not None and remaining <= 0 else "✅"
+            safe_name = html.escape(name)
             
-            line = f"  └ {status} <b>{name}</b>"
+            line = f"  └ {status} <b>{safe_name}</b>"
             if remaining is not None: line += f" | {format_traffic(remaining)}"
             if expire: line += f" | {expire[:10]}"
             
@@ -1351,8 +1354,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     _cleanup_url_cache()
-    cache_entry = url_cache.get(hash_key)
-    url = cache_entry.get('url') if cache_entry else None
+    url = url_cache.get(hash_key, {}).get('url')
+    
+    # [核心修复] 如果重启导致内存缓存丢失，通过 MD5 散列全量匹配数据库中的 URL (解决重启后按钮失效)
+    if not url:
+        all_urls = store.get_all().keys()
+        for u in all_urls:
+            if hashlib.md5(u.encode('utf-8')).hexdigest()[:16] == hash_key:
+                url = u
+                # 自动找回后回填缓存，保障后续在该消息上的操作
+                url_cache[hash_key] = {'url': url, 'ts': time.time()}
+                break
+
     if not url:
         await query.answer("交互按钮已过期，请重新发送链接进行操作！", show_alert=True)
         return
