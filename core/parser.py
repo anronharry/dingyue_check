@@ -369,22 +369,28 @@ class SubscriptionParser:
     
     def _extract_airport_name(self, nodes, url, headers=None):
         """
-        提取机场名称 (优化版：抗干扰提取)
+        提取机场名称 (深度优化版：支持路径提取与 TLD 过滤)
         """
-        # 脏词/干扰项黑名单：包含这些词的通常不是机场名，而是广告或状态信息
+        # 1. 初始化黑名单与清洗函数
         BAD_KEYWORDS = [
             '过期', '到期', '流量', '剩余', 'GB', 'TB', '官网', '发布', '地址', 
             '通知', '维护', '重置', '套餐', '客服', '注册', '新加坡', '美国', '香港', 
-            '台湾', '日本', '韩国', '节点', '测速'
+            '台湾', '日本', '韩国', '节点', '测速', 'v1', 'client', 'subscribe', 'api'
+        ]
+        COMMON_TLDS = [
+            'com', 'net', 'org', 'me', 'io', 'cc', 'top', 'api', 'sub', 'www', 
+            'link', 'best', 'xyz', 'shop', 'info', 'site', 'work', 'cloud', 'vip'
         ]
 
         def is_bad_name(name):
-            if len(name) < 2: return True
-            # 如果名字里全是表情符号或特殊符号，也是垃圾
-            if not re.search(r'[\u4e00-\u9fa5a-zA-Z0-9]', name): return True
+            if not name or len(name) < 2: return True
+            if name.isdigit() or len(name) > 20: return True # 纯数字或太长的通常不是好名字
+            if not re.search(r'[\u4e00-\u9fa5a-zA-Z]', name): return True
             return any(kw in name for kw in BAD_KEYWORDS)
 
-        # 1. 极高优先级：Content-Disposition (这是服务商显式指定的文件名，最高信度)
+        parsed_url = urlparse(url)
+        
+        # 2. 极高优先级：Content-Disposition
         if headers:
             cd = headers.get('Content-Disposition', '')
             if cd:
@@ -392,55 +398,57 @@ class SubscriptionParser:
                     filename = None
                     if "filename*=" in cd:
                         part = cd.split("filename*=")[1].split(";")[0].strip()
-                        if part.lower().startswith("utf-8''"):
-                            filename = unquote(part[7:])
+                        if part.lower().startswith("utf-8''"): filename = unquote(part[7:])
                     elif "filename=" in cd:
                         filename = cd.split("filename=")[1].split(";")[0].strip('"')
-                    
                     if filename:
                         name = re.sub(r'\.(yaml|yml|txt|conf)$', '', filename, flags=re.IGNORECASE)
                         name = unquote(name).strip()
-                        if not is_bad_name(name):
-                            return name
+                        if not is_bad_name(name): return name
                 except: pass
-        
-        # 2. 高优先级：从域名中提取品牌名 (排除 sub, api 等前缀)
+
+        # 3. 高优先级：从 URL 路径 (Path) 中提取（解决类似 /hui/ 这种场景）
+        path_parts = [p for p in parsed_url.path.split('/') if p]
+        for part in path_parts:
+            # 过滤掉已知的 API 路径和随机长字符串（可能是 token）
+            if not is_bad_name(part) and len(part) < 15 and not re.match(r'^[a-f0-9]{20,}$', part):
+                # 移除文件扩展名
+                clean_part = re.sub(r'\.(yaml|yml|txt|conf)$', '', part, flags=re.IGNORECASE)
+                if not is_bad_name(clean_part):
+                    return clean_part
+
+        # 4. 中优先级：从域名中提取品牌名 (排除端口和通用 TLD)
         try:
-            parsed_url = urlparse(url)
-            domain = parsed_url.netloc
-            # 常见域名模式：airport-name.com, sub.airport.me
-            # 尝试提取主域名部分作为品牌
+            domain = parsed_url.netloc.split(':')[0] # 彻底移除端口号
             domain_parts = domain.split('.')
             if len(domain_parts) >= 2:
-                # 排除通用后缀
-                brand_candidates = [p for p in domain_parts if p.lower() not in ['com', 'net', 'org', 'me', 'io', 'cc', 'top', 'api', 'sub', 'www', 'link', 'best']]
+                brand_candidates = [p for p in domain_parts if p.lower() not in COMMON_TLDS]
                 if brand_candidates:
-                    # 取最像名字的那部分（通常是倒数第二个或第一个）
-                    brand = brand_candidates[-1]
-                    if len(brand) > 2 and not is_bad_name(brand):
-                        return brand
+                    # 优先取包含字母的品牌名
+                    for cand in reversed(brand_candidates):
+                        if not is_bad_name(cand): return cand
+                    # 如果全是数字（如 690423），那就取它
+                    final_cand = brand_candidates[-1]
+                    if len(final_cand) >= 2: return final_cand
         except: pass
 
-        # 3. 低优先级：从节点前缀提取 (容易被地名干扰，需严格过滤)
+        # 5. 低优先级：从节点前缀提取
         if nodes:
             node_names = [node['name'] for node in nodes if node.get('name')]
             common_patterns = []
             for name in node_names:
-                # 提取分隔符前的部分
                 for sep in ['-', '|', ' ', ':', '/']:
                     if sep in name:
                         prefix = name.split(sep)[0].strip()
-                        if prefix and not is_bad_name(prefix):
-                            common_patterns.append(prefix)
+                        if prefix and not is_bad_name(prefix): common_patterns.append(prefix)
                         break
-            
             if common_patterns:
                 from collections import Counter
                 most_common = Counter(common_patterns).most_common(1)
-                if most_common and most_common[0][1] > (len(nodes) / 3): # 至少 1/3 的节点都有这个前缀
-                    return most_common[0][0]
+                if most_common and most_common[0][1] > (len(nodes) / 3): return most_common[0][0]
 
         return "未知机场"
+
 
     
     async def _analyze_nodes(self, nodes):
