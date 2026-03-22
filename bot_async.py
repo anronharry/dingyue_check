@@ -12,6 +12,7 @@ import time
 import hashlib
 from collections import OrderedDict
 from datetime import datetime
+import html
 from dotenv import load_dotenv
 
 if sys.platform == 'win32':
