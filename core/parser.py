@@ -357,18 +357,18 @@ class SubscriptionParser:
             if not s or len(s) < 2: return True
             if s.isdigit() or len(s) > 30: return True 
             if not re.search(r'[\u4e00-\u9fa5]', s):
-                has_digit = any(c.isdigit() for c in s)
-                has_upper = any(c.isupper() for c in s)
-                has_lower = any(c.islower() for c in s)
-                if len(s) > 6 and has_digit and has_upper and has_lower: return True
-                if len(s) > 6 and self._shannon_entropy(s) > 3.0: return True
+                # 针对纯英文：放宽熵值。TigerCloud(10位全异)熵约为3.32，调至3.8可保。
+                # 只有同时具备数字+大小写且较长时，才视为 Token 彻底过滤
+                if len(s) > 8 and any(c.isdigit() for c in s) and any(c.isupper() for c in s):
+                    if self._shannon_entropy(s) > 3.0: return True
+                if len(s) > 6 and self._shannon_entropy(s) > 3.8: return True
             return any(kw in s for kw in BAD_KEYWORDS)
 
         # 1. 响应头解析 (profile-title / Content-Disposition)
         if headers:
+            # 兼容更多常见标题头
             raw_title = headers.get('profile-title') or headers.get('x-airport-name') or headers.get('x-profile-name')
             if raw_title:
-                # [核心修复] 彻底解决 UTF-8"魔戒 这种非标编码前缀干扰
                 raw_title = re.sub(r'^(?i)utf-8[\'"]*', '', raw_title.strip())
                 title = unquote(raw_title).strip().strip('"').strip("'").strip()
                 if not is_trash(title): return title
@@ -384,32 +384,36 @@ class SubscriptionParser:
                         if not is_trash(name): return name
                 except: pass
 
-        # 2. 文件内容扫描
+        # 2. 文件内容扫描 (Dimension 2)
         if content:
             sample = content[:500]
+            # 支持 #! 标记或普通的注释标题
             if sample.startswith('#') or 'proxies:' in sample:
                 first_line = sample.split('\n', 1)[0].strip()
-                if first_line.startswith('#'):
-                    comment_title = first_line.lstrip('# ').strip()
+                if first_line.startswith(('#', '//')):
+                    comment_title = first_line.lstrip('#/ ').strip()
                     if comment_title and not is_trash(comment_title):
                         comment_title = re.sub(r'[ \-(](v\d+|20\d{2}|update|check).*$', '', comment_title, flags=re.IGNORECASE)
                         return comment_title
 
-        # 3. 节点前缀深度分析 (针对 SakuraCat 这类隐性机场)
+        # 3. 节点前缀深度分析 (针对 SakuraCat/TigerCloud 这类隐性机场)
         if nodes:
             prefixes = []
             for n in nodes:
                 name = n.get('name', '')
-                m = re.match(r'^([^| \-—:：/]+)', name)
+                # 提取第一个具有识别度的部分
+                m = re.match(r'^([^| \-—:：/.]+)', name)
                 if m:
                     p = m.group(1).strip()
-                    if p and not is_trash(p): prefixes.append(p)
+                    # 只要字符长度大于3，且不是地名关键词，就视为潜在品牌
+                    if len(p) >= 3 and not any(kw in p for kw in ['香港', '美国', '台湾', '日本', '新加坡', '韩国']):
+                        prefixes.append(p)
             
             if prefixes:
                 from collections import Counter
                 most = Counter(prefixes).most_common(1)
-                # 判定阈值：只要有 25% 以上的节点带此共性且非地名，就判定为品牌名
-                if most and most[0][1] > (len(nodes) * 0.25):
+                # 判定阈值：只要有 30% 以上的节点带此共性，就判定为品牌名
+                if most and most[0][1] >= (len(nodes) * 0.3):
                     return most[0][0]
 
         # 4. URL 路径解析
