@@ -5,14 +5,10 @@
 
 import base64
 import re
-import requests
 import yaml
-from requests.adapters import HTTPAdapter
 from urllib.parse import urlparse, parse_qs, unquote
 from datetime import datetime
-
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import math
 
 from core import node_extractor as ip_extractor
 from core import geo_service
@@ -21,33 +17,28 @@ from core import geo_service
 class SubscriptionParser:
     """订阅解析器"""
     
-    def __init__(self, proxy_port=7890, use_proxy=False):
+    def __init__(self, proxy_port=7890, use_proxy=False, session=None):
         """
         初始化解析器
         
         Args:
             proxy_port: 代理端口，默认 7890
             use_proxy: 是否使用代理，默认 False
+            session: 复用的 aiohttp.ClientSession 对象
         """
         self.proxy_port = proxy_port
         self.use_proxy = use_proxy
         
         if use_proxy:
-            self.proxies = {
-                'http': f'http://127.0.0.1:{proxy_port}',
-                'https': f'http://127.0.0.1:{proxy_port}'
-            }
+            self.proxy_url = f'http://127.0.0.1:{proxy_port}'
         else:
-            self.proxies = None
+            self.proxy_url = None
 
-        self.session = requests.Session()
-        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=1)
-        self.session.mount('http://', adapter)
-        self.session.mount('https://', adapter)
+        self.session = session
     
-    def parse(self, url):
+    async def parse(self, url):
         """
-        解析订阅链接
+        解析订阅链接 (Async)
         
         Args:
             url: 订阅链接
@@ -57,19 +48,23 @@ class SubscriptionParser:
         """
         try:
             # 下载订阅内容
-            response = self._download_subscription(url)
+            response_text, response_headers = await self._download_subscription(url)
+            
+            # 使用高级鉴伪（防机场跑路的拦截页面 200 OK）
+            if self._is_pseudo_200_response(response_text, response_headers):
+                raise Exception("检测到伪装的存活页面(可能服务商已跑路或节点全倒)，判定为失效源")
             
             # 解析流量信息（从响应头）
-            traffic_info = self._parse_traffic_info(response.headers)
+            traffic_info = self._parse_traffic_info(response_headers)
             
             # 解析节点信息
-            nodes = self._parse_nodes(response.text)
+            nodes = self._parse_nodes(response_text)
             
             # 提取机场名称（优先从响应头 Content-Disposition 提取）
-            airport_name = self._extract_airport_name(nodes, url, response.headers)
+            airport_name = self._extract_airport_name(nodes, url, response_headers)
             
             # 统计节点信息
-            node_stats = self._analyze_nodes(nodes)
+            node_stats = await self._analyze_nodes(nodes)
             
             # 如果节点数为 0，视为订阅失效或无法解析
             if len(nodes) == 0:
@@ -85,41 +80,96 @@ class SubscriptionParser:
             
             return result
             
-        except requests.RequestException as e:
+        except aiohttp.ClientError as e:
             raise Exception(f"下载订阅失败: {str(e)}")
         except Exception as e:
             raise Exception(f"解析订阅失败: {str(e)}")
     
-    def _download_subscription(self, url):
+    async def _download_subscription(self, url):
         """
-        下载订阅内容（带重试机制）
+        下载订阅内容（带重试机制，Async）
         
         Args:
             url: 订阅链接
             
         Returns:
-            Response: HTTP 响应对象
+            tuple: (text, headers字典)
         """
-        from utils.retry_utils import retry_on_failure
+        from utils.retry_utils import async_retry_on_failure
+        import aiohttp
         
         # 伪装成 Clash 客户端，以便服务器返回流量信息
         headers = {
             'User-Agent': 'ClashForAndroid/2.5.12'
         }
         
-        @retry_on_failure(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
-        def _fetch():
-            response = self.session.get(
+        # 确保有可用的 session
+        session_to_use = self.session
+        close_session = False
+        if session_to_use is None:
+            connector = aiohttp.TCPConnector(limit=10)
+            session_to_use = aiohttp.ClientSession(connector=connector)
+            close_session = True
+            
+        @async_retry_on_failure(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
+        async def _fetch():
+            async with session_to_use.get(
                 url,
                 headers=headers,
-                proxies=self.proxies,  # 如果 use_proxy=False，这里会是 None
-                timeout=30,
-                verify=False  # 跳过 SSL 验证，支持自签证书
-            )
-            response.raise_for_status()
-            return response
+                proxy=self.proxy_url,
+                timeout=aiohttp.ClientTimeout(total=30),
+                ssl=False  # 跳过 SSL 验证，支持自签证书
+            ) as response:
+                response.raise_for_status()
+                text = await response.text()
+                # 转换 headers 为常规字典进行大小写不敏感匹配
+                resp_headers = {k.lower(): v for k, v in response.headers.items()}
+                return text, resp_headers
         
-        return _fetch()
+        try:
+            return await _fetch()
+        finally:
+            if close_session:
+                await session_to_use.close()
+        
+    def _shannon_entropy(self, data: str) -> float:
+        """计算文本数据的香农信息熵"""
+        if not data:
+            return 0
+        entropy = 0
+        for x in set(data):
+            p_x = float(data.count(x)) / len(data)
+            if p_x > 0:
+                entropy += - p_x * math.log(p_x, 2)
+        return entropy
+
+    def _is_pseudo_200_response(self, content: str, headers: dict) -> bool:
+        """强化版特征库级：联合拦截流氓拦截页面的伪 200 问题"""
+        content_lower = content.lower()
+        
+        # 策略 1: HTTP Header 指纹
+        content_type = headers.get('Content-Type', '').lower()
+        if 'text/html' in content_type:
+            # 绝大多数订阅是纯文本或二进制，若返回 HTML 且包含常见错误词，判定为伪活
+            if any(x in content_lower for x in ['error', 'forbidden', 'blocked', 'firewall', '拦截', '参数错误', '未找到']):
+                return True
+
+        # 策略 2: 极短内容的特征识别
+        if 0 < len(content) < 50:
+            if any(x in content_lower for x in ['forbidden', 'not found', 'error']):
+                return True
+            
+        # 策略 3: 信息熵校验。标准 Base64 编码的订阅节点具备极高的熵值 (> 4.8)
+        # 而运营商拦截页、WAF 盾页面的熵值往往偏低 (< 4.2)
+        if len(content) > 100:
+            entropy = self._shannon_entropy(content)
+            # 专家阈值设定：4.25 是区分压缩内容与自然语言报错页的黄金分割点
+            if entropy < 4.25:
+                # 二次确认：如果熵值低且包含大量 HTML 标签，必死无疑
+                if re.search(r"<(html|head|body|script|div|a)", content_lower):
+                    return True
+
+        return False
     
     def _parse_traffic_info(self, headers):
         """
@@ -394,9 +444,9 @@ class SubscriptionParser:
         
         return "未知机场"
     
-    def _analyze_nodes(self, nodes):
+    async def _analyze_nodes(self, nodes):
         """
-        分析节点统计信息(使用真实IP地理位置查询，并发版本)
+        分析节点统计信息(使用真实IP地理位置查询，全异步版本)
 
         Args:
             nodes: 节点列表
@@ -405,8 +455,8 @@ class SubscriptionParser:
             dict: 统计信息(国家/地区、协议分布、详细位置)
         """
         from collections import Counter
-        from concurrent.futures import ThreadPoolExecutor, as_completed
         import config
+        import asyncio
 
         # 统计协议
         protocols = [node.get('protocol', 'unknown') for node in nodes]
@@ -428,7 +478,6 @@ class SubscriptionParser:
         geo_client = GeoLocationService()
 
         MAX_GEO_QUERIES = config.MAX_GEO_QUERIES
-        MAX_WORKERS = config.GEO_LOOKUP_MAX_WORKERS
 
         # 第一步：提取每个节点的 IP（串行，纯内存操作，无 IO）
         node_ip_pairs = []
@@ -445,14 +494,15 @@ class SubscriptionParser:
 
         if geo_nodes:
             unique_ips = list({ip for _, ip in geo_nodes})
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                future_to_ip = {executor.submit(geo_client.get_location, ip): ip for ip in unique_ips}
-                for future in as_completed(future_to_ip):
-                    ip = future_to_ip[future]
-                    try:
-                        geo_results[ip] = future.result()
-                    except Exception:
-                        geo_results[ip] = None
+            # 采用 asyncio.gather 代替 ThreadPoolExecutor
+            tasks = [geo_client.get_location(ip) for ip in unique_ips]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for ip, res in zip(unique_ips, results):
+                if isinstance(res, Exception):
+                    geo_results[ip] = None
+                else:
+                    geo_results[ip] = res
 
         # 第三步：组合结果，保持原节点顺序
         countries = []

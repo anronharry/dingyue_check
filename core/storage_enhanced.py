@@ -6,13 +6,17 @@
 import os
 import json
 import logging
+import asyncio
 from datetime import datetime
 from typing import Dict, List, Any
 
+from core.workspace_manager import WorkspaceManager
+
 logger = logging.getLogger(__name__)
 
-DATA_DIR = "data"
-DATA_FILE = os.path.join(DATA_DIR, "subscriptions.json")
+ws_manager = WorkspaceManager("data")
+DATA_DIR = ws_manager.db_dir
+DATA_FILE = ws_manager.get_subscription_db_path()
 
 
 class SubscriptionStorage:
@@ -56,8 +60,8 @@ class SubscriptionStorage:
                 return {}
         return {}
 
-    def _save_data(self):
-        """保存数据到文件"""
+    def _save_data_blocking(self):
+        """同步方法：保存数据到文件（底层执行逻辑）"""
         try:
             # 使用临时文件 + 原子重命名，避免写入中断导致数据丢失
             temp_file = self.data_file + '.tmp'
@@ -69,8 +73,18 @@ class SubscriptionStorage:
         except Exception as e:
             logger.error(f"保存订阅数据失败: {e}")
 
+    def _save_data(self):
+        """将实际的文件读写卸载到后台线程，避免阻塞主循环 (Async 优化)"""
+        try:
+            # 获取当前上下文所在的事件循环。若处于纯同步上下文，允许捕获异常退回到同步模式或忽略
+            loop = asyncio.get_running_loop()
+            loop.create_task(asyncio.to_thread(self._save_data_blocking))
+        except RuntimeError:
+            # 非 asyncio 环境 (例如正在跑 pytest 同步测试)，直接同步落盘
+            self._save_data_blocking()
+
     def _mark_dirty(self):
-        """标记数据已变更，在非批处理模式下立即落盘。"""
+        """标记数据已变更，在非批处理模式下立即触发落盘流。"""
         self._dirty = True
         if self._batch_depth == 0:
             self._save_data()
@@ -88,15 +102,20 @@ class SubscriptionStorage:
             self._save_data()
             self._dirty = False
 
-    def add_or_update(self, url: str, info: Dict[str, Any]):
+    def add_or_update(self, url: str, info: Dict[str, Any], user_id: int = 0):
         """
         添加或更新订阅
 
         Args:
             url: 订阅链接
             info: 解析后的订阅信息
+            user_id: 添加者的 Telegram user_id，0 表示保持原有属主
         """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 确定 owner_uid：优先保持已有的，假如是新订阅则使用传入的 user_id
+        existing_owner = self.subscriptions.get(url, {}).get('owner_uid', 0)
+        owner_uid = existing_owner if existing_owner else user_id
 
         data = {
             'name': info.get('name', '未知订阅'),
@@ -108,6 +127,7 @@ class SubscriptionStorage:
             'used': info.get('used', 0),
             'remaining': info.get('remaining', 0),
             'last_check_status': 'success',
+            'owner_uid': owner_uid,
             'tags': []
         }
 
@@ -126,6 +146,38 @@ class SubscriptionStorage:
         """获取所有订阅"""
         return self.subscriptions
 
+    def get_by_user(self, user_id: int) -> Dict[str, Dict[str, Any]]:
+        """按用户 ID 获取其所有订阅"""
+        return {
+            url: data
+            for url, data in self.subscriptions.items()
+            if data.get('owner_uid', 0) == user_id
+        }
+
+    def get_grouped_by_user(self) -> Dict[int, Dict[str, Dict[str, Any]]]:
+        """将所有订阅按 owner_uid 分组返回（Owner 全局视图用）"""
+        grouped: Dict[int, Dict[str, Dict[str, Any]]] = {}
+        for url, data in self.subscriptions.items():
+            uid = data.get('owner_uid', 0)
+            grouped.setdefault(uid, {})[url] = data
+        return grouped
+
+    def migrate_subscriptions(self, default_owner_id: int) -> int:
+        """
+        旧数据迁移：将所有缺少 owner_uid 或 owner_uid=0 的订阅
+        归属到 default_owner_id（通常是 OWNER_ID）。
+        返回迁移的条数。
+        """
+        count = 0
+        for data in self.subscriptions.values():
+            if not data.get('owner_uid'):
+                data['owner_uid'] = default_owner_id
+                count += 1
+        if count:
+            self._mark_dirty()
+            logger.info(f"数据迁移完成：{count} 条订阅已归属到 UID {default_owner_id}")
+        return count
+
     def get_by_tag(self, tag: str) -> Dict[str, Dict[str, Any]]:
         """按标签获取订阅"""
         return {
@@ -133,6 +185,26 @@ class SubscriptionStorage:
             for url, data in self.subscriptions.items()
             if tag in data.get('tags', [])
         }
+
+    def get_user_statistics(self, user_id: int) -> Dict[str, Any]:
+        """获取指定用户的统计信息"""
+        user_subs = self.get_by_user(user_id)
+        return self._calc_statistics(user_subs)
+
+    def remove(self, url: str, operator_uid: int = 0, require_owner: bool = False) -> bool:
+        """删除订阅。require_owner=True 时校验操作者是否是订阅的 owner。"""
+        if url not in self.subscriptions:
+            return False
+        if require_owner and operator_uid:
+            sub_owner = self.subscriptions[url].get('owner_uid', 0)
+            if sub_owner and sub_owner != operator_uid:
+                logger.warning(f"UID {operator_uid} 尝试删除 UID {sub_owner} 的订阅，已拒绝")
+                return False
+        name = self.subscriptions[url].get('name', 'Unknown')
+        del self.subscriptions[url]
+        self._mark_dirty()
+        logger.info(f"已删除订阅: {name}")
+        return True
 
     def add_tag(self, url: str, tag: str) -> bool:
         """为订阅添加标签"""
@@ -173,15 +245,7 @@ class SubscriptionStorage:
             all_tags.update(data.get('tags', []))
         return sorted(list(all_tags))
 
-    def remove(self, url: str) -> bool:
-        """删除订阅"""
-        if url in self.subscriptions:
-            name = self.subscriptions[url].get('name', 'Unknown')
-            del self.subscriptions[url]
-            self._mark_dirty()
-            logger.info(f"已删除订阅: {name}")
-            return True
-        return False
+    # ── 原 remove 方法已被上方带权限校验的版本替换 ──
 
     def export_to_file(self, filepath: str) -> bool:
         """导出所有订阅到文件"""
@@ -231,15 +295,19 @@ class SubscriptionStorage:
             return 0
 
     def get_statistics(self) -> Dict[str, Any]:
-        """获取统计信息"""
-        total = len(self.subscriptions)
+        """获取全局（所有用户）统计信息"""
+        return self._calc_statistics(self.subscriptions)
+
+    def _calc_statistics(self, subs: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """内部：统计给定订阅集合的聚合数据"""
+        total = len(subs)
         expired = 0
         total_traffic = 0
         total_remaining = 0
 
         now = datetime.now()
 
-        for data in self.subscriptions.values():
+        for data in subs.values():
             expire_time_str = data.get('expire_time')
             if expire_time_str:
                 try:

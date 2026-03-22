@@ -21,7 +21,8 @@ async def check_subscriptions_job(
     app: Application,
     storage,                   # SubscriptionStorage 类型（避免循环导入，使用鸭子类型）
     get_parser_fn: Callable,   # 注入 bot_async.get_parser() 函数，打破循环依赖
-    allowed_user_ids: Set[int]
+    allowed_user_ids: Set[int],
+    ws_manager=None
 ):
     """
     后台定时任务：检查所有订阅状态
@@ -30,6 +31,9 @@ async def check_subscriptions_job(
     from utils.utils import format_traffic  # 局部导入，避免顶层循环引用风险
 
     logger.info("⏰ 开始执行定时巡检任务...")
+    if ws_manager:
+        ws_manager.cleanup_temp(max_age_hours=24)
+
     subs = storage.get_all()
     if not subs:
         logger.info("无订阅记录，跳过本次巡检。")
@@ -97,7 +101,7 @@ async def check_subscriptions_job(
     logger.info(f"✅ 巡检完成，共发现 {len(alerts)} 条告警。")
 
 
-def start_monitor(app: Application, storage, get_parser_fn: Callable, allowed_user_ids: Set[int]):
+def start_monitor(app: Application, storage, get_parser_fn: Callable, allowed_user_ids: Set[int], ws_manager=None):
     """
     配置并注册后台监控定时任务到 Application 的生命周期中。
 
@@ -113,7 +117,7 @@ def start_monitor(app: Application, storage, get_parser_fn: Callable, allowed_us
             'cron',
             hour='12,20',
             minute=0,
-            args=[application, storage, get_parser_fn, allowed_user_ids],
+            args=[application, storage, get_parser_fn, allowed_user_ids, ws_manager],
             id='sub_monitor',
             replace_existing=True
         )

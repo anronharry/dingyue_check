@@ -3,7 +3,6 @@ IP地理位置查询服务
 使用 ip-api.com 免费API查询IP地理位置
 """
 
-import requests
 import logging
 import json
 import os
@@ -32,13 +31,8 @@ class GeoLocationService:
             return
 
         self.api_url = "http://ip-api.com/json/{}"
-        self.session = requests.Session()
-
-        # 限制连接池，避免小内存 VPS 过度占用资源
-        from requests.adapters import HTTPAdapter
-        adapter = HTTPAdapter(pool_connections=5, pool_maxsize=5, max_retries=1)
-        self.session.mount('http://', adapter)
-        self.session.mount('https://', adapter)
+        # 会在第一次使用此服务的异步上下文中懒加载进行初始化
+        self.session = None
 
         os.makedirs(os.path.dirname(self._cache_file), exist_ok=True)
 
@@ -91,9 +85,9 @@ class GeoLocationService:
         self._cache_new_entries = 0
         self._last_cache_save = time.monotonic()
 
-    def get_location(self, ip: str) -> Optional[Dict]:
+    async def get_location(self, ip: str) -> Optional[Dict]:
         """
-        查询IP地理位置
+        查询IP地理位置 (Async)
 
         Args:
             ip: IP地址
@@ -107,12 +101,20 @@ class GeoLocationService:
         if ip in self.cache:
             return self.cache[ip]
 
+        if self.session is None:
+            import aiohttp
+            connector = aiohttp.TCPConnector(limit=5)
+            self.session = aiohttp.ClientSession(connector=connector)
+
         try:
-            response = self.session.get(
-                self.api_url.format(ip),
-                timeout=5
-            )
-            data = response.json()
+            from utils.retry_utils import async_retry_on_failure
+            @async_retry_on_failure(max_retries=2, initial_delay=0.5)
+            async def _fetch():
+                async with self.session.get(self.api_url.format(ip), timeout=5) as resp:
+                    resp.raise_for_status()
+                    return await resp.json()
+
+            data = await _fetch()
 
             if data.get('status') == 'success':
                 location = {
@@ -133,6 +135,12 @@ class GeoLocationService:
         except Exception as e:
             logger.error(f"查询IP地理位置失败 {ip}: {e}")
             return None
+
+    async def close(self):
+        """关闭地理位置查询服务的并发连接池"""
+        if self.session is not None:
+            await self.session.close()
+            self.session = None
 
     def get_country_flag(self, country_code: str) -> str:
         """
