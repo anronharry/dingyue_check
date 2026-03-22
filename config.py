@@ -138,3 +138,4 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TXT_FOLDER = "data/txt_workspace"
 YAML_FOLDER = "data/yaml_workspace"
 OLD_FILE_DIR_NAME = "data/archives"
+LOG_DIR_NAME = "logs"
