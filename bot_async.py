@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -161,18 +161,32 @@ async def _on_shutdown(application: Application):
 async def post_init(application: Application):
     """启动后初始化：向 Telegram 注册快捷指令菜单"""
     try:
-        commands = [
+        # 1. 默认菜单 (所有授权用户可见)
+        user_commands = [
             BotCommand("start", "显示欢迎使用说明"),
             BotCommand("help", "查看详细功能与帮助"),
             BotCommand("list", "查看我的订阅(可直接删除/检测)"),
             BotCommand("check", "检测我的所有订阅连通状态"),
-            BotCommand("stats", "查看个人的总订阅数与流量统计"),
-            BotCommand("delete", "删除指定的订阅链接"),
+            BotCommand("stats", "查看个人的总订阅与流量"),
         ]
-        await application.bot.set_my_commands(commands)
-        logger.info("✅ 快捷指令菜单 (Bot Commands) 已成功推送到 Telegram")
+        await application.bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
+        
+        # 2. Owner 专属菜单 (仅 Owner 可见，包含管理指令)
+        owner_id = int(os.getenv('OWNER_ID', 0))
+        if owner_id:
+            owner_commands = user_commands + [
+                BotCommand("listusers", "管理授权用户名单"),
+                BotCommand("checkall", "全局巡检(所有用户订阅)"),
+                BotCommand("globallist", "查看全局订阅明细与URL"),
+                BotCommand("broadcast", "向所有用户发公告"),
+            ]
+            await application.bot.set_my_commands(owner_commands, scope=BotCommandScopeChat(chat_id=owner_id))
+            logger.info(f"✅ 已成功为 Owner ({owner_id}) 注册专属管理菜单")
+            
+        logger.info("✅ 快捷指令菜单 (Bot Commands) 已成功分权推送")
     except Exception as e:
         logger.error(f"注册快捷指令菜单失败: {e}")
+
 
 
 def get_storage():
@@ -846,8 +860,12 @@ async def globallist_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 line += f" | {format_traffic(remaining)}"
             if expire:
                 line += f" | {expire[:10]}"
+            
+            # 为 Owner 展示原始订阅 URL，方便排查和管理
+            line += f"\n    <code>{url}</code>"
             report += line + "\n"
         report += "\n"
+
 
     reply_msg = await update.message.reply_text(report, parse_mode='HTML')
     schedule_auto_delete(context, update.message, reply_msg, delay=30)
