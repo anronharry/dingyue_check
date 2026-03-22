@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -158,6 +158,22 @@ async def _on_shutdown(application: Application):
         logger.info("GeoLocationService 的 HTTP Session 已关闭。")
     logger.info("后台 HTTP Session 池清理完毕。")
 
+async def post_init(application: Application):
+    """启动后初始化：向 Telegram 注册快捷指令菜单"""
+    try:
+        commands = [
+            BotCommand("start", "显示欢迎使用说明"),
+            BotCommand("help", "查看详细功能与帮助"),
+            BotCommand("list", "查看我的订阅(可直接删除/检测)"),
+            BotCommand("check", "检测我的所有订阅连通状态"),
+            BotCommand("stats", "查看个人的总订阅数与流量统计"),
+            BotCommand("delete", "删除指定的订阅链接"),
+        ]
+        await application.bot.set_my_commands(commands)
+        logger.info("✅ 快捷指令菜单 (Bot Commands) 已成功推送到 Telegram")
+    except Exception as e:
+        logger.error(f"注册快捷指令菜单失败: {e}")
+
 
 def get_storage():
     """懒加载存储"""
@@ -228,7 +244,28 @@ async def _send_no_permission_msg(update: Update):
         logger.warning(f"发送权限拒绝提示失败: {e}")
 
 
+# ==================== 辅助功能 ====================
+
+def schedule_auto_delete(context: ContextTypes.DEFAULT_TYPE, user_msg=None, bot_msg=None, delay=30):
+    """设置定时自毁任务，阅后即焚（约经过 delay 秒后自动删除指定的消息）"""
+    async def _delete_job(cb_context: ContextTypes.DEFAULT_TYPE):
+        try:
+            if user_msg:
+                await user_msg.delete()
+        except Exception:
+            pass
+        try:
+            if bot_msg:
+                await bot_msg.delete()
+        except Exception:
+            pass
+            
+    if context.job_queue:
+        context.job_queue.run_once(_delete_job, delay)
+
+
 # ==================== 命令处理器 ====================
+
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
@@ -267,6 +304,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         await _send_no_permission_msg(update)
         return
+        
     help_message = """
 📖 <b>使用帮助</b>
 
@@ -288,9 +326,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /delete - 显示删除帮助
 /delete &lt;订阅链接&gt; - 直接删除指定订阅
 
-<b>5️⃣ 统计与全局巡检</b>
+<b>5️⃣ 统计信息</b>
 /stats - 查看您的订阅统计（总数、流量等）
-/checkall - [仅 Owner] 检测所有用户的订阅
 
 <b>6️⃣ 格式转换 (回复文件有效)</b>
 /to_yaml - 将 txt 节点列表转换为 Clash YAML
@@ -298,14 +335,21 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 <b>7️⃣ 高级检测 (Mihomo 内核)</b>
 /deepcheck - [实验性] 真实外网连通性测活 (回复文件有效)
+"""
 
-<b>8️⃣ Owner 管理功能</b>
-/adduser /deluser /listusers - 用户授权管理
-/broadcast - 向所有用户发公告
+    if is_owner(update):
+        help_message += """
+<b>8️⃣ Owner 管理功能 (超级管理员限定)</b>
+/adduser /deluser /listusers - 用户授权池管理
+/checkall - 全局测活 (检测所有用户的订阅)
 /globallist - 查看所有用户的订阅汇总
+/broadcast - 向所有授权用户发公告
 /export /import - 备份与恢复订阅数据库
 """
-    await update.message.reply_text(help_message, parse_mode='HTML')
+    reply_msg = await update.message.reply_text(help_message, parse_mode='HTML')
+    schedule_auto_delete(context, update.message, reply_msg, delay=30)
+
+
 
 
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -351,16 +395,14 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         nonlocal completed_count, last_update_time
         async with semaphore:
             try:
-                # 使用原生异步解析，彻底消除线程池上下文切换开销
+                # 使用原生异步解析
                 parser_instance = await get_parser()
                 result = await parser_instance.parse(url)
                 
-                # 检查流量是否已耗完
                 remaining = result.get('remaining')
                 if remaining is not None and remaining <= 0:
                     raise Exception("当前订阅流量已完全耗尽 (剩余 0 B)")
                     
-                # 更新存储（保持卿主不变）
                 store.add_or_update(url, result)
                 
                 res = {
@@ -371,11 +413,8 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'status': 'success'
                 }
             except Exception as e:
-                logger.error(f"检测失败 {url}: {e}", exc_info=True)
-                
-                # UX优化：自动无感清理坏死订阅
-                store.remove(url)
-                
+                logger.error(f"检测失败 {url}: {e}")
+                store.remove(url) # 自动清理坏死订阅
                 res = {
                     'url': url,
                     'name': data.get('name', '未知'),
@@ -383,167 +422,113 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'error': str(e)
                 }
                 
-            # UX优化：动态更新进度条
             completed_count += 1
             current_time = time.time()
             if current_time - last_update_time > 2.0 or completed_count == total_count:
                 try:
                     await progress_msg.edit_text(f"⏳ 正在检测: {completed_count} / {total_count} 完成...")
                     last_update_time = current_time
-                except:
-                    pass
+                except: pass
             return res
     
-    # 并发检测（批处理写盘：多次 add_or_update 只触发一次 IO）
     store.begin_batch()
     tasks = [check_one(url, data) for url, data in subscriptions.items()]
     results = await asyncio.gather(*tasks)
     store.end_batch(save=True)
 
-    # 删除进度消息
-    try:
-        await progress_msg.delete()
-    except Exception as exc:
-        logger.warning(f"删除进度消息失败: {exc}")
+    try: await progress_msg.delete()
+    except: pass
 
-    # 生成汇总报告头
     success_count = sum(1 for r in results if r['status'] == 'success')
     failed_count = sum(1 for r in results if r['status'] == 'failed')
-    report = f"<b>📊 订阅检测报告</b>\n\n"
-    report += f"总计: {len(results)} | ✅ 成功: {success_count} | ❌ 失效: {failed_count}\n"
-    report += "—" * 20 + "\n"
+    report = f"<b>📊 订阅检测报告</b>\n\n总计: {len(results)} | ✅ 成功: {success_count} | ❌ 失效: {failed_count}\n" + "—" * 20 + "\n"
 
     failed_results = [r for r in results if r['status'] == 'failed']
     if failed_results:
         report += "\n<b>❌ 失效订阅 (已自动清理):</b>\n\n"
         for item in failed_results:
-            report += f"<b>{item['name']}</b>\n"
-            report += f"<code>{item['url']}</code>\n"
-            error_text = str(item.get('error', '未知错误'))
-            if len(error_text) > 200:
-                error_text = error_text[:200] + "..."
-            report += f"原因: {error_text}\n\n"
+            report += f"<b>{item['name']}</b>\n<code>{item['url']}</code>\n原因: {str(item.get('error', '未知'))[:100]}\n\n"
 
-    await send_long_message(update, report, parse_mode='HTML')
+    report_msg = await update.message.reply_text(report, parse_mode='HTML')
+    schedule_auto_delete(context, update.message, report_msg, delay=30)
 
-    # 成功的订阅逐条发送，附带操作按钮
+    # 成功的逐条发送（不自动删除）
     success_results = [r for r in results if r['status'] == 'success']
     for item in success_results:
         remaining = format_traffic(item['remaining'])
         url = item['url']
-        msg = f"<b>✅ {item['name']}</b>\n"
-        msg += f"剩余: {remaining}"
-        if item.get('expire_time'):
-            msg += f" | 到期: {item['expire_time']}"
+        msg = f"<b>✅ {item['name']}</b>\n剩余: {remaining}"
+        if item.get('expire_time'): msg += f" | 到期: {item['expire_time']}"
         msg += f"\n<code>{url}</code>"
-
-        # 图表生成自动发送已移除，请使用 /image 命令手动出图
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=make_sub_keyboard(url))
 
 
 async def checkall_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /checkall 命令（Owner 专属，检测所有用户的订阅）"""
     if not is_owner(update):
-        await update.message.reply_text("❌ 该操作仅限 Owner 使用")
+        reply_msg = await update.message.reply_text("❌ 该操作权限仅限 Owner 使用")
+        schedule_auto_delete(context, update.message, reply_msg, delay=10)
         return
     
     store = get_storage()
     subscriptions = store.get_all()
-    
     if not subscriptions:
-        await update.message.reply_text("📭 暂无任何订阅记录")
+        reply_msg = await update.message.reply_text("📭 暂无任何订阅记录")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
         
-    msg_text = f"🌍 <b>全局巡检启动</b>\n将检测所有用户的历史订阅 (共 {len(subscriptions)} 个)..."
-    progress_msg = await update.message.reply_text(msg_text, parse_mode='HTML')
+    progress_msg = await update.message.reply_text("🌍 <b>全局巡检启动</b>\n正在准备检测...", parse_mode='HTML')
+    schedule_auto_delete(context, update.message, progress_msg, delay=30)
     
-    # 异步并发检测（配合1GB内存，提升并发数以加快速度）
     results = []
-    semaphore = asyncio.Semaphore(20)  # 最大化利用网络IO，大幅提速
-    
+    semaphore = asyncio.Semaphore(20)
     total_count = len(subscriptions)
     completed_count = 0
     last_update_time = time.time()
     
-    async def check_one(url, data):
+    async def check_one_global(url, data):
         nonlocal completed_count, last_update_time
         async with semaphore:
             try:
-                # 使用原生异步解析，彻底消除线程池上下文切换开销
                 parser_instance = await get_parser()
                 result = await parser_instance.parse(url)
-                
-                # 检查流量是否已耗完
-                remaining = result.get('remaining')
-                if remaining is not None and remaining <= 0:
-                    raise Exception("当前订阅流量已完全耗尽 (剩余 0 B)")
-                    
-                # 更新存储（传入其原有的 owner_uid）
+                if result.get('remaining', 1) <= 0: raise Exception("流量已耗尽")
                 original_owner = data.get('owner_uid', 0)
                 store.add_or_update(url, result, user_id=original_owner)
-                
-                res = {
-                    'url': url,
-                    'name': result.get('name', '未知'),
-                    'owner_uid': original_owner,
-                    'status': 'success'
-                }
+                res = {'url': url, 'name': result.get('name', '未知'), 'owner_uid': original_owner, 'status': 'success'}
             except Exception as e:
-                logger.error(f"全局检测失败 {url}: {e}", exc_info=True)
-                
-                # UX优化：自动无感清理坏死订阅
                 store.remove(url)
-                
-                res = {
-                    'url': url,
-                    'name': data.get('name', '未知'),
-                    'owner_uid': data.get('owner_uid', 0),
-                    'status': 'failed',
-                    'error': str(e)
-                }
-                
-            # UX优化：动态更新进度条
+                res = {'url': url, 'name': data.get('name', '未知'), 'owner_uid': data.get('owner_uid', 0), 'status': 'failed', 'error': str(e)}
+            
             completed_count += 1
             current_time = time.time()
             if current_time - last_update_time > 2.0 or completed_count == total_count:
                 try:
                     await progress_msg.edit_text(f"⏳ 全局检测中: {completed_count} / {total_count} 完成...")
                     last_update_time = current_time
-                except:
-                    pass
+                except: pass
             return res
     
-    # 并发检测（批处理写盘：多次 add_or_update 只触发一次 IO）
     store.begin_batch()
-    tasks = [check_one(url, data) for url, data in subscriptions.items()]
+    tasks = [check_one_global(url, data) for url, data in subscriptions.items()]
     results = await asyncio.gather(*tasks)
     store.end_batch(save=True)
 
-    # 删除进度消息
-    try:
-        await progress_msg.delete()
-    except Exception as exc:
-        logger.warning(f"删除进度消息失败: {exc}")
+    try: await progress_msg.delete()
+    except: pass
 
-    # 生成汇总报告头
     success_count = sum(1 for r in results if r['status'] == 'success')
     failed_count = sum(1 for r in results if r['status'] == 'failed')
-    report = f"<b>🌍 全局巡检报告</b>\n\n"
-    report += f"总计: {len(results)} | ✅ 存活: {success_count} | ❌ 失效: {failed_count}\n"
-    report += "—" * 20 + "\n"
+    report = f"<b>🌍 全局巡检报告</b>\n\n总计: {len(results)} | ✅ 存活: {success_count} | ❌ 失效: {failed_count}\n" + "—" * 20 + "\n"
 
     failed_results = [r for r in results if r['status'] == 'failed']
     if failed_results:
         report += "\n<b>❌ 失效订阅 (已自动清理):</b>\n\n"
         for item in failed_results:
-            report += f"<b>{item['name']}</b> (所属: <code>{item['owner_uid']}</code>)\n"
-            report += f"<code>{item['url']}</code>\n"
-            error_text = str(item.get('error', '未知错误'))
-            if len(error_text) > 100:
-                error_text = error_text[:100] + "..."
-            report += f"原因: {error_text}\n\n"
+            report += f"<b>{item['name']}</b> (所属: <code>{item['owner_uid']}</code>/原因: {str(item.get('error', '未知'))[:50]})\n"
 
-    await send_long_message(update, report, parse_mode='HTML')
+    report_msg = await update.message.reply_text(report, parse_mode='HTML')
+    schedule_auto_delete(context, update.message, report_msg, delay=60)
 
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -564,7 +549,8 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     untagged = {url: data for url, data in subscriptions.items() if not data.get('tags')}
 
     header = f"<b>📋 我的订阅列表 (共 {len(subscriptions)} 个)</b>"
-    await update.message.reply_text(header, parse_mode='HTML')
+    reply_msg = await update.message.reply_text(header, parse_mode='HTML')
+    schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
     async def send_sub_item(url, data, tag_label=""):
         """发送单条订阅，附带操作按钮"""
@@ -623,17 +609,20 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.warning(f"获取系统状态失败: {e}")
 
-    await update.message.reply_text(msg, parse_mode='HTML')
+    reply_msg = await update.message.reply_text(msg, parse_mode='HTML')
+    schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """广播系统通知给所有授权用户 (Owner Only)"""
     if not is_owner(update):
-        await update.message.reply_text("❌ 该操作权限仅限 Owner")
+        reply_msg = await update.message.reply_text("❌ 该操作权限仅限 Owner")
+        schedule_auto_delete(context, update.message, reply_msg, delay=10)
         return
     
     if not context.args:
-        await update.message.reply_text("使用方式: /broadcast <通知内容>")
+        reply_msg = await update.message.reply_text("使用方式: /broadcast <通知内容>")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
     
     content = " ".join(context.args)
@@ -653,7 +642,8 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning(f"广播发送失败 UID:{uid}: {e}")
             fail += 1
             
-    await status_msg.edit_text(f"✅ 广播发送完毕\n成功: {success}\n失败: {fail}")
+    final_msg = await status_msg.edit_text(f"✅ 广播发送完毕\n成功: {success}\n失败: {fail}")
+    schedule_auto_delete(context, update.message, final_msg, delay=30)
 
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -669,11 +659,12 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not subscriptions:
             await update.message.reply_text("📭 您没有订阅可删除")
             return
-        await update.message.reply_text(
+        reply_msg = await update.message.reply_text(
             "📋 请使用 /list 查看订阅列表，点击每条下方的 🗑️ 按钮直接删除\n"
             "或使用: <code>/delete &lt;订阅链接&gt;</code>",
             parse_mode='HTML'
         )
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
 
     url = context.args[0].strip()
@@ -682,7 +673,8 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_subs = store.get_by_user(uid) if not is_owner(update) else store.get_all()
     sub_data = user_subs.get(url)
     if not sub_data:
-        await update.message.reply_text("❌ 未找到该订阅，请确认链接是否正确")
+        reply_msg = await update.message.reply_text("❌ 未找到该订阅，请确认链接是否正确")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
 
     # 专家级加固：二次确认
@@ -692,17 +684,20 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("❌ 取消", callback_data="del_cancel")
         ]
     ]
-    await update.message.reply_text(
+    reply_msg = await update.message.reply_text(
         f"⚠️ <b>安全确认</b>\n\n确定要永久删除以下订阅吗？\n名称: <b>{sub_data['name']}</b>\n链接: <code>{url}</code>",
         parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+    schedule_auto_delete(context, update.message, reply_msg, delay=30)
+
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /export 命令"""
     if not is_owner(update):
-        await update.message.reply_text("❌ 该操作仅限 Owner (超级管理员) 使用")
+        reply_msg = await update.message.reply_text("❌ 该操作权限仅限 Owner (超级管理员) 使用")
+        schedule_auto_delete(context, update.message, reply_msg, delay=10)
         return
     store = get_storage()
     
@@ -726,72 +721,89 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 删除临时文件
         await loop.run_in_executor(None, os.remove, export_file)
     else:
-        await update.message.reply_text("❌ 导出失败")
+        reply_msg = await update.message.reply_text("❌ 导出失败")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
 
 async def import_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /import 命令"""
     if not is_owner(update):
-        await update.message.reply_text("❌ 该操作仅限 Owner (超级管理员) 使用")
+        reply_msg = await update.message.reply_text("❌ 该操作权限仅限 Owner (超级管理员) 使用")
+        schedule_auto_delete(context, update.message, reply_msg, delay=10)
         return
     context.user_data['awaiting_import'] = True
-    await update.message.reply_text(
+    reply_msg = await update.message.reply_text(
         "请上传由 /export 导出的 JSON 文件，我会自动导入到当前订阅列表。"
     )
+    schedule_auto_delete(context, update.message, reply_msg, delay=30)
+
 
 async def add_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """添加授权用户 (Owner Only)"""
     if not is_owner(update):
-        await update.message.reply_text("❌ 该操作仅限 Owner 使用")
+        reply_msg = await update.message.reply_text("❌ 该操作权限仅限 Owner 使用")
+        schedule_auto_delete(context, update.message, reply_msg, delay=10)
         return
     if not context.args:
-        await update.message.reply_text("使用方式: /adduser <用户ID>")
+        reply_msg = await update.message.reply_text("使用方式: /adduser <用户ID>")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
     
     uid_str = context.args[0]
     if not uid_str.isdigit():
-        await update.message.reply_text("❌ 无效的用户 ID")
+        reply_msg = await update.message.reply_text("❌ 无效的用户 ID")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
     
     uid = int(uid_str)
     if user_manager.add_user(uid):
-        await update.message.reply_text(f"✅ 已成功授权用户: <code>{uid}</code>", parse_mode='HTML')
+        reply_msg = await update.message.reply_text(f"✅ 已成功授权用户: <code>{uid}</code>", parse_mode='HTML')
     else:
-        await update.message.reply_text(f"ℹ️ 该用户已在授权名单中")
+        reply_msg = await update.message.reply_text(f"ℹ️ 该用户已在授权名单中")
+    schedule_auto_delete(context, update.message, reply_msg, delay=30)
+
 
 async def del_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """移除授权用户 (Owner Only)"""
     if not is_owner(update):
-        await update.message.reply_text("❌ 该操作仅限 Owner 使用")
+        reply_msg = await update.message.reply_text("❌ 该操作权限仅限 Owner 使用")
+        schedule_auto_delete(context, update.message, reply_msg, delay=10)
         return
     if not context.args:
-        await update.message.reply_text("使用方式: /deluser <用户ID>")
+        reply_msg = await update.message.reply_text("使用方式: /deluser <用户ID>")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
     
     uid_str = context.args[0]
     if not uid_str.isdigit():
-        await update.message.reply_text("❌ 无效的用户 ID")
+        reply_msg = await update.message.reply_text("❌ 无效的用户 ID")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
     
     uid = int(uid_str)
     if uid == config.OWNER_ID:
-        await update.message.reply_text("❌ 无法移除 Owner 自己")
+        reply_msg = await update.message.reply_text("❌ 无法移除 Owner 自己")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
 
     if user_manager.remove_user(uid):
-        await update.message.reply_text(f"✅ 已成功移除授权用户: <code>{uid}</code>", parse_mode='HTML')
+        reply_msg = await update.message.reply_text(f"✅ 已成功移除授权用户: <code>{uid}</code>", parse_mode='HTML')
     else:
-        await update.message.reply_text(f"❌ 名单中未找到该用户")
+        reply_msg = await update.message.reply_text(f"❌ 名单中未找到该用户")
+    schedule_auto_delete(context, update.message, reply_msg, delay=30)
+
 
 async def list_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看授权名单 (Owner Only)"""
     if not is_owner(update):
-        await update.message.reply_text("❌ 该操作仅限 Owner 使用")
+        reply_msg = await update.message.reply_text("❌ 该操作权限仅限 Owner 使用")
+        schedule_auto_delete(context, update.message, reply_msg, delay=10)
         return
     
     users = user_manager.get_all()
     if not users:
-        await update.message.reply_text("📭 当前无授权用户")
+        reply_msg = await update.message.reply_text("📭 当前无授权用户")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
     
     msg = "<b>👥 授权用户名单</b>\n\n"
@@ -799,7 +811,9 @@ async def list_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         tag = " (Owner)" if user_manager.is_owner(uid) else ""
         msg += f"• <code>{uid}</code>{tag}\n"
     
-    await update.message.reply_text(msg, parse_mode='HTML')
+    reply_msg = await update.message.reply_text(msg, parse_mode='HTML')
+    schedule_auto_delete(context, update.message, reply_msg, delay=30)
+
 
 
 async def globallist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -812,34 +826,32 @@ async def globallist_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     grouped = store.get_grouped_by_user()
 
     if not grouped:
-        await update.message.reply_text("📭 当前暂无任何订阅")
+        reply_msg = await update.message.reply_text("📭 当前暂无任何订阅")
+        schedule_auto_delete(context, update.message, reply_msg, delay=30)
         return
 
     total_subs = sum(len(subs) for subs in grouped.values())
-    report = f"<b>👑 全局订阅总览</b>\n共 {total_subs} 条订阅 / {len(grouped)} 个用户\n\n"
+    report = f"👑 <b>全局订阅总览</b>\n共 <b>{total_subs}</b> 条订阅 / <b>{len(grouped)}</b> 个用户\n\n"
 
     for uid, subs in grouped.items():
-        report += f"━━━━━━━━━━━━━━━━━━━━\n"
-        report += f"<b>👤 用户 <code>{uid}</code></b> ({len(subs)} 条)\n"
-        report += f"━━━━━━━━━━━━━━━━━━━━\n"
+        report += f"🔹 <b>用户 <code>{uid}</code></b> ({len(subs)} 条)\n"
         for url, data in subs.items():
             name = data.get('name', '未知')
             remaining = data.get('remaining', 0)
             expire = data.get('expire_time', '')
-            # 状态标记
-            if remaining is not None and remaining <= 0:
-                status = "❌"
-            else:
-                status = "✅"
-            line = f"  {status} <b>{name}</b>"
-            if remaining:
-                line += f" | 剩余 {format_traffic(remaining)}"
+            status = "❌" if remaining is not None and remaining <= 0 else "✅"
+            
+            line = f"  └ {status} <b>{name}</b>"
+            if remaining is not None:
+                line += f" | {format_traffic(remaining)}"
             if expire:
-                line += f" | 到期 {expire}"
+                line += f" | {expire[:10]}"
             report += line + "\n"
         report += "\n"
 
-    await send_long_message(update, report, parse_mode='HTML')
+    reply_msg = await update.message.reply_text(report, parse_mode='HTML')
+    schedule_auto_delete(context, update.message, reply_msg, delay=30)
+
 
 
 async def to_yaml_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1458,8 +1470,8 @@ def main():
     logger.info("=" * 60)
     logger.info("启动 Telegram 机场订阅解析机器人 [V3 (Async Native)]...")
     
-    # 构建应用 (挂载关闭回调)
-    application = Application.builder().token(BOT_TOKEN).post_shutdown(_on_shutdown).build()
+    # 构建应用 (挂载关闭回调与初始化快捷菜单)
+    application = Application.builder().token(BOT_TOKEN).post_init(post_init).post_shutdown(_on_shutdown).build()
 
     # 注册命令处理器
     application.add_handler(CommandHandler("start", start_command))
