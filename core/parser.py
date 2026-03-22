@@ -310,68 +310,41 @@ class SubscriptionParser:
     def _parse_node_line(self, line):
         """
         解析单个节点行
-        
-        Args:
-            line: 节点配置行
-            
-        Returns:
-            dict: 节点信息，如果无法解析则返回 None
         """
-        # 支持的协议前缀
         protocols = ['vmess://', 'vless://', 'ss://', 'ssr://', 'trojan://', 'hysteria://', 'hysteria2://']
-        
         for protocol in protocols:
             if line.startswith(protocol):
-                # 提取节点名称（通常在 # 或 remarks 参数中）
                 node_name = self._extract_node_name(line, protocol)
-                
                 return {
                     'protocol': protocol.replace('://', ''),
                     'name': node_name,
                     'raw': line
                 }
-        
         return None
-    
+
     def _extract_node_name(self, line, protocol):
-        """
-        从节点配置中提取节点名称
-        
-        Args:
-            line: 节点配置行
-            protocol: 协议前缀
-            
-        Returns:
-            str: 节点名称
-        """
-        # 方法 1: 从 # 后面提取
+        """从节点配置中提取节点名称"""
         if '#' in line:
             name = line.split('#', 1)[1]
-            # URL 解码
-            try:
-                from urllib.parse import unquote
-                name = unquote(name)
-            except:
-                pass
-            return name.strip()
+            try: return unquote(name).strip()
+            except: return name.strip()
         
-        # 方法 2: 从 remarks 参数提取（vmess 等）
         if protocol == 'vmess://':
             try:
                 import json
                 encoded = line.replace('vmess://', '')
+                # 处理可能存在的 padding
+                missing_padding = len(encoded) % 4
+                if missing_padding: encoded += '=' * (4 - missing_padding)
                 decoded = base64.b64decode(encoded).decode('utf-8')
                 config = json.loads(decoded)
-                if 'ps' in config:
-                    return config['ps']
-            except:
-                pass
-        
+                if 'ps' in config: return config['ps']
+            except: pass
         return "未命名节点"
-    
+
     def _extract_airport_name(self, nodes, url, headers=None, content=None):
         """
-        提取机场名称 (全维度：响应头 -> 文件注释 -> 路径 -> 域名 -> 节点前缀)
+        全维度机场名称提取 (对齐顶级客户端识别策略)
         """
         BAD_KEYWORDS = [
             '过期', '到期', '流量', '剩余', 'GB', 'TB', '官网', '发布', '地址', 
@@ -383,86 +356,80 @@ class SubscriptionParser:
         def is_trash(s):
             if not s or len(s) < 2: return True
             if s.isdigit() or len(s) > 30: return True 
-            # 如果没有中文字符，进行更严格的乱码检测
             if not re.search(r'[\u4e00-\u9fa5]', s):
-                # 特征分析：高熵值（无意义组合）或明显的 Token 特征（数字+大小写混合长串）
                 has_digit = any(c.isdigit() for c in s)
                 has_upper = any(c.isupper() for c in s)
                 has_lower = any(c.islower() for c in s)
-                # 典型的 12/16 位乱码 token 过滤
                 if len(s) > 6 and has_digit and has_upper and has_lower: return True
-                # 香农熵阈值稍微拉低一点，对纯英文环境更敏感
                 if len(s) > 6 and self._shannon_entropy(s) > 3.0: return True
             return any(kw in s for kw in BAD_KEYWORDS)
 
-
-        # 1. 维度一：响应头 (权重最高)
+        # 1. 响应头解析 (profile-title / Content-Disposition)
         if headers:
-            # profile-title / x-airport-name / x-profile-name 是目前最标准、可信度最高的自定义标题头
-            title = headers.get('profile-title') or headers.get('x-airport-name') or headers.get('x-profile-name')
-            if title:
-                title = unquote(title).strip()
+            raw_title = headers.get('profile-title') or headers.get('x-airport-name') or headers.get('x-profile-name')
+            if raw_title:
+                # [核心修复] 彻底解决 UTF-8"魔戒 这种非标编码前缀干扰
+                raw_title = re.sub(r'^(?i)utf-8[\'"]*', '', raw_title.strip())
+                title = unquote(raw_title).strip().strip('"').strip("'").strip()
                 if not is_trash(title): return title
 
-
-            # Content-Disposition 文件名提取
             cd = headers.get('content-disposition', '')
             if 'filename' in cd:
                 try:
-                    fn = None
-                    if "filename*=" in cd:
-                        fn = unquote(cd.split("filename*=")[1].split(";")[0].strip().replace("utf-8''", ""))
-                    else:
-                        fn = cd.split("filename=")[1].split(";")[0].strip('"')
-                    if fn:
+                    m = re.search(r"filename\*=(?:utf-8['\"]*)?(.+?)(?:;|$)", cd, re.IGNORECASE)
+                    if not m: m = re.search(r"filename=['\"]?(.+?)['\"]?(?:;|$)", cd, re.IGNORECASE)
+                    if m:
+                        fn = unquote(m.group(1)).strip().strip('"').strip("'")
                         name = re.sub(r'\.(yaml|yml|txt|conf)$', '', fn, flags=re.IGNORECASE)
-                        name = unquote(name).strip()
                         if not is_trash(name): return name
                 except: pass
 
-        # 2. 维度二：文件内容扫描 (针对 YAML 格式)
-        if content and (content.startswith('#') or 'proxies:' in content[:1000]):
-            first_line = content.split('\n', 1)[0].strip()
-            if first_line.startswith('#'):
-                # 很多机场首行是备注 # XXX机场
-                comment_title = first_line.lstrip('# ').strip()
-                if comment_title and not is_trash(comment_title):
-                    # 剔除常见的节点信息后缀
-                    comment_title = re.sub(r' (v1|v2|v3|update|check|node).*$', '', comment_title, flags=re.IGNORECASE)
-                    return comment_title
+        # 2. 文件内容扫描
+        if content:
+            sample = content[:500]
+            if sample.startswith('#') or 'proxies:' in sample:
+                first_line = sample.split('\n', 1)[0].strip()
+                if first_line.startswith('#'):
+                    comment_title = first_line.lstrip('# ').strip()
+                    if comment_title and not is_trash(comment_title):
+                        comment_title = re.sub(r'[ \-(](v\d+|20\d{2}|update|check).*$', '', comment_title, flags=re.IGNORECASE)
+                        return comment_title
 
-        # 3. 维度三：URL 路径 (Path)
-        parsed = urlparse(url)
-        path_parts = [p for p in parsed.path.split('/') if p]
-        for part in reversed(path_parts): # 倒着找更可能是文件名
-            clean = re.sub(r'\.(yaml|yml|txt|conf)$', '', part, flags=re.IGNORECASE)
-            if not is_trash(clean): return clean
-
-        # 4. 维度四：域名品牌 (Domain Brand)
-        try:
-            domain = parsed.netloc.split(':')[0]
-            domain_parts = [p for p in domain.split('.') if p.lower() not in COMMON_TLDS and p.lower() not in ['api', 'sub', 'www', 'cdn']]
-            if domain_parts:
-                candidate = domain_parts[-1]
-                if not is_trash(candidate): return candidate
-        except: pass
-
-        # 5. 维度五：最末方案 - 节点共性
+        # 3. 节点前缀深度分析 (针对 SakuraCat 这类隐性机场)
         if nodes:
             prefixes = []
             for n in nodes:
                 name = n.get('name', '')
-                for sep in ['-', '|', ' ', ':']:
-                    if sep in name:
-                        p = name.split(sep)[0].strip()
-                        if p and not is_trash(p): prefixes.append(p)
-                        break
+                m = re.match(r'^([^| \-—:：/]+)', name)
+                if m:
+                    p = m.group(1).strip()
+                    if p and not is_trash(p): prefixes.append(p)
+            
             if prefixes:
                 from collections import Counter
                 most = Counter(prefixes).most_common(1)
-                if most and most[0][1] > (len(nodes) / 3): return most[0][0]
+                # 判定阈值：只要有 25% 以上的节点带此共性且非地名，就判定为品牌名
+                if most and most[0][1] > (len(nodes) * 0.25):
+                    return most[0][0]
+
+        # 4. URL 路径解析
+        parsed = urlparse(url)
+        path_parts = [p for p in parsed.path.split('/') if p]
+        for part in reversed(path_parts):
+            clean = re.sub(r'\.(yaml|yml|txt|conf)$', '', part, flags=re.IGNORECASE)
+            if not is_trash(clean): return clean
+
+        # 5. 域名提取与兜底
+        try:
+            domain = parsed.netloc.split(':')[0]
+            domain_parts = [p for p in domain.split('.') if p.lower() not in COMMON_TLDS and p.lower() not in ['api', 'sub', 'www', 'cdn']]
+            if domain_parts:
+                brand = domain_parts[-1]
+                if not is_trash(brand): return brand
+        except: pass
 
         return "未知机场"
+
 
 
 
