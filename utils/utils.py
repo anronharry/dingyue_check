@@ -4,6 +4,8 @@
 展示格式化逻辑已迁移到 renderers 层，这里保留兼容导出。
 """
 
+
+from __future__ import annotations
 import re
 from urllib.parse import urlparse
 from typing import Literal

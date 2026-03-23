@@ -4,6 +4,8 @@ IP 地理位置查询服务。
 使用 ip-api.com 免费接口查询 IP 归属地，并带本地缓存。
 """
 
+
+from __future__ import annotations
 import atexit
 import json
 import logging

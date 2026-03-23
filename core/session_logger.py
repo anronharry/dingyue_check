@@ -225,3 +225,5 @@ def reset_logger():
     """重置全局日志实例（用于新会话开始时）"""
     global _global_logger
     _global_logger = SessionLogger()
+
+from __future__ import annotations

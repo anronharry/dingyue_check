@@ -3,6 +3,8 @@ Access Control Manager
 负责持久化管理授权用户名单，并处理四级权限校验。
 """
 
+
+from __future__ import annotations
 import json
 import os
 import logging

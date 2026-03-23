@@ -42,3 +42,5 @@ class BaseTestEngine:
         :return: 约定格式的字典 {"name": 节点名, "status": "valid"|"error", "delay": 延迟(整数)或没有, "error": 报错简述}
         """
         raise NotImplementedError
+
+from __future__ import annotations

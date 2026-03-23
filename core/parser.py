@@ -3,6 +3,8 @@
 负责下载、解析和提取订阅信息
 """
 
+
+from __future__ import annotations
 import base64
 import re
 import yaml

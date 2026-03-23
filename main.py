@@ -1,5 +1,7 @@
 """New project entrypoint."""
 
+
+from __future__ import annotations
 from bot_async import main
 
 

@@ -5,6 +5,8 @@ Telegram 订阅检测与转换机器人 - 异步版本。
 业务主链路已经迁移到 handlers/ 与 services/。
 """
 
+
+from __future__ import annotations
 import asyncio
 import hashlib
 import logging

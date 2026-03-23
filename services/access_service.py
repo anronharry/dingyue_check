@@ -1,5 +1,7 @@
 """Access control service decoupled from Telegram handlers."""
 
+
+from __future__ import annotations
 from app.constants import NO_PERMISSION_ALERT, NO_PERMISSION_MSG
 
 

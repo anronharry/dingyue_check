@@ -95,3 +95,5 @@ def parse_node_line(line: str, converter) -> Optional[dict]:
         return converter.parse_vless_url(line)
     return None
 
+
+from __future__ import annotations
