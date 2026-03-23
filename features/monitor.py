@@ -1,36 +1,34 @@
 """
-后台定时监控与告警模块
-负责定期检测所有订阅状态并向用户推送告警
+后台定时巡检与预警模块。
+
+负责定期检测订阅状态，并向对应订阅 owner 推送预警。
 """
 
-import asyncio
+from __future__ import annotations
+
 import logging
+from collections import defaultdict
 from datetime import datetime
-from typing import Callable, Set
+from typing import Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram.ext import Application
 
 logger = logging.getLogger(__name__)
 
-# 全局定时器实例
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 
 
 async def check_subscriptions_job(
     app: Application,
-    storage,                   # SubscriptionStorage 类型（避免循环导入，使用鸭子类型）
-    get_parser_fn: Callable,   # 注入 bot_async.get_parser() 函数，打破循环依赖
-    allowed_user_ids: Set[int],
-    ws_manager=None
+    storage,
+    get_parser_fn: Callable,
+    ws_manager=None,
 ):
-    """
-    后台定时任务：检查所有订阅状态
-    发现流量告急或即将到期时，推送告警给白名单内所有用户
-    """
-    from utils.utils import format_traffic  # 局部导入，避免顶层循环引用风险
+    """定时检查所有订阅，并按 owner 分组发送预警。"""
+    from utils.utils import format_traffic
 
-    logger.info("⏰ 开始执行定时巡检任务...")
+    logger.info("开始执行定时巡检任务...")
     if ws_manager:
         ws_manager.cleanup_temp(max_age_hours=24)
 
@@ -39,26 +37,26 @@ async def check_subscriptions_job(
         logger.info("无订阅记录，跳过本次巡检。")
         return
 
-    parser = get_parser_fn()
-    alerts = []
+    parser = await get_parser_fn()
+    alerts_by_user: dict[int, list[str]] = defaultdict(list)
 
     for url, data in subs.items():
-        try:
-            # 在线程池中同步解析，不阻塞事件循环
-            result = await asyncio.get_running_loop().run_in_executor(
-                None, parser.parse, url
-            )
-            storage.add_or_update(url, result)
+        owner_uid = data.get("owner_uid", 0)
+        if not owner_uid:
+            continue
 
-            name = result.get('name', '未知')
-            total = result.get('total', 0)
-            remaining = result.get('remaining', 0)
-            expire_str = result.get('expire_time')
+        try:
+            result = await parser.parse(url)
+            storage.add_or_update(url, result, user_id=owner_uid)
+
+            name = result.get("name", "未知")
+            total = result.get("total", 0)
+            remaining = result.get("remaining", 0)
+            expire_str = result.get("expire_time")
 
             traffic_alert = False
             if total > 0 and remaining is not None:
                 ratio = remaining / total
-                # 剩余不足 10% 或绝对值小于 5 GB
                 if ratio < 0.10 or remaining < 5 * 1024 * 1024 * 1024:
                     traffic_alert = True
 
@@ -73,59 +71,46 @@ async def check_subscriptions_job(
                     pass
 
             if traffic_alert or time_alert:
-                msg = f"⚠️ <b>订阅异常告警</b> ⚠️\n名称: <b>{name}</b>\n"
+                msg = f"⚠️ <b>订阅预警</b>\n<b>{name}</b>\n"
                 if traffic_alert:
-                    msg += (
-                        f"❗️ 剩余流量告急: 仅剩 {format_traffic(remaining)}"
-                        f" (总计 {format_traffic(total)})\n"
-                    )
+                    msg += f"剩余: {format_traffic(remaining)} / 总量: {format_traffic(total)}\n"
                 if time_alert:
-                    msg += f"⏳ 即将到期: {expire_str} (≤3天)\n"
-                alerts.append(msg)
+                    msg += f"到期：{expire_str}（3 天内）\n"
+                msg += f"链接：<code>{url}</code>"
+                alerts_by_user[owner_uid].append(msg)
+        except Exception as exc:
+            logger.error("定时巡检失败 %s: %s", url, exc)
 
-        except Exception as e:
-            logger.error(f"定时检测出错 {url}: {e}")
+    total_alerts = sum(len(items) for items in alerts_by_user.values())
+    for user_id, messages in alerts_by_user.items():
+        try:
+            await app.bot.send_message(
+                chat_id=user_id,
+                text="\n\n".join(messages),
+                parse_mode="HTML",
+            )
+        except Exception as exc:
+            logger.error("推送预警失败 user_id=%s: %s", user_id, exc)
 
-    if alerts and allowed_user_ids:
-        combined_message = "\n\n".join(alerts)
-        for user_id in allowed_user_ids:
-            try:
-                await app.bot.send_message(
-                    chat_id=user_id,
-                    text=combined_message,
-                    parse_mode='HTML'
-                )
-            except Exception as e:
-                logger.error(f"推送告警失败 user_id={user_id}: {e}")
-
-    logger.info(f"✅ 巡检完成，共发现 {len(alerts)} 条告警。")
+    logger.info("巡检完成，共发现 %s 条预警，涉及 %s 个用户。", total_alerts, len(alerts_by_user))
 
 
-def start_monitor(app: Application, storage, get_parser_fn: Callable, allowed_user_ids: Set[int], ws_manager=None):
-    """
-    配置并注册后台监控定时任务到 Application 的生命周期中。
-
-    Args:
-        app: Telegram Application 实例
-        storage: SubscriptionStorage 实例
-        get_parser_fn: 获取解析器的工厂函数（用于打破循环导入）
-        allowed_user_ids: 告警推送的用户 ID 集合
-    """
-    async def _post_init(application: Application):
-        scheduler.add_job(
-            check_subscriptions_job,
-            'cron',
-            hour='12,20',
-            minute=0,
-            args=[application, storage, get_parser_fn, allowed_user_ids, ws_manager],
-            id='sub_monitor',
-            replace_existing=True
-        )
+def configure_monitor(
+    app: Application,
+    storage,
+    get_parser_fn: Callable,
+    ws_manager=None,
+):
+    """向调度器注册巡检任务，不覆盖 Application.post_init。"""
+    scheduler.add_job(
+        check_subscriptions_job,
+        "cron",
+        hour="12,20",
+        minute=0,
+        args=[app, storage, get_parser_fn, ws_manager],
+        id="sub_monitor",
+        replace_existing=True,
+    )
+    if not scheduler.running:
         scheduler.start()
-        logger.info("✅ 智能定时监控已启动 (每天 12:00 / 20:00 自动巡检)")
-
-    # 将启动逻辑挂载到 ptb 的 post_init 回调中，确保此时 Event Loop 已就绪
-    if app.post_init:
-        # 如果已经存在 post_init 回调，我们需要组合它们
-        pass # 此处从简，bot_async.py 中并未使用 post_init，因此直接覆写即可
-    app.post_init = _post_init
+    logger.info("自动巡检与预警已启动（每天 12:00 / 20:00 执行）。")

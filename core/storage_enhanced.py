@@ -206,10 +206,21 @@ class SubscriptionStorage:
         logger.info(f"已删除订阅: {name}")
         return True
 
-    def add_tag(self, url: str, tag: str) -> bool:
-        """为订阅添加标签"""
+    def _can_modify_subscription(self, url: str, operator_uid: int = 0, require_owner: bool = False) -> bool:
+        """统一校验订阅是否存在，以及操作者是否有权限修改。"""
         if url not in self.subscriptions:
             logger.warning(f"订阅不存在: {url}")
+            return False
+        if require_owner and operator_uid:
+            sub_owner = self.subscriptions[url].get('owner_uid', 0)
+            if sub_owner and sub_owner != operator_uid:
+                logger.warning(f"UID {operator_uid} 尝试修改 UID {sub_owner} 的订阅，已拒绝")
+                return False
+        return True
+
+    def add_tag(self, url: str, tag: str, operator_uid: int = 0, require_owner: bool = False) -> bool:
+        """为订阅添加标签"""
+        if not self._can_modify_subscription(url, operator_uid, require_owner):
             return False
 
         tags = self.subscriptions[url].get('tags', [])
@@ -223,9 +234,9 @@ class SubscriptionStorage:
         logger.info(f"标签已存在: {tag}")
         return False
 
-    def remove_tag(self, url: str, tag: str) -> bool:
+    def remove_tag(self, url: str, tag: str, operator_uid: int = 0, require_owner: bool = False) -> bool:
         """移除订阅的标签"""
-        if url not in self.subscriptions:
+        if not self._can_modify_subscription(url, operator_uid, require_owner):
             return False
 
         tags = self.subscriptions[url].get('tags', [])

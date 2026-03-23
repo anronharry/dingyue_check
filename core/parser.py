@@ -6,6 +6,7 @@
 import base64
 import re
 import yaml
+import aiohttp
 from urllib.parse import urlparse, parse_qs, unquote
 from datetime import datetime
 import math
@@ -76,6 +77,7 @@ class SubscriptionParser:
                 'name': airport_name,
                 'node_count': len(nodes),
                 'node_stats': node_stats,  # 新增：节点统计
+                '_raw_nodes': nodes,
                 **traffic_info
             }
             
@@ -150,7 +152,7 @@ class SubscriptionParser:
         content_lower = content.lower()
         
         # 策略 1: HTTP Header 指纹
-        content_type = headers.get('Content-Type', '').lower()
+        content_type = headers.get('content-type', '').lower()
         if 'text/html' in content_type:
             # 绝大多数订阅是纯文本或二进制，若返回 HTML 且包含常见错误词，判定为伪活
             if any(x in content_lower for x in ['error', 'forbidden', 'blocked', 'firewall', '拦截', '参数错误', '未找到']):

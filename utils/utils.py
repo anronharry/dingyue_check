@@ -1,64 +1,25 @@
 """
 工具函数模块
-提供流量转换、URL 验证、输入类型检测等辅助功能
+提供 URL 验证、输入类型检测等辅助功能。
+展示格式化逻辑已迁移到 renderers 层，这里保留兼容导出。
 """
 
 import re
-import html
 from urllib.parse import urlparse
-from collections import defaultdict
 from typing import Literal
 
-
-def bytes_to_gb(bytes_value):
-    """
-    将字节转换为 GB
-    
-    Args:
-        bytes_value: 字节数
-        
-    Returns:
-        float: GB 数值
-    """
-    if bytes_value is None:
-        return 0
-    return bytes_value / (1024 ** 3)
-
-
-def format_traffic(bytes_value):
-    """
-    格式化流量显示
-    
-    Args:
-        bytes_value: 字节数
-        
-    Returns:
-        str: 格式化后的流量字符串（如 "10.5 GB"）
-    """
-    if bytes_value is None or bytes_value == 0:
-        return "0 B"
-    
-    units = ['B', 'KB', 'MB', 'GB', 'TB']
-    unit_index = 0
-    size = float(bytes_value)
-    
-    while size >= 1024 and unit_index < len(units) - 1:
-        size /= 1024
-        unit_index += 1
-    
-    return f"{size:.2f} {units[unit_index]}"
+from renderers.formatters import format_subscription_info
+from shared.format_helpers import (
+    bytes_to_gb,
+    create_progress_bar,
+    format_remaining_time,
+    format_traffic,
+    get_country_flag,
+)
 
 
 def is_valid_url(url):
-    """
-    验证 URL 是否有效
-    
-    Args:
-        url: 待验证的 URL
-        
-    Returns:
-        bool: URL 是否有效
-    """
+    """验证 URL 是否有效。"""
     try:
         result = urlparse(url)
         return result.scheme in ("http", "https") and bool(result.netloc)
@@ -66,230 +27,53 @@ def is_valid_url(url):
         return False
 
 
-def create_progress_bar(percent, length=10):
-    """
-    生成进度条字符串
-    
-    Args:
-        percent: 百分比 (0-100)
-        length: 进度条长度
-        
-    Returns:
-        str: 进度条字符串，如 "[■■□□□□□□□□]"
-    """
-    if percent < 0:
-        percent = 0
-    elif percent > 100:
-        percent = 100
-        
-    filled_length = int(length * percent / 100)
-    # 确保至少显示一个块（如果 > 0）或不显示（如果 0）
-    if percent > 0 and filled_length == 0:
-        filled_length = 1
-        
-    bar = "■" * filled_length + "□" * (length - filled_length)
-    return f"[{bar}]"
-
-
-def get_country_flag(country_name):
-    """
-    获取国家/地区对应的国旗 Emoji
-    """
-    flags = {
-        '香港': '🇭🇰', '台湾': '🇹🇼', '日本': '🇯🇵', '美国': '🇺🇸',
-        '新加坡': '🇸🇬', '韩国': '🇰🇷', '英国': '🇬🇧', '德国': '🇩🇪',
-        '法国': '🇫🇷', '加拿大': '🇨🇦', '澳大利亚': '🇦🇺', '俄罗斯': '🇷🇺',
-        '印度': '🇮🇳', '荷兰': '🇳🇱', '土耳其': '🇹🇷', '巴西': '🇧🇷',
-        '越南': '🇻🇳', '泰国': '🇹🇭', '菲律宾': '🇵🇭', '马来西亚': '🇲🇾',
-        '印尼': '🇮🇩', '阿根廷': '🇦🇷', '墨西哥': '🇲🇽', '其他': '🌐'
-    }
-    return flags.get(country_name, '🏳️')
-
-
-def format_remaining_time(expire_time_str):
-    """
-    计算剩余时间
-    """
-    try:
-        from datetime import datetime
-        expire_date = datetime.strptime(expire_time_str, '%Y-%m-%d %H:%M:%S')
-        now = datetime.now()
-        
-        if expire_date < now:
-            return "已过期"
-            
-        delta = expire_date - now
-        days = delta.days
-        seconds = delta.seconds
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        sec = seconds % 60
-        
-        return f"{days}天{hours}时{minutes}分{sec}秒"
-    except:
-        return ""
-
-
-def format_subscription_info(info, url=None):
-    """
-    格式化订阅信息为友好的消息文本
-    """
-    message = "<b>🚀 订阅及节点信息统计</b>\n\n"
-    
-    # 机场名称
-    if info.get('name'):
-        name = html.escape(info['name'])
-        message += f"<b>配置名称:</b> {name}\n"
-    
-    # 流量信息 (模仿截图风格)
-    if any(key in info for key in ['total', 'used', 'remaining']):
-        used = format_traffic(info.get('used', 0))
-        total = format_traffic(info.get('total', 0))
-        remaining = format_traffic(info.get('remaining', 0))
-        
-        message += f"<b>流量详情:</b> {used} / {total}\n"
-        
-        if info.get('usage_percent') is not None:
-            percent = info['usage_percent']
-            bar = create_progress_bar(percent, length=10)
-            message += f"<b>使用进度:</b> {bar} {percent:.1f}%\n"
-            
-            # 添加智能警报
-            if percent >= 100:
-                message += "<b>状态警报:</b> ❌ 流量已完全耗尽\n"
-            elif percent >= 90:
-                message += "<b>状态警报:</b> ⚠️ 流量即将耗尽\n"
-            
-        if info.get('remaining') is not None:
-            message += f"<b>剩余可用:</b> {remaining}\n"
-            
-    else:
-        message += "<b>流量信息:</b> 无\n"
-    
-    # 到期时间 & 剩余时间
-    if info.get('expire_time'):
-        message += f"<b>过期时间:</b> {info['expire_time']}\n"
-        remaining_time = format_remaining_time(info['expire_time'])
-        if remaining_time:
-            message += f"<b>剩余时间:</b> {remaining_time}\n"
-            
-            # 添加智能警报
-            if remaining_time == "已过期":
-                message += "<b>状态警报:</b> ❌ 订阅已过期\n"
-            elif "天" in remaining_time:
-                try:
-                    days_left = int(remaining_time.split("天")[0])
-                    if days_left < 3:
-                        message += "<b>状态警报:</b> ⚠️ 订阅距过期不足3天\n"
-                except:
-                    pass
-            
-    message += "\n" + "—" * 20 + "\n\n"
-
-    # 节点统计信息
-    if info.get('node_stats'):
-        stats = info['node_stats']
-        
-        # 详细地理位置信息(使用真实IP查询结果)
-        if stats.get('locations'):
-            locations = stats['locations']
-            # 按国家分组显示
-            country_groups = defaultdict(list)
-            
-            for loc in locations:
-                country_groups[loc['country']].append(loc)
-            
-            message += "<b>🌍 节点地理位置(真实IP):</b>\n"
-            for country, locs in sorted(country_groups.items(), key=lambda x: len(x[1]), reverse=True):
-                flag = locs[0]['flag'] if locs[0]['flag'] != '🌐' else get_country_flag(country)
-                message += f"\n{flag} <b>{country}</b> ({len(locs)}个):\n"
-                
-                # 显示前3个节点的详细信息
-                for loc in locs[:3]:
-                    city = loc['city'] if loc['city'] != '未知' else ''
-                    isp = loc['isp'] if loc['isp'] != '未知' else ''
-                    detail = f"{city} - {isp}" if city and isp else (city or isp or '详情未知')
-                    message += f"  • {html.escape(loc['name'][:20])}... ({detail})\n"
-                
-                if len(locs) > 3:
-                    message += f"  ... 还有 {len(locs) - 3} 个节点\n"
-            
-            message += "\n"
-        
-        # 国家/地区分布 (带国旗)
-        elif stats.get('countries'):
-            message += "<b>🌍 节点区域分布:</b>\n"
-            countries = stats['countries']
-            # 按数量排序
-            sorted_countries = sorted(countries.items(), key=lambda x: x[1], reverse=True)
-            for country, count in sorted_countries:
-                flag = get_country_flag(country)
-                country_escaped = html.escape(country)
-                message += f"{flag} {country_escaped}: {count}\n"
-            message += "\n"
-        
-        # 协议分布
-        if stats.get('protocols'):
-            message += "<b>🔐 协议分布:</b>\n"
-            protocols = stats['protocols']
-            sorted_protocols = sorted(protocols.items(), key=lambda x: x[1], reverse=True)
-            for protocol, count in sorted_protocols:
-                message += f"{protocol.upper()}: {count}\n"
-                
-    # 节点数量摘要
-    if info.get('node_count') is not None:
-         message += f"\n<b>📍 节点总数:</b> {info['node_count']}\n"
-    
-    # 添加原始链接（点击复制）
-    if url:
-        message += f"\n<b>📋 原始链接 (点击复制):</b>\n<code>{url}</code>"
-
-    return message
-
-
 class InputDetector:
-    """智能输入类型检测器（原 input_detector.py）"""
+    """智能输入类型检测器。"""
 
     @staticmethod
-    def detect_message_type(update) -> Literal['file', 'url', 'node_text', 'unknown']:
-        """检测消息类型，返回 'file' / 'url' / 'node_text' / 'unknown'"""
+    def detect_message_type(update) -> Literal["file", "url", "node_text", "unknown"]:
         if update.message.document:
-            return 'file'
+            return "file"
         if update.message.text:
             text = update.message.text.strip()
             if InputDetector.is_subscription_url(text):
-                return 'url'
+                return "url"
             if InputDetector.is_node_text(text):
-                return 'node_text'
-        return 'unknown'
+                return "node_text"
+        return "unknown"
 
     @staticmethod
     def is_subscription_url(text: str) -> bool:
-        """判断是否为订阅链接（支持多行）"""
-        if not text.startswith(('http://', 'https://')):
+        if not text.startswith(("http://", "https://")):
             return False
-        url_pattern = r'^https?://[^\s]+$'
-        lines = text.split('\n')
+        url_pattern = r"^https?://[^\s]+$"
+        lines = text.split("\n")
         return all(re.match(url_pattern, line.strip()) for line in lines if line.strip())
 
     @staticmethod
     def is_node_text(text: str) -> bool:
-        """判断是否为节点文本列表（>=50% 行匹配协议前缀）"""
-        protocols = ['vmess://', 'vless://', 'ss://', 'ssr://', 'trojan://', 'hysteria://', 'hysteria2://']
-        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        protocols = [
+            "vmess://",
+            "vless://",
+            "ss://",
+            "ssr://",
+            "trojan://",
+            "hysteria://",
+            "hysteria2://",
+        ]
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
         if not lines:
             return False
         node_count = sum(1 for line in lines if any(line.startswith(p) for p in protocols))
         return node_count >= len(lines) * 0.5
 
     @staticmethod
-    def detect_file_type(filename: str) -> Literal['txt', 'yaml', 'json', 'unknown']:
-        """检测文件类型，返回 'txt' / 'yaml' / 'json' / 'unknown'"""
+    def detect_file_type(filename: str) -> Literal["txt", "yaml", "json", "unknown"]:
         name = filename.lower()
-        if name.endswith('.txt'):
-            return 'txt'
-        if name.endswith(('.yaml', '.yml')):
-            return 'yaml'
-        if name.endswith('.json'):
-            return 'json'
-        return 'unknown'
+        if name.endswith(".txt"):
+            return "txt"
+        if name.endswith((".yaml", ".yml")):
+            return "yaml"
+        if name.endswith(".json"):
+            return "json"
+        return "unknown"

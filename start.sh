@@ -1,62 +1,64 @@
 #!/bin/bash
-# 快速启动脚本 - Linux / macOS / 云服务器
+# Quick start script - Linux / macOS / cloud servers
 
-set -e  # 遇错立即退出
+set -e
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
 
 echo "========================================"
-echo " Telegram 机场订阅管理机器人"
+echo " Telegram Subscription Bot"
 echo "========================================"
 echo ""
 
-# ---- 1. Python 版本检查 ----
 if ! command -v python3 &>/dev/null; then
-    echo "❌ 未找到 python3，请先安装 Python 3.10+"
-    echo "💡 提示: 在 Debian/Ubuntu 上可执行: apt update && apt install -y python3 python3-venv python3-pip"
-    echo "💡 提示: 在 CentOS/RHEL 上可执行: yum install -y python3"
+    echo "[X] python3 not found. Please install Python 3.10+."
     exit 1
 fi
-echo "✅ Python: $(python3 --version)"
+echo "[OK] Python: $(python3 --version)"
 
-# ---- 2. 虚拟环境 ----
-if [ ! -d ".venv" ]; then
-    echo "⚙️  创建虚拟环境..."
-    python3 -m venv .venv
+RUN_PYTHON="python3"
+if python3 -c "import dotenv, telegram, aiohttp" >/dev/null 2>&1; then
+    echo "[OK] Current Python already has required dependencies."
+else
+    if [ ! -d ".venv" ]; then
+        echo "[*] Creating virtual environment..."
+        python3 -m venv .venv
+    fi
+    source .venv/bin/activate
+    RUN_PYTHON="python3"
+
+    if ! python3 -c "import dotenv, telegram, aiohttp" >/dev/null 2>&1; then
+        REQ_FILE="requirements.txt"
+        if [ -f ".env" ]; then
+            PROFILE=$(grep -E "^SERVER_PROFILE=" .env | cut -d= -f2 | tr -d '[:space:]')
+            if [ "$PROFILE" = "1gb" ] || [ "$PROFILE" = "512mb" ]; then
+                REQ_FILE="requirements-full.txt"
+            fi
+        fi
+        echo "[*] Installing dependencies into .venv..."
+        pip install -q -r "$REQ_FILE"
+    fi
+
+    if ! python3 -c "import dotenv, telegram, aiohttp" >/dev/null 2>&1; then
+        echo "[X] Dependencies are still unavailable after setup."
+        exit 1
+    fi
+    echo "[OK] Virtual environment ready."
 fi
-source .venv/bin/activate
-echo "✅ 虚拟环境已激活"
 
-# ---- 3. 检查 .env ----
 if [ ! -f ".env" ]; then
     echo ""
-    echo "❌ 未找到 .env 配置文件"
-    echo "   请执行: cp .env.example .env  然后填入 Bot Token"
+    echo "[X] .env file not found."
+    echo "    Run: cp .env.example .env"
     exit 1
 fi
-echo "✅ 配置文件检测通过"
+echo "[OK] .env file found."
 
-# ---- 4. 按 SERVER_PROFILE 自动选择依赖套件 ----
-# 从 .env 读取配置（忽略注释行）
-PROFILE=$(grep -E "^SERVER_PROFILE=" .env | cut -d= -f2 | tr -d '[:space:]')
-
-if [ "$PROFILE" = "1gb" ] || [ "$PROFILE" = "512mb" ] && [ -f "requirements-full.txt" ]; then
-    # 仅 512MB / 1GB 档位需要安装可视化图表库
-    REQ_FILE="requirements-full.txt"
-    echo "📦 档位: ${PROFILE:-1gb}（安装完整依赖 含 matplotlib）"
-else
-    REQ_FILE="requirements.txt"
-    echo "📦 档位: ${PROFILE:-256mb}（安装核心依赖）"
-fi
-
-echo "⏳ 安装依赖..."
-pip install -q -r "$REQ_FILE"
-echo "✅ 依赖安装完成"
-
-# ---- 5. 启动机器人 ----
 echo ""
 echo "========================================"
-echo " 启动机器人..."
-echo " 按 Ctrl+C 停止"
+echo " Starting bot..."
+echo " Press Ctrl+C to stop"
 echo "========================================"
 echo ""
 
-exec python3 bot_async.py
+exec "$RUN_PYTHON" main.py
