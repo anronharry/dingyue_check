@@ -1,6 +1,6 @@
 """Message routing handlers for plain text user input."""
-
 from __future__ import annotations
+
 
 
 def make_message_handler(

@@ -1,6 +1,6 @@
 """Read-only report builders for user-facing command outputs."""
-
 from __future__ import annotations
+
 
 import logging
 

@@ -3,8 +3,8 @@
 
 负责定期检测订阅状态，并向对应订阅 owner 推送预警。
 """
-
 from __future__ import annotations
+
 
 import logging
 from collections import defaultdict

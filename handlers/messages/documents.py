@@ -1,6 +1,6 @@
 """Document and node-text message handlers."""
-
 from __future__ import annotations
+
 
 
 def make_document_handler(

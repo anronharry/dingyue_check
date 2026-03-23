@@ -8,6 +8,7 @@
   - build_http_session : 构建带自动重试的 HTTP Session（统一入口）
   - parse_node_line    : 按协议分派解析单行代理 URL
 """
+from __future__ import annotations
 
 import base64
 from typing import Optional
@@ -96,4 +97,3 @@ def parse_node_line(line: str, converter) -> Optional[dict]:
     return None
 
 
-from __future__ import annotations

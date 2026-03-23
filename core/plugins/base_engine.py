@@ -1,3 +1,4 @@
+from __future__ import annotations
 # -*- coding: utf-8 -*-
 import asyncio
 import aiohttp
@@ -43,4 +44,3 @@ class BaseTestEngine:
         """
         raise NotImplementedError
 
-from __future__ import annotations

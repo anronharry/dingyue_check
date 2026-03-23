@@ -4,9 +4,9 @@ Telegram 订阅检测与转换机器人 - 异步版本。
 当前文件只负责运行时装配、共享资源初始化和启动/关闭流程，
 业务主链路已经迁移到 handlers/ 与 services/。
 """
-
-
 from __future__ import annotations
+
+
 import asyncio
 import hashlib
 import logging

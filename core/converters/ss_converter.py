@@ -4,6 +4,7 @@
 SS协议节点转换工具
 支持SS协议txt文件与yaml格式的双向转换
 """
+from __future__ import annotations
 
 import base64
 import re
@@ -979,4 +980,3 @@ def main():
 if __name__ == '__main__':
     main()
 
-from __future__ import annotations

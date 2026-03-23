@@ -4,6 +4,7 @@
 订阅获取与解析管理器模块
 从 node_tester.py 中抽离的 fetch_nodes_from_subscriptions 逻辑。
 """
+from __future__ import annotations
 
 import os
 import re
@@ -209,4 +210,3 @@ def fetch_nodes_from_subscriptions(target_file: str, http_session=None) -> Tuple
 
 
 
-from __future__ import annotations

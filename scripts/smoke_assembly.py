@@ -1,5 +1,5 @@
-
 from __future__ import annotations
+
 import compileall
 import sys
 from pathlib import Path

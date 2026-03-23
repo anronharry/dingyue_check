@@ -3,9 +3,9 @@
 提供 URL 验证、输入类型检测等辅助功能。
 展示格式化逻辑已迁移到 renderers 层，这里保留兼容导出。
 """
-
-
 from __future__ import annotations
+
+
 import re
 from urllib.parse import urlparse
 from typing import Literal

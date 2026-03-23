@@ -1,7 +1,7 @@
 """Shared application constants and user-facing copy."""
-
-
 from __future__ import annotations
+
+
 APP_TITLE = "GIPSON_CHECK - 订阅检测与转换机器人"
 APP_FEATURES = "支持：订阅检测、格式转换、自动预警、深度检测"
 APP_STARTUP = "启动 Telegram 订阅检测机器人 [V3 Async Native]..."

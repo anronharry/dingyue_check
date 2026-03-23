@@ -4,6 +4,7 @@
 会话日志记录模块
 记录每次运行中的检测操作摘要，并在会话结束时输出/保存汇总日志
 """
+from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
@@ -226,4 +227,3 @@ def reset_logger():
     global _global_logger
     _global_logger = SessionLogger()
 
-from __future__ import annotations

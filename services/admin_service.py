@@ -1,6 +1,6 @@
 """Owner/admin report builders and export helpers."""
-
 from __future__ import annotations
+
 
 import html
 import os

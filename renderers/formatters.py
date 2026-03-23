@@ -1,7 +1,7 @@
 """Telegram-facing message formatters."""
-
-
 from __future__ import annotations
+
+
 import html
 from collections import defaultdict
 

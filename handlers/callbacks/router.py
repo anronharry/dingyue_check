@@ -1,6 +1,6 @@
 """Top-level callback router."""
-
 from __future__ import annotations
+
 
 
 def make_button_callback(*, is_authorized, no_permission_alert, subscription_callback_handler):

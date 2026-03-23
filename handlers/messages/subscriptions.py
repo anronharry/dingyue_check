@@ -1,6 +1,6 @@
 """Subscription URL text handlers."""
-
 from __future__ import annotations
+
 
 
 def make_subscription_handler(

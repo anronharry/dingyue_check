@@ -1,7 +1,7 @@
 """Telegram keyboard builders."""
-
-
 from __future__ import annotations
+
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.constants import BTN_DELETE, BTN_RECHECK, BTN_TAG
