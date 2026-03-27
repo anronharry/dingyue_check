@@ -17,7 +17,7 @@ fi
 echo "[OK] Python: $(python3 --version)"
 
 RUN_PYTHON="python3"
-if python3 -c "import dotenv, telegram, aiohttp" >/dev/null 2>&1; then
+if python3 -c "import dotenv, telegram, aiohttp, urllib3" >/dev/null 2>&1; then
     echo "[OK] Current Python already has required dependencies."
 else
     if [ ! -d ".venv" ]; then
@@ -27,7 +27,7 @@ else
     source .venv/bin/activate
     RUN_PYTHON="python3"
 
-    if ! python3 -c "import dotenv, telegram, aiohttp" >/dev/null 2>&1; then
+    if ! python3 -c "import dotenv, telegram, aiohttp, urllib3" >/dev/null 2>&1; then
         REQ_FILE="requirements.txt"
         if [ -f ".env" ]; then
             PROFILE=$(grep -E "^SERVER_PROFILE=" .env | cut -d= -f2 | tr -d '[:space:]')
@@ -39,7 +39,7 @@ else
         pip install -q -r "$REQ_FILE"
     fi
 
-    if ! python3 -c "import dotenv, telegram, aiohttp" >/dev/null 2>&1; then
+    if ! python3 -c "import dotenv, telegram, aiohttp, urllib3" >/dev/null 2>&1; then
         echo "[X] Dependencies are still unavailable after setup."
         exit 1
     fi
