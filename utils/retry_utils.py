@@ -13,6 +13,8 @@ from functools import wraps
 from typing import Callable, TypeVar, Any, Optional
 import aiohttp
 
+logger = logging.getLogger(__name__)
+
 def async_retry_on_failure(
     max_retries: int = 3,
     initial_delay: float = 1.0,
