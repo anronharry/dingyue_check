@@ -18,6 +18,7 @@ def make_cache_callback_handler(*, get_storage, is_owner, export_cache_service):
         owner_mode = is_owner(update)
         sub = store.get_all().get(url, {})
         if action in {"export_yaml", "export_txt"}:
+            await query.answer("正在从缓存读取并生成文件，请稍候...")
             fmt = "yaml" if action == "export_yaml" else "txt"
             path, error = export_cache_service.resolve_export_path(
                 owner_uid=sub.get("owner_uid", 0),

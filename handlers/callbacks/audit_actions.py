@@ -12,6 +12,7 @@ def make_audit_callback_handler(*, is_owner, admin_service, build_usage_audit_ke
             await query.answer("仅 Owner 可查看", show_alert=True)
             return True
         if action == "audit":
+            await query.answer("加载审计记录...")
             try:
                 mode, page_str = hash_key.split(":", 1)
                 page = int(page_str)
@@ -31,6 +32,7 @@ def make_audit_callback_handler(*, is_owner, admin_service, build_usage_audit_ke
             )
             return True
         try:
+            await query.answer("读取详情信息...")
             mode, page_str, index_str = hash_key.split("|", 2)
             page = int(page_str)
             detail_index = int(index_str)

@@ -189,11 +189,16 @@ class Runtime:
                     reply_markup=reply_markup,
                     disable_web_page_preview=True,
                 )
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error("Auto-collapse edit_text failed: %s", e, exc_info=True)
                 return
 
         if context.job_queue:
             context.job_queue.run_once(_collapse_job, delay)
+        else:
+            import logging
+            logging.getLogger(__name__).warning("Job queue not available, skipping auto-collapse.")
 
 
 def create_runtime(*, logger: logging.Logger, proxy_port: int, url_cache_max_size: int, url_cache_ttl_seconds: int, allowed_user_ids: set[int]) -> Runtime:

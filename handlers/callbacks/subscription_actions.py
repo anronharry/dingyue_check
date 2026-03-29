@@ -57,6 +57,7 @@ def make_subscription_callback_handler(
             return True
 
         if action == "tag_apply":
+            await query.answer("处理标签中...")
             parts = hash_key.split("|", 1)
             if len(parts) != 2:
                 await query.answer("数据异常", show_alert=True)
@@ -82,6 +83,7 @@ def make_subscription_callback_handler(
             return True
 
         if action == "tag_new":
+            await query.answer("准备新建标签...")
             cleanup_url_cache()
             cache_entry = url_cache.get(hash_key)
             url = cache_entry.get("url") if cache_entry else None
@@ -114,6 +116,7 @@ def make_subscription_callback_handler(
             return True
 
         if action == "recheck":
+            await query.answer("正在发起重新检测，请稍候...")
             await query.edit_message_text("⏳ 正在重新检测...")
             try:
                 parser_instance = await get_parser()
@@ -141,6 +144,7 @@ def make_subscription_callback_handler(
             return True
 
         if action == "delete":
+            await query.answer("请确认是否删除")
             sub_name = store.get_all().get(url, {}).get("name", url)
             keyboard = [[
                 inline_keyboard_button(confirm_delete_label, callback_data=get_short_callback_data("del_confirm", url)),
@@ -154,6 +158,7 @@ def make_subscription_callback_handler(
             return True
 
         if action == "del_confirm":
+            await query.answer("执行删除操作...")
             if store.remove(url, operator_uid=operator_uid, require_owner=not owner_mode):
                 await query.edit_message_text("🗑️ <b>订阅已永久移除</b>", parse_mode="HTML")
             else:
@@ -161,10 +166,12 @@ def make_subscription_callback_handler(
             return True
 
         if action == "del_cancel":
+            await query.answer("操作已取消")
             await query.edit_message_text("🗳️ <b>已取消删除操作</b>", parse_mode="HTML")
             return True
 
         if action == "ping":
+            await query.answer("开始连通性测试，请耐心等待...")
             await query.edit_message_text("⚡ 正在执行真实节点并发测速，请稍候...")
             try:
                 parser_instance = await get_parser()
@@ -192,6 +199,7 @@ def make_subscription_callback_handler(
             return True
 
         if action == "tag":
+            await query.answer("正在加载标签选项...")
             sub = store.get_all().get(url, {})
             sub_owner = sub.get("owner_uid", 0)
             if sub_owner and sub_owner != operator_uid and not owner_mode:
