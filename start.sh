@@ -28,15 +28,8 @@ else
     RUN_PYTHON="python3"
 
     if ! python3 -c "import dotenv, telegram, aiohttp, urllib3" >/dev/null 2>&1; then
-        REQ_FILE="requirements.txt"
-        if [ -f ".env" ]; then
-            PROFILE=$(grep -E "^SERVER_PROFILE=" .env | cut -d= -f2 | tr -d '[:space:]')
-            if [ "$PROFILE" = "1gb" ] || [ "$PROFILE" = "512mb" ]; then
-                REQ_FILE="requirements-full.txt"
-            fi
-        fi
         echo "[*] Installing dependencies into .venv..."
-        pip install -q -r "$REQ_FILE"
+        pip install -q -r requirements.txt
     fi
 
     if ! python3 -c "import dotenv, telegram, aiohttp, urllib3" >/dev/null 2>&1; then

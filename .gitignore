@@ -41,3 +41,6 @@ coverage.xml
 *.cover
 .pytest_cache/
 test_output.txt
+
+# 本地维护文档（仅本地保留，不提交到 GitHub）
+LOCAL_OWNER_GUIDE.md

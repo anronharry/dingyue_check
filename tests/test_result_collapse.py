@@ -32,6 +32,7 @@ class ResultCollapseTest(unittest.IsolatedAsyncioTestCase):
         handler = make_subscription_handler(
             is_valid_url=lambda url: True,
             document_service=_DocService(),
+            export_cache_service=SimpleNamespace(get_cache_status=lambda **kwargs: None),
             format_subscription_info=lambda info, url=None: f"verbose:{info['name']}",
             format_subscription_compact=lambda info, url=None: f"compact:{info['name']}",
             make_sub_keyboard=lambda url: f"kb:{url}",

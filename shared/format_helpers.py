@@ -65,7 +65,7 @@ def get_country_flag(country_name):
     return flags.get(country_name, "🏳️")
 
 
-def format_remaining_time(expire_time_str):
+def format_remaining_time(expire_time_str, *, include_seconds: bool = True):
     try:
         expire_date = datetime.strptime(expire_time_str, "%Y-%m-%d %H:%M:%S")
         now = datetime.now()
@@ -77,6 +77,14 @@ def format_remaining_time(expire_time_str):
         hours = seconds // 3600
         minutes = (seconds % 3600) // 60
         sec = seconds % 60
+        if not include_seconds:
+            if days > 0:
+                return f"{days}天{hours}时"
+            if hours > 0:
+                return f"{hours}时{minutes}分"
+            if minutes > 0:
+                return f"{minutes}分"
+            return "不足1分"
         return f"{days}天{hours}时{minutes}分{sec}秒"
     except Exception:
         return ""

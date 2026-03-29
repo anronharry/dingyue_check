@@ -83,3 +83,17 @@ class UsageAuditService:
             "total_pages": total_pages,
             "records": filtered[start : start + page_size],
         }
+
+    def query_by_source_prefix(self, *, prefix: str, limit: int = 20, owner_id: int | None = None, include_owner: bool = True) -> list[dict]:
+        records = list(reversed(self.get_recent_records(limit=self.max_read_records)))
+        filtered = []
+        for row in records:
+            source = row.get("source", "")
+            if not source.startswith(prefix):
+                continue
+            if owner_id is not None and not include_owner and row.get("user_id") == owner_id:
+                continue
+            filtered.append(row)
+            if len(filtered) >= limit:
+                break
+        return filtered

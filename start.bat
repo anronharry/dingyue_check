@@ -36,16 +36,7 @@ set RUN_PYTHON=python
 python -c "import dotenv, telegram, aiohttp" >nul 2>&1
 if %errorlevel% neq 0 (
     echo [*] Installing dependencies into .venv...
-    if not exist ".env" (
-        set REQ_FILE=requirements.txt
-        goto install_deps
-    )
-    set REQ_FILE=requirements.txt
-    for /f "tokens=2 delims==" %%A in ('findstr /B "SERVER_PROFILE=" .env 2^>nul') do set PROFILE=%%A
-    if "%PROFILE%"=="1gb" set REQ_FILE=requirements-full.txt
-    if "%PROFILE%"=="512mb" set REQ_FILE=requirements-full.txt
-    :install_deps
-    pip install -q -r %REQ_FILE%
+    pip install -q -r requirements.txt
 )
 python -c "import dotenv, telegram, aiohttp" >nul 2>&1
 if %errorlevel% neq 0 (

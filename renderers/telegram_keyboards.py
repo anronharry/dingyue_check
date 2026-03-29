@@ -45,4 +45,46 @@ def build_usage_audit_keyboard(*, mode: str, page: int, total_pages: int, record
             InlineKeyboardButton("下一页", callback_data=f"audit:{mode}:{next_page}"),
         ]
     )
+    rows.append([InlineKeyboardButton("返回控制台", callback_data="panel:root")])
     return InlineKeyboardMarkup(rows)
+
+
+def build_recent_activity_keyboard(*, category: str, scope: str, page: int, total_pages: int, record_count: int = 0) -> InlineKeyboardMarkup:
+    prev_page = page - 1 if page > 1 else 1
+    next_page = page + 1 if page < total_pages else total_pages
+    rows = [
+        [
+            InlineKeyboardButton("非 Owner", callback_data=f"recent:{category}:others:{page}"),
+            InlineKeyboardButton("全部", callback_data=f"recent:{category}:all:{page}"),
+        ],
+    ]
+    if record_count:
+        rows.append(
+            [
+                InlineKeyboardButton(f"详情{index + 1}", callback_data=f"recent_detail:{category}|{scope}|{page}|{index}")
+                for index in range(record_count)
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton("上一页", callback_data=f"recent:{category}:{scope}:{prev_page}"),
+            InlineKeyboardButton("下一页", callback_data=f"recent:{category}:{scope}:{next_page}"),
+        ]
+    )
+    rows.append([InlineKeyboardButton("返回控制台", callback_data="panel:root")])
+    return InlineKeyboardMarkup(rows)
+
+
+def build_owner_panel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("使用审计", callback_data="panel:audit"),
+                InlineKeyboardButton("最近活跃", callback_data="panel:recentusers"),
+            ],
+            [
+                InlineKeyboardButton("最近导出", callback_data="panel:recentexports"),
+                InlineKeyboardButton("全局订阅", callback_data="panel:globallist"),
+            ],
+        ]
+    )

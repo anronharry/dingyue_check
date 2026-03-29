@@ -18,7 +18,7 @@ import config
 from app.bootstrap import build_application, log_startup_banner, register_handlers, run_polling
 from app.runtime import build_handlers, create_runtime
 from app.settings import AppSettings
-from renderers.telegram_keyboards import build_usage_audit_keyboard
+from renderers.telegram_keyboards import build_owner_panel_keyboard, build_recent_activity_keyboard, build_usage_audit_keyboard
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -83,6 +83,9 @@ async def post_init(application: Application):
         if owner_id:
             owner_commands = user_commands + [
                 BotCommand("listusers", "查看授权用户列表"),
+                BotCommand("ownerpanel", "打开 Owner 控制台"),
+                BotCommand("recentusers", "查看最近活跃用户"),
+                BotCommand("recentexports", "查看最近导出记录"),
                 BotCommand("allowall", "开启全员可用模式"),
                 BotCommand("denyall", "关闭全员可用模式"),
                 BotCommand("usageaudit", "查看最近使用记录"),
@@ -98,6 +101,8 @@ async def post_init(application: Application):
 
             monitor.configure_monitor(application, runtime.get_storage(), runtime.get_parser, runtime.ws_manager)
         application.bot_data["build_usage_audit_keyboard"] = build_usage_audit_keyboard
+        application.bot_data["build_recent_activity_keyboard"] = build_recent_activity_keyboard
+        application.bot_data["build_owner_panel_keyboard"] = build_owner_panel_keyboard
         application.bot_data["admin_service"] = runtime.admin_service
         logger.info("快捷命令菜单已成功推送。")
     except Exception as exc:
@@ -119,6 +124,9 @@ import_command = _handlers["import"]
 add_user_command = _handlers["adduser"]
 del_user_command = _handlers["deluser"]
 list_users_command = _handlers["listusers"]
+owner_panel_command = _handlers["ownerpanel"]
+recent_users_command = _handlers["recentusers"]
+recent_exports_command = _handlers["recentexports"]
 usageaudit_command = _handlers["usageaudit"]
 globallist_command = _handlers["globallist"]
 broadcast_command = _handlers["broadcast"]
@@ -146,6 +154,8 @@ def main():
     logger.info("启动时 bootstrap restore: %s", restore_note if not restored else f"restored to {restore_note}")
     application = build_application(BOT_TOKEN, post_init, _on_shutdown)
     application.bot_data["build_usage_audit_keyboard"] = build_usage_audit_keyboard
+    application.bot_data["build_recent_activity_keyboard"] = build_recent_activity_keyboard
+    application.bot_data["build_owner_panel_keyboard"] = build_owner_panel_keyboard
     application.bot_data["admin_service"] = runtime.admin_service
     register_handlers(application, _handlers)
     if application.job_queue:

@@ -5,7 +5,7 @@ import logging
 from typing import Callable
 
 from telegram import Update
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, JobQueue, MessageHandler, filters
 
 from app.constants import APP_FEATURES, APP_STARTUP, APP_TITLE
 
@@ -18,9 +18,6 @@ def log_startup_banner() -> None:
     logger.info(APP_FEATURES)
     logger.info("=" * 60)
     logger.info(APP_STARTUP)
-
-
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters, JobQueue
 
 def build_application(token: str, post_init: Callable, post_shutdown: Callable) -> Application:
     jq = JobQueue()
@@ -42,6 +39,9 @@ def register_handlers(application: Application, handlers: dict[str, Callable]) -
         "adduser",
         "deluser",
         "listusers",
+        "ownerpanel",
+        "recentusers",
+        "recentexports",
         "usageaudit",
         "globallist",
         "broadcast",

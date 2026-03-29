@@ -48,3 +48,10 @@ class UserProfileService:
         if full_name:
             return f'<a href="tg://user?id={user_id}">{html.escape(full_name)}</a> (<code>{user_id}</code>)'
         return f"<code>{user_id}</code>"
+
+    def get_recent_profiles(self, *, limit: int = 10, include_owner: bool = True) -> list[dict]:
+        profiles = list(self._profiles.values())
+        if not include_owner:
+            profiles = [row for row in profiles if not row.get("is_owner")]
+        profiles.sort(key=lambda row: row.get("last_seen_at", ""), reverse=True)
+        return profiles[:limit]

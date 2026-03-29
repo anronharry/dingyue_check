@@ -69,3 +69,29 @@ class UsageAuditPagingTest(unittest.TestCase):
         detail = self.admin.build_usage_audit_detail(mode="others", page=1, page_size=5, detail_index=0)
         self.assertIn("使用审计详情", detail)
         self.assertIn("https://example.com/", detail)
+
+    def test_recent_users_report_prefers_non_owner_by_default(self) -> None:
+        report = self.admin.build_recent_users_report(limit=5, include_owner=False)
+        self.assertIn("最近活跃用户", report)
+        self.assertIn("@bob", report)
+        self.assertNotIn("@owner", report)
+
+    def test_recent_exports_report_reads_export_audit(self) -> None:
+        self.audit.log_check(user=self.other, urls=["https://example.com/exported"], source="导出缓存:yaml")
+        report = self.admin.build_recent_exports_report(limit=5, include_owner=False)
+        self.assertIn("最近导出记录", report)
+        self.assertIn("YAML", report)
+        self.assertIn("https://example.com/exported", report)
+
+    def test_recent_users_page_includes_summary_stats(self) -> None:
+        report, paging = self.admin.build_recent_users_page(include_owner=False, page=1, page_size=5)
+        self.assertIn("24小时活跃", report)
+        self.assertIn("已授权", report)
+        self.assertEqual(paging["page"], 1)
+
+    def test_recent_exports_page_includes_summary_stats(self) -> None:
+        self.audit.log_check(user=self.other, urls=["https://example.com/exported"], source="导出缓存:yaml")
+        report, paging = self.admin.build_recent_exports_page(include_owner=False, page=1, page_size=5)
+        self.assertIn("24小时导出", report)
+        self.assertIn("YAML", report)
+        self.assertEqual(paging["page"], 1)

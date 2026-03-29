@@ -81,6 +81,72 @@ def make_usage_audit_command(*, is_owner, owner_only_msg, admin_service, schedul
     return usage_audit_command
 
 
+def make_recent_users_command(*, is_owner, owner_only_msg, admin_service, schedule_auto_delete):
+    async def recent_users_command(update, context):
+        if not is_owner(update):
+            reply_msg = await update.message.reply_text(owner_only_msg)
+            schedule_auto_delete(context, update.message, reply_msg, delay=10)
+            return
+        include_owner = bool(context.args and context.args[0].lower() == "all")
+        report, paging = admin_service.build_recent_users_page(include_owner=include_owner, page=1, page_size=5)
+        reply_msg = await update.message.reply_text(
+            report,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=context.application.bot_data["build_recent_activity_keyboard"](
+                category="users",
+                scope=paging["scope"],
+                page=paging["page"],
+                total_pages=paging["total_pages"],
+                record_count=len(paging["records"]),
+            ),
+        )
+        schedule_auto_delete(context, update.message, reply_msg, delay=90)
+
+    return recent_users_command
+
+
+def make_recent_exports_command(*, is_owner, owner_only_msg, admin_service, schedule_auto_delete):
+    async def recent_exports_command(update, context):
+        if not is_owner(update):
+            reply_msg = await update.message.reply_text(owner_only_msg)
+            schedule_auto_delete(context, update.message, reply_msg, delay=10)
+            return
+        include_owner = bool(context.args and context.args[0].lower() == "all")
+        report, paging = admin_service.build_recent_exports_page(include_owner=include_owner, page=1, page_size=5)
+        reply_msg = await update.message.reply_text(
+            report,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=context.application.bot_data["build_recent_activity_keyboard"](
+                category="exports",
+                scope=paging["scope"],
+                page=paging["page"],
+                total_pages=paging["total_pages"],
+                record_count=len(paging["records"]),
+            ),
+        )
+        schedule_auto_delete(context, update.message, reply_msg, delay=90)
+
+    return recent_exports_command
+
+
+def make_owner_panel_command(*, is_owner, owner_only_msg, admin_service, schedule_auto_delete):
+    async def owner_panel_command(update, context):
+        if not is_owner(update):
+            reply_msg = await update.message.reply_text(owner_only_msg)
+            schedule_auto_delete(context, update.message, reply_msg, delay=10)
+            return
+        reply_msg = await update.message.reply_text(
+            admin_service.build_owner_panel_text(),
+            parse_mode="HTML",
+            reply_markup=context.application.bot_data["build_owner_panel_keyboard"](),
+        )
+        schedule_auto_delete(context, update.message, reply_msg, delay=120)
+
+    return owner_panel_command
+
+
 def make_delete_command(
     *,
     is_authorized,

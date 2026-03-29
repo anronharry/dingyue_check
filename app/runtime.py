@@ -34,6 +34,9 @@ from handlers.commands.admin import (
     make_globallist_command,
     make_import_command,
     make_list_users_command,
+    make_owner_panel_command,
+    make_recent_exports_command,
+    make_recent_users_command,
     make_refresh_menu_command,
     make_restore_command,
     make_set_public_access_command,
@@ -46,8 +49,8 @@ from handlers.messages.documents import make_document_handler, make_node_text_ha
 from handlers.messages.router import make_message_handler
 from handlers.messages.subscriptions import make_subscription_handler
 from jobs.cache_cleanup_job import run_cache_cleanup
-from renderers.formatters import format_subscription_compact, format_subscription_info
-from renderers.telegram_keyboards import build_subscription_keyboard, build_usage_audit_keyboard
+from renderers.formatters import format_node_analysis_compact, format_subscription_compact, format_subscription_info
+from renderers.telegram_keyboards import build_owner_panel_keyboard, build_recent_activity_keyboard, build_subscription_keyboard, build_usage_audit_keyboard
 from services.access_service import AccessService
 from services.admin_service import AdminService
 from services.backup_service import BackupService
@@ -318,6 +321,9 @@ def build_handlers(runtime: Runtime, *, post_init):
     handlers["adduser"] = make_add_user_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, user_manager=runtime.user_manager, schedule_auto_delete=runtime.schedule_auto_delete)
     handlers["deluser"] = make_del_user_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, user_manager=runtime.user_manager, owner_id=config.OWNER_ID, schedule_auto_delete=runtime.schedule_auto_delete)
     handlers["listusers"] = make_list_users_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
+    handlers["ownerpanel"] = make_owner_panel_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
+    handlers["recentusers"] = make_recent_users_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
+    handlers["recentexports"] = make_recent_exports_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
     handlers["refresh_menu"] = make_refresh_menu_command(is_owner=runtime.is_owner, post_init=post_init)
     handlers["globallist"] = make_globallist_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
     handlers["to_yaml"] = make_to_yaml_command(is_authorized=runtime.is_authorized, send_no_permission_msg=runtime.send_no_permission_msg, conversion_service=runtime.conversion_service)
@@ -330,18 +336,27 @@ def build_handlers(runtime: Runtime, *, post_init):
         is_owner=runtime.is_owner,
         owner_only_msg=OWNER_ONLY_MSG,
         document_service=runtime.document_service,
+        export_cache_service=runtime.export_cache_service,
         format_subscription_info=format_subscription_info,
         format_subscription_compact=format_subscription_compact,
+        format_node_analysis_compact=format_node_analysis_compact,
         make_sub_keyboard=runtime.make_sub_keyboard,
         schedule_result_collapse=runtime.schedule_result_collapse,
         backup_service=runtime.backup_service,
         usage_audit_service=runtime.usage_audit_service,
         logger=runtime.logger,
     )
-    handle_node_text = make_node_text_handler(document_service=runtime.document_service, format_subscription_info=format_subscription_info, logger=runtime.logger)
+    handle_node_text = make_node_text_handler(
+        document_service=runtime.document_service,
+        format_subscription_info=format_subscription_info,
+        format_node_analysis_compact=format_node_analysis_compact,
+        schedule_result_collapse=runtime.schedule_result_collapse,
+        logger=runtime.logger,
+    )
     handle_subscription = make_subscription_handler(
         is_valid_url=is_valid_url,
         document_service=runtime.document_service,
+        export_cache_service=runtime.export_cache_service,
         format_subscription_info=format_subscription_info,
         format_subscription_compact=format_subscription_compact,
         make_sub_keyboard=runtime.make_sub_keyboard,
@@ -379,6 +394,8 @@ def build_handlers(runtime: Runtime, *, post_init):
         admin_service=runtime.admin_service,
         export_cache_service=runtime.export_cache_service,
         build_usage_audit_keyboard=build_usage_audit_keyboard,
+        build_recent_activity_keyboard=build_recent_activity_keyboard,
+        build_owner_panel_keyboard=build_owner_panel_keyboard,
         format_subscription_compact=format_subscription_compact,
         schedule_result_collapse=runtime.schedule_result_collapse,
         logger=runtime.logger,
@@ -404,6 +421,9 @@ def build_handlers(runtime: Runtime, *, post_init):
         "adduser": lambda u, c: "/adduser",
         "deluser": lambda u, c: "/deluser",
         "listusers": lambda u, c: "/listusers",
+        "ownerpanel": lambda u, c: "/ownerpanel",
+        "recentusers": lambda u, c: "/recentusers",
+        "recentexports": lambda u, c: "/recentexports",
         "refresh_menu": lambda u, c: "/refresh_menu",
         "globallist": lambda u, c: "/globallist",
         "to_yaml": lambda u, c: "/to_yaml",

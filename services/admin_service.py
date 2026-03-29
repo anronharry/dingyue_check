@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import html
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class AdminService:
@@ -27,6 +27,23 @@ class AdminService:
         self.usage_audit_service = usage_audit_service
         self.user_profile_service = user_profile_service
         self.export_cache_service = export_cache_service
+
+    @staticmethod
+    def _parse_dt(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return None
+
+    def _count_recent_profiles(self, profiles: list[dict], *, hours: int = 24) -> int:
+        threshold = datetime.now() - timedelta(hours=hours)
+        return sum(1 for row in profiles if (self._parse_dt(row.get("last_seen_at")) or datetime.min) >= threshold)
+
+    def _count_recent_records(self, records: list[dict], *, hours: int = 24) -> int:
+        threshold = datetime.now() - timedelta(hours=hours)
+        return sum(1 for row in records if (self._parse_dt(row.get("ts")) or datetime.min) >= threshold)
 
     def build_globallist_report(self) -> str | None:
         store = self.get_storage()
@@ -161,6 +178,164 @@ class AdminService:
             f"授权用户: {len(self.user_manager.get_all())}\n"
             f"缓存条目: {len(self.export_cache_service.get_index_snapshot())}"
         )
+
+    def build_owner_panel_text(self) -> str:
+        store = self.get_storage()
+        total_subscriptions = len(store.get_all())
+        total_users = len(self.user_manager.get_all())
+        active_profiles = len(self.user_profile_service.get_recent_profiles(limit=1000, include_owner=False))
+        cache_entries = len(self.export_cache_service.get_index_snapshot())
+        recent_exports = len(
+            self.usage_audit_service.query_by_source_prefix(
+                prefix="导出缓存:",
+                limit=1000,
+                owner_id=self.owner_id,
+                include_owner=False,
+            )
+        )
+        return (
+            "<b>🛠 Owner 控制台</b>\n"
+            f"订阅总数: <b>{total_subscriptions}</b>\n"
+            f"授权用户: <b>{total_users}</b>\n"
+            f"最近活跃用户: <b>{active_profiles}</b>\n"
+            f"缓存条目: <b>{cache_entries}</b>\n"
+            f"最近导出记录: <b>{recent_exports}</b>\n\n"
+            "点击下方按钮进入对应视图。"
+        )
+
+    def build_recent_users_report(self, *, limit: int = 10, include_owner: bool = False) -> str:
+        report, _ = self.build_recent_users_page(
+            include_owner=include_owner,
+            page=1,
+            page_size=max(1, limit),
+        )
+        return report
+
+    def build_recent_exports_report(self, *, limit: int = 10, include_owner: bool = False) -> str:
+        report, _ = self.build_recent_exports_page(
+            include_owner=include_owner,
+            page=1,
+            page_size=max(1, limit),
+        )
+        return report
+
+    def build_recent_users_page(self, *, include_owner: bool = False, page: int = 1, page_size: int = 5) -> tuple[str, dict]:
+        profiles = self.user_profile_service.get_recent_profiles(limit=1000, include_owner=include_owner)
+        total = len(profiles)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        safe_page = max(1, min(page, total_pages))
+        start = (safe_page - 1) * page_size
+        current = profiles[start : start + page_size]
+        if not current:
+            return "📭 暂无最近活跃用户记录。", {"page": 1, "total_pages": 1, "records": [], "scope": "all" if include_owner else "others"}
+        title = "全部用户" if include_owner else "非 Owner 用户"
+        lines = [
+            "<b>🕘 最近活跃用户</b>",
+            f"范围：{title}",
+            f"页码：{safe_page} / {total_pages} | 记录数：{total}",
+            f"概览：24小时活跃 {self._count_recent_profiles(profiles)} | 已授权 {sum(1 for row in profiles if row.get('is_authorized'))}",
+            "",
+        ]
+        for index, profile in enumerate(current, start=1):
+            lines.append(
+                f"{index}. {self.user_profile_service.format_user_identity(profile.get('user_id'))}\n"
+                f"最后活跃: {profile.get('last_seen_at', '-')}\n"
+                f"入口: {html.escape(profile.get('last_source', '-'))}"
+            )
+            lines.append("")
+        return "\n".join(lines).strip(), {
+            "page": safe_page,
+            "total_pages": total_pages,
+            "records": current,
+            "scope": "all" if include_owner else "others",
+        }
+
+    def build_recent_users_detail(self, *, include_owner: bool = False, page: int = 1, page_size: int = 5, detail_index: int = 0) -> str:
+        profiles = self.user_profile_service.get_recent_profiles(limit=1000, include_owner=include_owner)
+        total_pages = max(1, (len(profiles) + page_size - 1) // page_size)
+        safe_page = max(1, min(page, total_pages))
+        start = (safe_page - 1) * page_size
+        current = profiles[start : start + page_size]
+        if detail_index < 0 or detail_index >= len(current):
+            return "❌ 记录不存在或已翻页"
+        profile = current[detail_index]
+        return (
+            "<b>🔎 活跃用户详情</b>\n"
+            f"用户: {self.user_profile_service.format_user_identity(profile.get('user_id'))}\n"
+            f"首次出现: {profile.get('first_seen_at', '-')}\n"
+            f"最后活跃: {profile.get('last_seen_at', '-')}\n"
+            f"最近入口: {html.escape(profile.get('last_source', '-'))}\n"
+            f"Owner: {'是' if profile.get('is_owner') else '否'}\n"
+            f"已授权: {'是' if profile.get('is_authorized') else '否'}"
+        )
+
+    def build_recent_exports_page(self, *, include_owner: bool = False, page: int = 1, page_size: int = 5) -> tuple[str, dict]:
+        records = self.usage_audit_service.query_by_source_prefix(
+            prefix="导出缓存:",
+            limit=1000,
+            owner_id=self.owner_id,
+            include_owner=include_owner,
+        )
+        total = len(records)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        safe_page = max(1, min(page, total_pages))
+        start = (safe_page - 1) * page_size
+        current = records[start : start + page_size]
+        if not current:
+            return "📭 暂无最近导出记录。", {"page": 1, "total_pages": 1, "records": [], "scope": "all" if include_owner else "others"}
+        title = "全部用户" if include_owner else "非 Owner 用户"
+        lines = [
+            "<b>📤 最近导出记录</b>",
+            f"范围：{title}",
+            f"页码：{safe_page} / {total_pages} | 记录数：{total}",
+            f"概览：24小时导出 {self._count_recent_records(records)} | YAML {sum(1 for row in records if row.get('source') == '导出缓存:yaml')} | TXT {sum(1 for row in records if row.get('source') == '导出缓存:txt')}",
+            "",
+        ]
+        for index, record in enumerate(current, start=1):
+            urls = record.get("urls", [])
+            first_url = urls[0] if urls else "-"
+            short_url = html.escape(first_url[:80] + ("..." if len(first_url) > 80 else ""))
+            fmt = html.escape(record.get("source", "-").split(":", 1)[-1].upper())
+            lines.append(
+                f"{index}. {self.user_profile_service.format_user_identity(record.get('user_id', 0))}\n"
+                f"时间: {record.get('ts', '-')}\n"
+                f"格式: {fmt}\n"
+                f"目标: <code>{short_url}</code>"
+            )
+            lines.append("")
+        return "\n".join(lines).strip(), {
+            "page": safe_page,
+            "total_pages": total_pages,
+            "records": current,
+            "scope": "all" if include_owner else "others",
+        }
+
+    def build_recent_exports_detail(self, *, include_owner: bool = False, page: int = 1, page_size: int = 5, detail_index: int = 0) -> str:
+        records = self.usage_audit_service.query_by_source_prefix(
+            prefix="导出缓存:",
+            limit=1000,
+            owner_id=self.owner_id,
+            include_owner=include_owner,
+        )
+        total_pages = max(1, (len(records) + page_size - 1) // page_size)
+        safe_page = max(1, min(page, total_pages))
+        start = (safe_page - 1) * page_size
+        current = records[start : start + page_size]
+        if detail_index < 0 or detail_index >= len(current):
+            return "❌ 记录不存在或已翻页"
+        record = current[detail_index]
+        urls = record.get("urls", [])
+        lines = [
+            "<b>🔎 导出记录详情</b>",
+            f"用户: {self.user_profile_service.format_user_identity(record.get('user_id', 0))}",
+            f"时间: {record.get('ts', '-')}",
+            f"格式: {html.escape(record.get('source', '-').split(':', 1)[-1].upper())}",
+            f"目标数: {len(urls)}",
+            "",
+        ]
+        for index, url in enumerate(urls, start=1):
+            lines.append(f"{index}. <code>{html.escape(url)}</code>")
+        return "\n".join(lines).strip()
 
     def make_export_file_path(self) -> tuple[str, str]:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

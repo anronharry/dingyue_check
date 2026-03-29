@@ -91,7 +91,7 @@ def format_subscription_compact(info, url=None):
         message += f"<b>剩余：</b> {format_traffic(info.get('remaining', 0))}\n"
     if info.get("expire_time"):
         message += f"<b>到期：</b> {info['expire_time']}\n"
-        remaining_time = format_remaining_time(info["expire_time"])
+        remaining_time = format_remaining_time(info["expire_time"], include_seconds=False)
         if remaining_time:
             message += f"<b>剩余时间：</b> {remaining_time}\n"
     if info.get("node_count") is not None:
@@ -99,6 +99,39 @@ def format_subscription_compact(info, url=None):
     tags = info.get("tags") or []
     if tags:
         message += f"<b>标签：</b> {html.escape(', '.join(tags[:5]))}\n"
-    if url:
-        message += f"\n<code>{html.escape(url)}</code>"
+    cache_remaining = info.get("_cache_remaining_text")
+    cache_expires_at = info.get("_cache_expires_at")
+    last_exported_at = info.get("_cache_last_exported_at")
+    if cache_remaining:
+        message += f"<b>缓存有效：</b> {cache_remaining}\n"
+    elif cache_expires_at:
+        message += f"<b>缓存至：</b> {cache_expires_at}\n"
+    if last_exported_at:
+        message += f"<b>最近导出：</b> {last_exported_at}\n"
+    return message.strip()
+
+
+def format_node_analysis_compact(info, url=None):
+    """Format compact node-analysis details for delayed message collapse."""
+    del url
+    message = "<b>📦 节点简要</b>\n\n"
+    if info.get("name"):
+        message += f"<b>名称：</b> {html.escape(info['name'])}\n"
+    if info.get("node_count") is not None:
+        message += f"<b>节点数：</b> {info['node_count']}\n"
+
+    stats = info.get("node_stats") or {}
+    countries = stats.get("countries") or {}
+    if countries:
+        top_countries = sorted(countries.items(), key=lambda item: item[1], reverse=True)[:3]
+        country_text = " / ".join(f"{html.escape(country)} {count}" for country, count in top_countries)
+        message += f"<b>地区：</b> {country_text}\n"
+
+    protocols = stats.get("protocols") or {}
+    if protocols:
+        top_protocols = sorted(protocols.items(), key=lambda item: item[1], reverse=True)[:3]
+        protocol_text = " / ".join(f"{protocol.upper()} {count}" for protocol, count in top_protocols)
+        message += f"<b>协议：</b> {protocol_text}\n"
+
+    message += "<b>说明：</b> 纯节点列表，不含流量和到期信息"
     return message.strip()

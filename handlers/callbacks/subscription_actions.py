@@ -29,6 +29,8 @@ def make_subscription_callback_handler(
     admin_service,
     export_cache_service,
     build_usage_audit_keyboard,
+    build_recent_activity_keyboard,
+    build_owner_panel_keyboard,
     format_subscription_compact,
     schedule_result_collapse,
     logger,
@@ -37,6 +39,8 @@ def make_subscription_callback_handler(
         is_owner=is_owner,
         admin_service=admin_service,
         build_usage_audit_keyboard=build_usage_audit_keyboard,
+        build_recent_activity_keyboard=build_recent_activity_keyboard,
+        build_owner_panel_keyboard=build_owner_panel_keyboard,
         inline_keyboard_button=inline_keyboard_button,
         inline_keyboard_markup=inline_keyboard_markup,
     )
@@ -44,6 +48,7 @@ def make_subscription_callback_handler(
         get_storage=get_storage,
         is_owner=is_owner,
         export_cache_service=export_cache_service,
+        usage_audit_service=usage_audit_service,
     )
 
     async def handle_callback(update, context, action: str, hash_key: str) -> bool:
@@ -124,6 +129,12 @@ def make_subscription_callback_handler(
                 owner_uid = store.get_all().get(url, {}).get("owner_uid", 0)
                 store.add_or_update(url, result, user_id=owner_uid)
                 export_cache_service.save_subscription_cache(owner_uid=owner_uid, source=url, result=result)
+                compact_info = dict(result)
+                cache_status = export_cache_service.get_cache_status(owner_uid=owner_uid, source=url)
+                if cache_status:
+                    compact_info["_cache_expires_at"] = cache_status.get("expires_at")
+                    compact_info["_cache_remaining_text"] = cache_status.get("remaining_text")
+                    compact_info["_cache_last_exported_at"] = cache_status.get("last_exported_at")
                 usage_audit_service.log_check(user=update.effective_user, urls=[url], source="按钮重检")
                 reply_markup = make_sub_keyboard(url)
                 await query.edit_message_text(
@@ -134,7 +145,7 @@ def make_subscription_callback_handler(
                 schedule_result_collapse(
                     context=context,
                     message=query.message,
-                    info=result,
+                    info=compact_info,
                     url=url,
                     formatter=format_subscription_compact,
                     reply_markup=reply_markup,

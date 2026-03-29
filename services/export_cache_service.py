@@ -139,6 +139,33 @@ class ExportCacheService:
             return None
         return entry
 
+    def get_cache_status(self, *, owner_uid: int, source: str) -> dict | None:
+        entry = self.get_entry(owner_uid=owner_uid, source=source)
+        if not entry:
+            return None
+        expires_at = self._parse_ts(entry.get("expires_at"))
+        if not expires_at:
+            return {
+                "expires_at": None,
+                "remaining_text": None,
+                "last_exported_at": entry.get("last_exported_at"),
+            }
+        remaining = expires_at - self._now()
+        total_seconds = max(0, int(remaining.total_seconds()))
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes = remainder // 60
+        if hours > 0:
+            remaining_text = f"{hours}小时{minutes}分"
+        elif minutes > 0:
+            remaining_text = f"{minutes}分"
+        else:
+            remaining_text = "不足1分"
+        return {
+            "expires_at": entry.get("expires_at"),
+            "remaining_text": remaining_text,
+            "last_exported_at": entry.get("last_exported_at"),
+        }
+
     def resolve_export_path(self, *, owner_uid: int, source: str, fmt: str, requester_uid: int, is_owner: bool) -> tuple[str | None, str | None]:
         entry = self.get_entry(owner_uid=owner_uid, source=source)
         if not entry:

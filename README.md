@@ -1,165 +1,381 @@
-# 🤖 Gipson_check
+# Telegram 订阅检测机器人
 
-> 一个给授权用户使用的 Telegram 订阅工具机器人。  
-> 主要提供 3 类能力：`订阅检测`、`TXT / YAML 转换`、`到期与流量自动预警`。  
-> `Owner` 在此基础上额外拥有用户管理和全局查看能力。
+一个适合部署在 VPS 上的 Telegram 订阅工具机器人。
 
----
+它可以帮你：
 
-## ✨ 核心功能
+- 检测订阅链接是否有效
+- 显示剩余流量、到期时间、节点数量
+- 转换 `TXT` 和 `YAML` 节点文件
+- 缓存导出结果 48 小时，避免次数限制链接失效
+- 提供 Owner 授权、使用审计、备份恢复等管理能力
 
-| 功能 | 说明 |
-|------|------|
-| 📥 订阅检测 | 发送订阅链接即可检测是否可用，并读取剩余流量、到期时间、节点数量 |
-| 🔄 格式转换 | 支持 TXT ↔ Clash YAML，适合把节点文本快速转换为可直接导入的配置 |
-| 🔔 自动预警 | 定时巡检订阅，提醒即将过期或剩余流量不足的订阅 |
-| ⚡ 深度检测 | 可选使用 Mihomo 内核做更深度的节点连通性检测 |
-| 🛡️ 权限分级 | Owner 可授权用户使用机器人，并查看全局订阅与链接 |
+## 适合什么场景
 
----
+- 自己日常检测订阅
+- 给朋友或小群体共用一个订阅机器人
+- 想要一个带缓存导出和备份迁移能力的长期 Bot
+- 想在 Telegram 里直接完成节点检测、转换和导入前准备
 
-## 🔔 预警规则
+## 亮点
 
-- 到期时间在 3 天内时，会触发到期预警
-- 剩余流量低于总量的 10%，或绝对值低于 5 GB 时，会触发流量预警
-- `/check` 中的“需关注”结果与自动预警使用同一套标准
-
----
-
-## 🚀 傻瓜式新手安装指南
-
-本指南旨在帮助**完全没有编程经验**的新手在 Linux 服务器（如 Ubuntu/Debian）上成功运行机器人。
-
-### 第一步：准备必要信息 (ID 与 Token)
-在开始之前，你需要在 Telegram 上获取两个核心参数：
-1. **获取 Bot Token**：
-   - 在 TG 中搜索 [@BotFather](https://t.me/BotFather)，发送 `/newbot`。
-   - 按照提示输入机器人名称。
-   - 成功后你会收到一段代码，例如 `12345678:ABCDefgh...`，这就是 **Token**。
-2. **获取你的用户 ID (OWNER_ID)**：
-   - 搜索 [@userinfobot](https://t.me/userinfobot)，发送任意消息。
-   - 它会返回一串数字（如 `987654321`），这就是你的 **ID**。
+- 订阅结果先详细展示，约 20 秒后自动精简
+- 导出 `YAML` / `TXT` 按钮有即时反馈，不会像“没按到”
+- 解析结果缓存 48 小时，适合有访问次数限制的订阅
+- Owner 可分页查看最近谁在使用、谁在导出
+- 支持 `/backup` 和 `/restore`，迁移服务器更省事
 
 ---
 
-### 第二步：一键环境部署
-连接你的服务器（使用 SSH 工具，如 Termius 或 PuTTY），复制并粘贴以下命令：
+## 3 分钟快速部署
+
+### 1. 获取必要信息
+
+你需要：
+
+- `Bot Token`
+- 你的 Telegram 数字 ID，也就是 `OWNER_ID`
+
+获取方式：
+
+- `Bot Token`：找 [@BotFather](https://t.me/BotFather) 创建机器人
+- `OWNER_ID`：找 [@userinfobot](https://t.me/userinfobot) 发送任意消息
+
+### 2. 克隆项目
 
 ```bash
-# 1. 更新服务器环境
-sudo apt update && sudo apt install -y git python3 python3-pip python3-venv
-
-# 2. 克隆项目代码
 git clone https://github.com/anronharry/dingyue_check.git
 cd dingyue_check
-
-# 3. 创建虚拟环境 (隔离环境，防止冲突)
-python3 -m venv venv
-source venv/bin/activate
-
-# 4. 安装必备依赖
-pip install --upgrade pip
-pip install -r requirements.txt
 ```
 
----
+### 3. 配置 `.env`
 
-### 第三步：配置机器人
-你需要告诉机器人你的 Token 和 ID：
-
-1. **创建配置文件**：
-   ```bash
-   cp .env.example .env
-   ```
-2. **编辑配置文件**：
-   使用内置编辑器打开它：
-   ```bash
-   nano .env
-   ```
-   在打开的界面中修改以下两行：
-   - `TELEGRAM_BOT_TOKEN=你的Token`（把刚才获取的 Token 填进去）
-   - `OWNER_ID=你的ID`（把刚才获取的 ID 填进去）
-   - *提示：按 `Ctrl+O` 保存，按 `Enter` 确认，按 `Ctrl+X` 退出。*
-
----
-
-### 第四步：启动机器人
-
-**Linux / macOS（推荐使用一键脚本）：**
 ```bash
+cp .env.example .env
+```
+
+至少填写：
+
+```env
+TELEGRAM_BOT_TOKEN=你的BotToken
+OWNER_ID=你的Telegram数字ID
+```
+
+如果你希望一开始就让几个固定用户可用，也可以填：
+
+```env
+ALLOWED_USER_IDS=123456789,987654321
+```
+
+配置模板见：[.env.example](.env.example)
+
+### 4. 启动
+
+#### Linux / macOS
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -r requirements.txt
 bash start.sh
 ```
 
-**Windows：**
+#### Windows
+
 ```bat
+python -m venv .venv
+.venv\Scripts\activate
+pip install -U pip
+pip install -r requirements.txt
 start.bat
 ```
 
-**或手动后台常驻运行（Linux）：**
-```bash
-# 后台常驻运行 (推荐)
-nohup python3 main.py > bot.log 2>&1 &
+启动脚本：
 
-# 如果你想直接看实时日志（按 Ctrl+C 退出日志查看，不影响程序运行）：
-tail -f bot.log
+- [start.sh](start.sh)
+- [start.bat](start.bat)
+
+---
+
+## 实际使用效果
+
+### 示例 1：用户直接发送订阅链接
+
+```text
+用户：
+https://example.com/sub?token=abc
+
+机器人：
+先返回详细信息：
+- 名称
+- 剩余流量
+- 到期时间
+- 节点数量
+- 导出按钮
+
+约 20 秒后：
+自动精简成短摘要，只保留最关键的信息
+```
+
+### 示例 2：用户点击导出 YAML
+
+```text
+用户：
+点击「导出 YAML」
+
+机器人：
+先提示“正在准备 YAML...”
+然后发送 YAML 文件
+```
+
+### 示例 3：Owner 查看最近谁在使用
+
+```text
+Owner：
+/ownerpanel
+
+机器人：
+显示控制台按钮：
+- 使用审计
+- 最近活跃用户
+- 最近导出记录
+- 全局订阅概览
 ```
 
 ---
 
-## 🤖 Bot 命令手册
+## 普通用户怎么用
 
-### 👑 管理员专属 (仅 Owner 可用)
-- `/adduser <ID>` - 授权其他用户使用你的机器人。
-- `/deluser <ID>` - 移除某个用户的授权。
-- `/listusers` - 查看当前有多少人被你授权了。
-- `/import` / `/export` - 备份与恢复订阅数据库。
-- `/broadcast <内容>` - 向所有授权用户发送系统公告。
+最常用的有 3 种方式：
 
-### 👥 基础功能 (Owner 及授权用户)
-- `/check` - 手动检测我的全部订阅。
-- `/list` - 查看我的订阅列表，并可直接重新检测、添加标签或删除。
-- `/stats` - 查看我的订阅统计；Owner 额外可看到系统资源占用。
-- `/deepcheck` - **回复一个 TXT / YAML 文件使用**。进行更深度的节点连通性检测。
-- `/to_yaml` / `/to_txt` - **回复一个文件使用**。实现配置格式互相转换。
-- 发送订阅链接 - 自动解析、保存并展示检测结果。
-- 上传 TXT / YAML 文件 - 自动识别内容并分析，或配合命令完成格式转换。
+### 1. 直接发送订阅链接
+
+机器人会自动：
+
+- 检测可用性
+- 读取剩余流量
+- 读取到期时间
+- 统计节点数量
+- 缓存导出内容 48 小时
+
+### 2. 上传 `TXT` / `YAML` 文件
+
+机器人会自动判断它是：
+
+- 订阅链接列表
+- 还是节点配置文件
+
+然后执行对应处理。
+
+### 3. 直接发送节点文本
+
+例如：
+
+- `vmess://...`
+- `ss://...`
+- `trojan://...`
+
+机器人会自动分析节点内容。
 
 ---
 
-## 🛡️ 鲁棒性与安全性防护
-- **内核自愈**：启动测速前自动校验二进制完整性，防止残留损坏。
-- **内存防护**：强制限制上传文件最大 **5MB**，防止特大 Payload 导致 OOM。
-- **自动清理**：定时任务会自动删除 24 小时前的临时测速缓存，防止磁盘写满。
-- **并发控制**：所有网络操作均通过 `Semaphore` 控制并发量，确保 1GB VPS 稳定。
+## 命令一览
+
+### 普通用户命令
+
+| 命令 | 作用 |
+|---|---|
+| `/start` | 开始使用 |
+| `/help` | 查看帮助 |
+| `/check` | 检查自己的全部订阅 |
+| `/check <标签>` | 检查指定标签下的订阅 |
+| `/list` | 查看自己的订阅列表 |
+| `/stats` | 查看统计信息 |
+| `/delete` | 删除订阅 |
+| `/to_yaml` | 把 TXT 转成 YAML |
+| `/to_txt` | 把 YAML 转成 TXT |
+| `/deepcheck` | 深度检测节点 |
+
+### Owner 命令
+
+| 命令 | 作用 |
+|---|---|
+| `/adduser <ID>` | 授权用户 |
+| `/deluser <ID>` | 取消授权 |
+| `/listusers` | 查看授权名单 |
+| `/allowall` | 开启全员可用 |
+| `/denyall` | 关闭全员可用 |
+| `/ownerpanel` | 打开 Owner 控制台 |
+| `/usageaudit` | 查看使用审计 |
+| `/recentusers` | 查看最近活跃用户 |
+| `/recentexports` | 查看最近导出记录 |
+| `/globallist` | 查看全局订阅概览 |
+| `/checkall` | 检查所有用户订阅 |
+| `/broadcast <内容>` | 广播通知 |
+| `/export` | 导出订阅数据 |
+| `/import` | 导入订阅数据 |
+| `/backup` | 生成完整备份 |
+| `/restore` | 恢复完整备份 |
 
 ---
 
-## ❓ 常见问题 (FAQ)
-1. **机器人没反应？**：请检查 `.env` 中的 Token 是否正确，且服务器是否可以访问 Telegram API（部分境内服务器需挂代理）。
-2. **深检(DeepCheck)下载内核失败？**：由于内核在 GitHub 存储，请确保服务器网络畅通，或手动将 `mihomo` 放置在 `bin/` 目录下。
-3. **如何更新代码？**：
-   项目根目录已经自带更新脚本 `update_bot.sh`，会自动：
-   - 停掉旧的 `python3 main.py`
-   - 拉取最新代码
-   - 执行编译检查
-   - 执行单元测试
-   - 重新后台启动机器人
-   - 输出最近日志
+## 为什么这个项目对“有次数限制的订阅”更友好
 
-   首次使用先赋予执行权限：
-   ```bash
-   cd ~/dingyue_check
-   chmod +x update_bot.sh
-   ```
+很多订阅链接只能访问几次，用户当下检测完，如果晚点再去代理工具里导入，链接可能已经失效。
 
-   以后每次更新直接运行：
-   ```bash
-   cd ~/dingyue_check
-   ./update_bot.sh
-   ```
+这个项目的处理方式是：
 
-   如果你只想确认当前机器人是否正常运行：
-   ```bash
-   ps -ef | grep "python3 main.py" | grep -v grep
-   tail -n 50 ~/dingyue_check/bot.log
-   ```
+- 检测成功后先缓存结果
+- 缓存默认保留 48 小时
+- 用户可在缓存期内再次导出 `YAML` / `TXT`
+- 用户也可以手动删除缓存
+
+这样用户不需要反复重新请求原始订阅链接。
+
+---
+
+## Owner 功能
+
+Owner 除了正常使用外，还能做这些事：
+
+- 管理授权用户
+- 切换全员可用模式
+- 查看最近谁在用机器人
+- 查看最近谁导出了缓存
+- 查看其他用户的全局订阅概览
+- 导出备份并恢复到新服务器
+
+如果你经常要看管理信息，建议直接用：
+
+```text
+/ownerpanel
+```
+
+它是 Owner 的集中入口。
+
+---
+
+## 备份与迁移
+
+如果服务器到期或需要迁移，推荐流程：
+
+1. 在旧服务器使用 `/backup`
+2. 保存机器人发出的 ZIP 备份
+3. 在新服务器部署同版本项目
+4. 启动机器人
+5. 使用 `/restore`
+6. 上传这个 ZIP 备份
+
+这样可以尽量保留：
+
+- 用户授权信息
+- 订阅数据
+- 缓存索引
+- 其他运行状态
+
+---
+
+## 常见问题
+
+### 1. 机器人没反应
+
+先检查：
+
+- `.env` 里的 `TELEGRAM_BOT_TOKEN` 是否正确
+- `OWNER_ID` 是否正确
+- 服务器是否能访问 Telegram
+
+### 2. 为什么没有 20 秒后自动精简
+
+常见原因：
+
+- Job Queue 没正常工作
+- 消息已经被删除或不可编辑
+- 当前路径没有进入自动收缩逻辑
+
+维护者可以看日志里是否出现：
+
+```text
+Auto-collapse edit_text failed
+```
+
+### 3. 导出按钮点了没反应
+
+优先检查：
+
+- 缓存是否过期
+- 是否点得太快，触发了短时间防抖
+- 机器人是否有发送文件权限
+
+### 4. 新服务器部署后数据没了
+
+如果你有 `/backup` 导出的 ZIP，就用 `/restore` 恢复。
+
+如果没有备份，只能按全新实例重新开始。
+
+---
+
+## 更新项目
+
+Linux 环境可直接运行：
+
+```bash
+chmod +x update_bot.sh
+./update_bot.sh
+```
+
+这个脚本会自动：
+
+- 拉取最新代码
+- 安装依赖
+- 执行编译检查
+- 运行测试
+- 重新启动机器人
+
+脚本位置：[update_bot.sh](update_bot.sh)
+
+---
+
+## 给维护者看的部分
+
+普通使用者可以跳过这一节。
+
+### 项目结构
+
+- [app](app)：应用装配、运行时依赖
+- [handlers](handlers)：命令、消息、回调入口
+- [services](services)：缓存、审计、备份、转换等业务逻辑
+- [renderers](renderers)：消息格式化与键盘
+- [core](core)：底层解析、存储、文件处理
+- [tests](tests)：测试
+
+### 自检命令
+
+修改代码后，至少执行：
+
+```bash
+python -m compileall app core handlers jobs renderers services shared bot_async.py main.py
+python -m unittest discover -s tests
+```
+
+如果改动涉及应用装配或命令注册，再执行：
+
+```bash
+python scripts/smoke_assembly.py
+python -m unittest tests.test_smoke_assembly
+```
+
+### 依赖文件
+
+项目当前使用一份统一的运行依赖清单：
+
+- [requirements.txt](requirements.txt)
+
+安装和启动时按这份依赖文件执行即可。
+
+### 本地维护文档
+
+如果你是项目拥有者，也可以在本地额外维护一份私有说明文档，例如 `LOCAL_OWNER_GUIDE.md`。
+
+这类文档建议不要提交到 GitHub，只用于记录本地维护、迁移流程和自检要求。
