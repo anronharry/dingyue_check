@@ -138,7 +138,28 @@ tail -f bot.log
 1. **机器人没反应？**：请检查 `.env` 中的 Token 是否正确，且服务器是否可以访问 Telegram API（部分境内服务器需挂代理）。
 2. **深检(DeepCheck)下载内核失败？**：由于内核在 GitHub 存储，请确保服务器网络畅通，或手动将 `mihomo` 放置在 `bin/` 目录下。
 3. **如何更新代码？**：
+   项目根目录已经自带更新脚本 `update_bot.sh`，会自动：
+   - 停掉旧的 `python3 main.py`
+   - 拉取最新代码
+   - 执行编译检查
+   - 执行单元测试
+   - 重新后台启动机器人
+   - 输出最近日志
+
+   首次使用先赋予执行权限：
    ```bash
-   git pull
-   pip install -r requirements.txt
+   cd ~/dingyue_check
+   chmod +x update_bot.sh
+   ```
+
+   以后每次更新直接运行：
+   ```bash
+   cd ~/dingyue_check
+   ./update_bot.sh
+   ```
+
+   如果你只想确认当前机器人是否正常运行：
+   ```bash
+   ps -ef | grep "python3 main.py" | grep -v grep
+   tail -n 50 ~/dingyue_check/bot.log
    ```
