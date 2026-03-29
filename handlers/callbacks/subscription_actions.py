@@ -1,10 +1,12 @@
 """Subscription callback actions extracted from the legacy button handler."""
 from __future__ import annotations
 
-
 import hashlib
 import html
 import time
+
+from handlers.callbacks.audit_actions import make_audit_callback_handler
+from handlers.callbacks.cache_actions import make_cache_callback_handler
 
 
 def make_subscription_callback_handler(
@@ -24,13 +26,35 @@ def make_subscription_callback_handler(
     get_short_callback_data,
     latency_tester,
     usage_audit_service,
+    admin_service,
+    export_cache_service,
+    build_usage_audit_keyboard,
+    format_subscription_compact,
+    schedule_result_collapse,
     logger,
 ):
+    audit_callback_handler = make_audit_callback_handler(
+        is_owner=is_owner,
+        admin_service=admin_service,
+        build_usage_audit_keyboard=build_usage_audit_keyboard,
+        inline_keyboard_button=inline_keyboard_button,
+        inline_keyboard_markup=inline_keyboard_markup,
+    )
+    cache_callback_handler = make_cache_callback_handler(
+        get_storage=get_storage,
+        is_owner=is_owner,
+        export_cache_service=export_cache_service,
+    )
+
     async def handle_callback(update, context, action: str, hash_key: str) -> bool:
         query = update.callback_query
         store = get_storage()
         operator_uid = update.effective_user.id
         owner_mode = is_owner(update)
+
+        handled = await audit_callback_handler(update, context, action, hash_key)
+        if handled:
+            return True
 
         if action == "tag_apply":
             parts = hash_key.split("|", 1)
@@ -65,12 +89,10 @@ def make_subscription_callback_handler(
                 await query.answer("操作已过期，请重新发起", show_alert=True)
                 return True
             sub = store.get_all().get(url, {})
-            sub_owner = sub.get("owner_uid", 0)
-            if sub_owner and sub_owner != operator_uid and not owner_mode:
+            if sub.get("owner_uid", 0) not in {0, operator_uid} and not owner_mode:
                 await query.answer("无权修改他人的订阅标签", show_alert=True)
                 return True
-            sub_name = sub.get("name", url)
-            await query.edit_message_text(f"请发送新标签名称：\n订阅: {sub_name}")
+            await query.edit_message_text(f"请发送新标签名称：\n订阅: {sub.get('name', url)}")
             context.user_data["pending_tag_url"] = url
             return True
 
@@ -83,6 +105,10 @@ def make_subscription_callback_handler(
                     url_cache[hash_key] = {"url": url, "ts": time.time()}
                     break
 
+        handled = await cache_callback_handler(update, context, action, url)
+        if handled:
+            return True
+
         if action in {"recheck", "delete", "del_confirm", "del_cancel", "tag", "ping"} and not url:
             await query.answer("操作已过期，请重新发送链接后再试", show_alert=True)
             return True
@@ -92,19 +118,26 @@ def make_subscription_callback_handler(
             try:
                 parser_instance = await get_parser()
                 result = await parser_instance.parse(url)
-                store.add_or_update(url, result, user_id=store.get_all().get(url, {}).get("owner_uid", 0))
-                usage_audit_service.log_check(
-                    user=update.effective_user,
-                    urls=[url],
-                    source="按钮重检",
-                )
+                owner_uid = store.get_all().get(url, {}).get("owner_uid", 0)
+                store.add_or_update(url, result, user_id=owner_uid)
+                export_cache_service.save_subscription_cache(owner_uid=owner_uid, source=url, result=result)
+                usage_audit_service.log_check(user=update.effective_user, urls=[url], source="按钮重检")
+                reply_markup = make_sub_keyboard(url)
                 await query.edit_message_text(
                     format_subscription_info(result, url),
                     parse_mode="HTML",
-                    reply_markup=make_sub_keyboard(url),
+                    reply_markup=reply_markup,
+                )
+                schedule_result_collapse(
+                    context=context,
+                    message=query.message,
+                    info=result,
+                    url=url,
+                    formatter=format_subscription_compact,
+                    reply_markup=reply_markup,
                 )
             except Exception as exc:
-                await query.edit_message_text(f"❌ 重新检测失败：{str(exc)}")
+                await query.edit_message_text(f"❌ 重新检测失败：{exc}")
             return True
 
         if action == "delete":
@@ -114,7 +147,7 @@ def make_subscription_callback_handler(
                 inline_keyboard_button("🔙 返回", callback_data=get_short_callback_data("recheck", url)),
             ]]
             await query.edit_message_text(
-                f"❓ <b>确定删除订阅吗？</b>\n\n名称：{sub_name}\n此操作不可撤销。",
+                f"❓ <b>确定删除订阅吗？</b>\n\n名称：{html.escape(sub_name)}\n此操作不可撤销。",
                 parse_mode="HTML",
                 reply_markup=inline_keyboard_markup(keyboard),
             )
@@ -122,13 +155,13 @@ def make_subscription_callback_handler(
 
         if action == "del_confirm":
             if store.remove(url, operator_uid=operator_uid, require_owner=not owner_mode):
-                await query.edit_message_text("🗑️ <b>订阅已永久从数据库移除</b>", parse_mode="HTML")
+                await query.edit_message_text("🗑️ <b>订阅已永久移除</b>", parse_mode="HTML")
             else:
-                await query.edit_message_text("❌ 删除失败：您无权删除他人的订阅，或该记录已不存在")
+                await query.edit_message_text("❌ 删除失败：无权限或记录已不存在")
             return True
 
         if action == "del_cancel":
-            await query.edit_message_text("🗳️ <b>已安全取消删除操作</b>", parse_mode="HTML")
+            await query.edit_message_text("🗳️ <b>已取消删除操作</b>", parse_mode="HTML")
             return True
 
         if action == "ping":
@@ -140,7 +173,6 @@ def make_subscription_callback_handler(
                 if not nodes:
                     await query.edit_message_text("❌ 当前格式不支持直接获取节点列表测速。")
                     return True
-
                 alive_count, total_count, alive_nodes = await latency_tester.ping_all_nodes(nodes, concurrency=20)
                 ping_report = (
                     "<b>⚡ 测速报告</b>\n"
@@ -152,12 +184,11 @@ def make_subscription_callback_handler(
                     ping_report += "\n<b>🏆 Top 5 最快节点:</b>\n"
                     for index, node in enumerate(alive_nodes[:5], start=1):
                         ping_report += f"{index}. {html.escape(node['name'])} - <code>{node['latency']}ms</code>\n"
-
                 await query.message.reply_text(ping_report, parse_mode="HTML")
                 await query.message.delete()
             except Exception as exc:
                 logger.error("测速过程中发生错误: %s", exc)
-                await query.edit_message_text(f"❌ 测速过程中发生错误: {str(exc)}")
+                await query.edit_message_text(f"❌ 测速过程中发生错误: {exc}")
             return True
 
         if action == "tag":
@@ -167,16 +198,15 @@ def make_subscription_callback_handler(
                 await query.answer("无权修改他人的订阅标签", show_alert=True)
                 return True
             user_subs = store.get_by_user(operator_uid)
-            existing_tags = sorted({t for data in user_subs.values() for t in data.get("tags", [])})
+            existing_tags = sorted({tag for data in user_subs.values() for tag in data.get("tags", [])})
             sub_name = sub.get("name", url)
-            url_hash = hash_key
             if existing_tags:
                 tag_buttons = []
                 row = []
                 for tag in existing_tags:
-                    cb = f"tag_apply:{url_hash}|{tag}"
-                    if len(cb) <= 64:
-                        row.append(inline_keyboard_button(f"🏷 {tag}", callback_data=cb))
+                    callback = f"tag_apply:{hash_key}|{tag}"
+                    if len(callback) <= 64:
+                        row.append(inline_keyboard_button(f"🏷 {tag}", callback_data=callback))
                     if len(row) == 2:
                         tag_buttons.append(row)
                         row = []

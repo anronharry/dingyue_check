@@ -21,7 +21,7 @@ class SmokeAssemblyTest(unittest.TestCase):
         self.assertEqual(bot_async.__name__, "bot_async")
 
     def test_handler_assembly(self) -> None:
-        self.assertEqual(assemble_application(), 24)
+        self.assertEqual(assemble_application(), 26)
 
 
 if __name__ == "__main__":

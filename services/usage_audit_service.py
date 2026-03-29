@@ -1,7 +1,6 @@
 """Owner-facing usage audit logging."""
 from __future__ import annotations
 
-
 import json
 import os
 import threading
@@ -18,7 +17,6 @@ class UsageAuditService:
     def log_check(self, *, user, urls: list[str], source: str) -> None:
         if not user or not urls:
             return
-
         record = {
             "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "user_id": user.id,
@@ -32,35 +30,29 @@ class UsageAuditService:
     def _append_record(self, record: dict) -> None:
         with self._lock:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            with open(self.path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            with open(self.path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
             self._trim_if_needed()
 
     def _trim_if_needed(self) -> None:
         if not os.path.exists(self.path):
             return
-
-        with open(self.path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
+        with open(self.path, "r", encoding="utf-8") as handle:
+            lines = handle.readlines()
         if len(lines) <= self.max_records:
             return
-
-        keep_lines = lines[-self.max_records :]
         temp_path = self.path + ".tmp"
-        with open(temp_path, "w", encoding="utf-8") as f:
-            f.writelines(keep_lines)
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            handle.writelines(lines[-self.max_records :])
         os.replace(temp_path, self.path)
 
     def get_recent_records(self, limit: int = 20) -> list[dict]:
         if not os.path.exists(self.path):
             return []
-
         with self._lock:
-            with open(self.path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-
-        records: list[dict] = []
+            with open(self.path, "r", encoding="utf-8") as handle:
+                lines = handle.readlines()
+        records = []
         for line in lines[-self.max_read_records :]:
             line = line.strip()
             if not line:
@@ -70,3 +62,24 @@ class UsageAuditService:
             except json.JSONDecodeError:
                 continue
         return records[-limit:]
+
+    def query_records(self, *, owner_id: int, mode: str = "others", page: int = 1, page_size: int = 5) -> dict:
+        records = list(reversed(self.get_recent_records(limit=self.max_read_records)))
+        if mode == "owner":
+            filtered = [row for row in records if row.get("user_id") == owner_id]
+        elif mode == "all":
+            filtered = records
+        else:
+            filtered = [row for row in records if row.get("user_id") != owner_id]
+        total = len(filtered)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        safe_page = max(1, min(page, total_pages))
+        start = (safe_page - 1) * page_size
+        return {
+            "mode": mode,
+            "page": safe_page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "records": filtered[start : start + page_size],
+        }

@@ -1,7 +1,6 @@
 """Telegram-facing message formatters."""
 from __future__ import annotations
 
-
 import html
 from collections import defaultdict
 
@@ -14,33 +13,26 @@ from shared.format_helpers import (
 
 
 def format_subscription_info(info, url=None):
-    """Format subscription details as Telegram HTML."""
+    """Format verbose subscription details as Telegram HTML."""
     message = "<b>🚀 订阅检测结果</b>\n\n"
-
     if info.get("name"):
-        name = html.escape(info["name"])
-        message += f"<b>订阅名称：</b> {name}\n"
-
+        message += f"<b>订阅名称：</b> {html.escape(info['name'])}\n"
     if any(key in info for key in ["total", "used", "remaining"]):
         used = format_traffic(info.get("used", 0))
         total = format_traffic(info.get("total", 0))
         remaining = format_traffic(info.get("remaining", 0))
         message += f"<b>流量详情：</b> {used} / {total}\n"
-
         if info.get("usage_percent") is not None:
             percent = info["usage_percent"]
-            bar = create_progress_bar(percent, length=10)
-            message += f"<b>使用进度：</b> {bar} {percent:.1f}%\n"
+            message += f"<b>使用进度：</b> {create_progress_bar(percent, length=10)} {percent:.1f}%\n"
             if percent >= 100:
                 message += "<b>预警状态：</b> ❌ 流量已完全耗尽\n"
             elif percent >= 90:
                 message += "<b>预警状态：</b> ⚠️ 流量即将耗尽\n"
-
         if info.get("remaining") is not None:
             message += f"<b>剩余流量：</b> {remaining}\n"
     else:
         message += "<b>流量信息：</b> 无\n"
-
     if info.get("expire_time"):
         message += f"<b>到期时间：</b> {info['expire_time']}\n"
         remaining_time = format_remaining_time(info["expire_time"])
@@ -52,22 +44,18 @@ def format_subscription_info(info, url=None):
                 try:
                     days_left = int(remaining_time.split("天")[0])
                     if days_left < 3:
-                        message += "<b>预警状态：</b> ⚠️ 订阅距离到期不足 3 天\n"
+                        message += "<b>预警状态：</b> ⚠️ 距离到期不足 3 天\n"
                 except Exception:
                     pass
-
     message += "\n" + "—" * 20 + "\n\n"
-
     if info.get("node_stats"):
         stats = info["node_stats"]
         if stats.get("locations"):
-            locations = stats["locations"]
             country_groups = defaultdict(list)
-            for loc in locations:
+            for loc in stats["locations"]:
                 country_groups[loc["country"]].append(loc)
-
             message += "<b>🌍 节点地理位置（真实 IP）:</b>\n"
-            for country, locs in sorted(country_groups.items(), key=lambda x: len(x[1]), reverse=True):
+            for country, locs in sorted(country_groups.items(), key=lambda item: len(item[1]), reverse=True):
                 flag = locs[0]["flag"] if locs[0]["flag"] != "🌐" else get_country_flag(country)
                 message += f"\n{flag} <b>{country}</b> ({len(locs)}个):\n"
                 for loc in locs[:3]:
@@ -80,19 +68,37 @@ def format_subscription_info(info, url=None):
             message += "\n"
         elif stats.get("countries"):
             message += "<b>🌍 节点区域分布：</b>\n"
-            for country, count in sorted(stats["countries"].items(), key=lambda x: x[1], reverse=True):
+            for country, count in sorted(stats["countries"].items(), key=lambda item: item[1], reverse=True):
                 message += f"{get_country_flag(country)} {html.escape(country)}: {count}\n"
             message += "\n"
-
         if stats.get("protocols"):
             message += "<b>🔐 协议分布：</b>\n"
-            for protocol, count in sorted(stats["protocols"].items(), key=lambda x: x[1], reverse=True):
+            for protocol, count in sorted(stats["protocols"].items(), key=lambda item: item[1], reverse=True):
                 message += f"{protocol.upper()}: {count}\n"
-
     if info.get("node_count") is not None:
         message += f"\n<b>📍 节点总数：</b> {info['node_count']}\n"
-
     if url:
-        message += f"\n<b>📋 订阅链接（点击复制）：</b>\n<code>{url}</code>"
-
+        message += f"\n<b>📋 订阅链接（点击复制）：</b>\n<code>{html.escape(url)}</code>"
     return message
+
+
+def format_subscription_compact(info, url=None):
+    """Format compact subscription details for delayed message collapse."""
+    message = "<b>📦 订阅简要</b>\n\n"
+    if info.get("name"):
+        message += f"<b>名称：</b> {html.escape(info['name'])}\n"
+    if info.get("remaining") is not None:
+        message += f"<b>剩余：</b> {format_traffic(info.get('remaining', 0))}\n"
+    if info.get("expire_time"):
+        message += f"<b>到期：</b> {info['expire_time']}\n"
+        remaining_time = format_remaining_time(info["expire_time"])
+        if remaining_time:
+            message += f"<b>剩余时间：</b> {remaining_time}\n"
+    if info.get("node_count") is not None:
+        message += f"<b>节点数：</b> {info['node_count']}\n"
+    tags = info.get("tags") or []
+    if tags:
+        message += f"<b>标签：</b> {html.escape(', '.join(tags[:5]))}\n"
+    if url:
+        message += f"\n<code>{html.escape(url)}</code>"
+    return message.strip()

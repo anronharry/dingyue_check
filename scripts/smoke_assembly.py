@@ -13,6 +13,7 @@ import bot_async
 
 def assemble_application() -> int:
     app = bot_async.build_application("123:TEST", bot_async.post_init, bot_async._on_shutdown)
+    app.bot_data["build_usage_audit_keyboard"] = bot_async.build_usage_audit_keyboard
     bot_async.register_handlers(
         app,
         {
@@ -37,6 +38,8 @@ def assemble_application() -> int:
             "deepcheck": bot_async.deepcheck_command,
             "delete": bot_async.delete_command,
             "refresh_menu": bot_async.refresh_menu_command,
+            "backup": bot_async.backup_command,
+            "restore": bot_async.restore_command,
             "button_callback": bot_async.button_callback,
             "handle_document": bot_async.handle_document,
             "handle_message": bot_async.handle_message,
