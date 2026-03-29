@@ -36,6 +36,9 @@ fi
 echo "==> pulling latest code"
 git pull --ff-only
 
+echo "==> syncing dependencies"
+pip install -q -r requirements.txt || true
+
 echo "==> compile check"
 python3 -m compileall .
 
