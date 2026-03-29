@@ -20,8 +20,11 @@ def log_startup_banner() -> None:
     logger.info(APP_STARTUP)
 
 
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters, JobQueue
+
 def build_application(token: str, post_init: Callable, post_shutdown: Callable) -> Application:
-    return Application.builder().token(token).post_init(post_init).post_shutdown(post_shutdown).build()
+    jq = JobQueue()
+    return Application.builder().token(token).post_init(post_init).post_shutdown(post_shutdown).job_queue(jq).build()
 
 
 def register_handlers(application: Application, handlers: dict[str, Callable]) -> None:
