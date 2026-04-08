@@ -163,7 +163,7 @@ class UsageAuditPagingTest(unittest.TestCase):
 
     def test_owner_panel_text_includes_health_summary(self) -> None:
         panel = self.admin.build_owner_panel_text()
-        self.assertIn("Owner 控制台", panel)
+        self.assertIn("管理员控制台", panel)
         self.assertIn("异常订阅", panel)
         self.assertIn("有效缓存", panel)
         self.assertIn("全员可用", panel)

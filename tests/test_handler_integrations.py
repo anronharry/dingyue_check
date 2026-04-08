@@ -317,7 +317,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         )
         context = SimpleNamespace(user_data={"awaiting_restore": True})
         await handler(update, context)
-        self.assertIn("Backup restored", update.message.replies[-1].text)
+        self.assertIn("恢复完成", update.message.replies[-1].text)
         shutil.rmtree(tmpdir, ignore_errors=True)
 
     async def test_node_text_handler_schedules_result_collapse(self):

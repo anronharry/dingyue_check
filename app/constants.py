@@ -1,12 +1,12 @@
-"""Shared application constants and user-facing copy."""
+"""应用共享常量与用户文案。"""
 from __future__ import annotations
 
 
-APP_TITLE = "GIPSON_CHECK - Telegram Subscription Bot"
-APP_FEATURES = "支持订阅检测、格式转换、自动预警、深度检查"
-APP_STARTUP = "启动 Telegram 订阅检测机器人..."
+APP_TITLE = "GIPSON_CHECK - Telegram 订阅机器人"
+APP_FEATURES = "支持订阅检测、格式转换、自动预警、深度检测"
+APP_STARTUP = "正在启动 Telegram 订阅检测机器人..."
 
-OWNER_ONLY_MSG = "只有 Owner 可以使用此命令"
+OWNER_ONLY_MSG = "只有管理员可以使用此命令"
 NO_PERMISSION_MSG = (
     "你当前没有权限使用这个机器人。\n\n"
     "如需开通权限，请联系维护者。"

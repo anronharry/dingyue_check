@@ -33,10 +33,10 @@ def make_document_handler(
 
         if context.user_data.get("awaiting_restore") and document.file_name.lower().endswith(".zip"):
             if document.file_size and document.file_size > MAX_RESTORE_ZIP_SIZE_BYTES:
-                await update.message.reply_text("Backup ZIP is too large (max 20MB).")
+                await update.message.reply_text("备份 ZIP 过大（最大 20MB），已拒绝恢复。")
                 return
 
-            processing_msg = await update.message.reply_text("Restoring backup...")
+            processing_msg = await update.message.reply_text("正在恢复备份，请稍候...")
             temp_dir = os.path.join("data", "temp")
             os.makedirs(temp_dir, exist_ok=True)
             temp_zip_path = os.path.join(
@@ -59,16 +59,16 @@ def make_document_handler(
                         restored = backup_service.restore_backup_bytes(handle.read())
 
                 context.user_data.pop("awaiting_restore", None)
-                await processing_msg.edit_text(f"Backup restored. Restored files: {len(restored)}")
+                await processing_msg.edit_text(f"恢复完成，共写入 {len(restored)} 个文件。")
             except Exception as exc:
-                logger.error("Backup restore failed: %s", exc)
-                await processing_msg.edit_text(f"Backup restore failed: {exc}")
+                logger.error("备份恢复失败: %s", exc)
+                await processing_msg.edit_text(f"备份恢复失败：{exc}")
             finally:
                 try:
                     if os.path.exists(temp_zip_path):
                         os.remove(temp_zip_path)
                 except OSError:
-                    logger.warning("Failed to remove temporary restore file: %s", temp_zip_path)
+                    logger.warning("清理恢复临时文件失败: %s", temp_zip_path)
             return
 
         if not is_authorized(update):
@@ -77,17 +77,17 @@ def make_document_handler(
 
         file_type = input_detector.detect_file_type(document.file_name)
         if file_type == "unknown":
-            await update.message.reply_text("Unsupported file type. Please upload TXT/YAML, or run /import before JSON.")
+            await update.message.reply_text("暂不支持该文件类型。请上传 TXT/YAML；导入 JSON 请先执行 /import。")
             return
 
         if file_type in {"txt", "yaml"}:
-            progress_text = f"Received {file_type.upper()} file. Parsing nodes and running quick checks..."
+            progress_text = f"已收到 {file_type.upper()} 文件，正在解析节点并执行快速检测..."
         else:
-            progress_text = f"Received {file_type.upper()} file. Parsing content..."
+            progress_text = f"已收到 {file_type.upper()} 文件，正在解析内容..."
         processing_msg = await update.message.reply_text(progress_text)
 
         if document.file_size and document.file_size > MAX_DOCUMENT_SIZE_BYTES:
-            await processing_msg.edit_text("File too large: exceeds 5MB limit.")
+            await processing_msg.edit_text("文件过大：超过 5MB 限制。")
             return
 
         try:
@@ -99,11 +99,11 @@ def make_document_handler(
                     await processing_msg.edit_text(owner_only_msg)
                     return
                 if not context.user_data.get("awaiting_import"):
-                    await processing_msg.edit_text("Please run /import first, then upload the exported JSON file.")
+                    await processing_msg.edit_text("请先发送 /import，再上传导出的 JSON 文件。")
                     return
                 imported_count = await document_service.import_json(content_bytes=content_bytes)
                 context.user_data.pop("awaiting_import", None)
-                await processing_msg.edit_text(f"Import completed. Imported subscriptions: {imported_count}")
+                await processing_msg.edit_text(f"导入完成，共导入 {imported_count} 条订阅。")
                 return
 
             if file_type == "txt":
@@ -116,7 +116,7 @@ def make_document_handler(
                             source=f"document_import:{document.file_name}",
                         )
                     await processing_msg.edit_text(
-                        f"Detected {len(subscription_urls)} subscription links. Checking and saving..."
+                        f"识别到 {len(subscription_urls)} 个订阅链接，正在检测并保存..."
                     )
                     results = await document_service.parse_subscription_urls(
                         subscription_urls=subscription_urls,
@@ -125,7 +125,7 @@ def make_document_handler(
                     try:
                         await processing_msg.delete()
                     except Exception as exc:
-                        logger.warning("Failed to delete progress message: %s", exc)
+                        logger.warning("删除进度消息失败：%s", exc)
 
                     for item in sorted(results, key=lambda row: row["index"]):
                         if item["status"] == "success":
@@ -155,16 +155,16 @@ def make_document_handler(
                             )
                         else:
                             await update.message.reply_text(
-                                f"Subscription {item['index']} failed\nReason: {item['error']}",
+                                f"订阅 {item['index']} 检测失败\n原因：{item['error']}",
                             )
 
                     success_count = sum(1 for item in results if item["status"] == "success")
                     failed_count = sum(1 for item in results if item["status"] == "failed")
                     await update.message.reply_text(
-                        "<b>Subscription File Processing Completed</b>\n\n"
-                        f"Detected: {len(subscription_urls)}\n"
-                        f"Success: {success_count}\n"
-                        f"Failed: {failed_count}",
+                        "<b>订阅文件处理完成</b>\n\n"
+                        f"识别数量：{len(subscription_urls)}\n"
+                        f"成功：{success_count}\n"
+                        f"失败：{failed_count}",
                         parse_mode="HTML",
                     )
                     return
@@ -176,18 +176,18 @@ def make_document_handler(
                 owner_uid=update.effective_user.id,
             )
             if not result:
-                await processing_msg.edit_text("No valid content parsed from file.")
+                await processing_msg.edit_text("未从文件中解析到有效内容。")
                 return
 
             message = (
-                "<b>Node File Analysis Completed</b>\n\n"
+                "<b>节点文件解析完成</b>\n\n"
                 + format_subscription_info(result)
-                + "\n\n<i>This is a node list and does not include subscription traffic or expiry metadata.</i>"
+                + "\n\n<i>这是节点列表，不包含订阅流量或到期信息。</i>"
             )
             try:
                 await processing_msg.delete()
             except Exception as exc:
-                logger.warning("Failed to delete progress message: %s", exc)
+                logger.warning("删除进度消息失败: %s", exc)
             sent_msg = await update.message.reply_text(message, parse_mode="HTML")
             schedule_result_collapse(
                 context=context,
@@ -198,30 +198,30 @@ def make_document_handler(
                 reply_markup=None,
             )
         except Exception as exc:
-            logger.error("Document processing failed: %s", exc)
+            logger.error("文件处理失败: %s", exc)
             error_msg = str(exc)
             short_error = f"{error_msg[:500]}{'...' if len(error_msg) > 500 else ''}"
             try:
-                await processing_msg.edit_text(f"Document processing failed: {short_error}")
+                await processing_msg.edit_text(f"文件处理失败：{short_error}")
             except Exception:
-                await update.message.reply_text(f"Document processing failed: {short_error}")
+                await update.message.reply_text(f"文件处理失败：{short_error}")
 
     return handle_document
 
 
 def make_node_text_handler(*, document_service, format_subscription_info, format_node_analysis_compact, schedule_result_collapse, logger):
     async def handle_node_text(update, context):
-        processing_msg = await update.message.reply_text("Parsing node list and running quick checks...")
+        processing_msg = await update.message.reply_text("正在解析节点文本并执行快速检测...")
         try:
             result = await document_service.analyze_node_text(text=update.message.text.strip())
             if not result:
-                await processing_msg.edit_text("No valid nodes parsed.")
+                await processing_msg.edit_text("未解析到有效节点。")
                 return
             message = format_subscription_info(result)
             try:
                 await processing_msg.delete()
             except Exception as exc:
-                logger.warning("Failed to delete progress message: %s", exc)
+                logger.warning("删除进度消息失败: %s", exc)
             sent_msg = await update.message.reply_text(message, parse_mode="HTML")
             schedule_result_collapse(
                 context=context,
@@ -232,12 +232,12 @@ def make_node_text_handler(*, document_service, format_subscription_info, format
                 reply_markup=None,
             )
         except Exception as exc:
-            logger.error("Node text parsing failed: %s", exc)
+            logger.error("节点文本解析失败: %s", exc)
             error_msg = str(exc)
             short_error = f"{error_msg[:500]}{'...' if len(error_msg) > 500 else ''}"
             try:
-                await processing_msg.edit_text(f"Node parsing failed: {short_error}")
+                await processing_msg.edit_text(f"节点解析失败：{short_error}")
             except Exception:
-                await update.message.reply_text(f"Node parsing failed: {short_error}")
+                await update.message.reply_text(f"节点解析失败：{short_error}")
 
     return handle_node_text

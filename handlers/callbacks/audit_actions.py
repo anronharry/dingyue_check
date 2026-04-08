@@ -18,7 +18,7 @@ def make_audit_callback_handler(
         if action not in {"audit", "audit_detail", "recent", "recent_detail", "panel"}:
             return False
         if not is_owner(update):
-            await query.answer("只有 Owner 可以查看。", show_alert=True)
+            await query.answer("只有管理员可以查看。", show_alert=True)
             return True
 
         if action == "panel":
@@ -94,7 +94,7 @@ def make_audit_callback_handler(
                 )
                 return True
             if target == "globallist":
-                report = admin_service.build_globallist_report() or "当前除了 Owner 外暂无其他用户订阅"
+                report = admin_service.build_globallist_report() or "当前除了管理员外暂无其他用户订阅"
                 await query.edit_message_text(
                     report,
                     parse_mode="HTML",

@@ -1,4 +1,4 @@
-"""Owner/admin report builders and export helpers."""
+"""管理员报表与导出辅助工具。"""
 from __future__ import annotations
 
 import html
@@ -157,11 +157,11 @@ class AdminService:
         public_mode = "开启" if self.access_service.is_allow_all_users_enabled() else "关闭"
         lines = [
             "<b>授权用户名单</b>",
-            f"全员可用模式: <b>{public_mode}</b>",
+            f"公开访问模式: <b>{public_mode}</b>",
             "",
         ]
         for uid in sorted(users):
-            suffix = " (Owner)" if self.user_manager.is_owner(uid) else ""
+            suffix = " (管理员)" if self.user_manager.is_owner(uid) else ""
             profile = self.user_profile_service.get_profile(uid) or {}
             seen = profile.get("last_seen_at", "未知")
             source = html.escape(profile.get("last_source", "-"))
@@ -237,12 +237,12 @@ class AdminService:
         if not result["records"]:
             return f"暂无使用审计记录（模式：{html.escape(mode)}）。", result
 
-        title = {"others": "其他用户", "owner": "Owner", "all": "全部用户"}.get(mode, mode)
+        title = {"others": "其他用户", "owner": "管理员", "all": "全部用户"}.get(mode, mode)
         lines = [
             "<b>使用审计</b>",
             f"模式: <b>{title}</b>",
             f"页码: {result['page']} / {result['total_pages']} | 记录数: {result['total']}",
-            f"总览: 其他用户 {counts['others']} | Owner {counts['owner']} | 全部 {counts['all']}",
+            f"总览: 其他用户 {counts['others']} | 管理员 {counts['owner']} | 全部 {counts['all']}",
             "",
         ]
         for display_index, record in enumerate(result["records"], start=1):
@@ -301,7 +301,7 @@ class AdminService:
         cache_summary = self._summarize_cache_entries()
         public_mode = "开启" if self.access_service.is_allow_all_users_enabled() else "关闭"
         lines = [
-            "<b>Owner 控制台</b>",
+            "<b>管理员控制台</b>",
             f"订阅总数: <b>{stats.get('total', 0)}</b> | 异常订阅: <b>{stats.get('expired', 0)}</b>",
             f"授权用户: <b>{len(self.user_manager.get_all())}</b> | 全员可用: <b>{public_mode}</b>",
             f"24小时活跃用户: <b>{self._count_recent_profiles(recent_profiles)}</b> | 最近活跃记录: <b>{len(recent_profiles)}</b>",
@@ -327,7 +327,7 @@ class AdminService:
         if not current:
             return "暂无最近活跃用户记录。", {"page": 1, "total_pages": 1, "records": [], "scope": scope}
 
-        title = "全部用户" if include_owner else "非 Owner 用户"
+        title = "全部用户" if include_owner else "非管理员用户"
         lines = [
             "<b>最近活跃用户</b>",
             f"范围: {title}",
@@ -361,7 +361,7 @@ class AdminService:
             f"首次出现: {profile.get('first_seen_at', '-')}\n"
             f"最后活跃: {profile.get('last_seen_at', '-')}\n"
             f"最近入口: {html.escape(profile.get('last_source', '-'))}\n"
-            f"Owner: {'是' if profile.get('is_owner') else '否'}\n"
+            f"管理员: {'是' if profile.get('is_owner') else '否'}\n"
             f"已授权: {'是' if profile.get('is_authorized') else '否'}"
         )
 
@@ -373,7 +373,7 @@ class AdminService:
         if not current:
             return "暂无最近导出记录。", {"page": 1, "total_pages": 1, "records": [], "scope": scope}
 
-        title = "全部用户" if include_owner else "非 Owner 用户"
+        title = "全部用户" if include_owner else "非管理员用户"
         yaml_count = sum(1 for row in records if row.get("source") == f"{EXPORT_AUDIT_PREFIX}yaml")
         txt_count = sum(1 for row in records if row.get("source") == f"{EXPORT_AUDIT_PREFIX}txt")
         lines = [
@@ -434,12 +434,12 @@ class AdminService:
             cache_summary = self._summarize_cache_entries()
             return "\n".join(
                 [
-                    "<b>Owner 控制台 / 总览</b>",
+                    "<b>管理员控制台 / 总览</b>",
                     f"订阅总数: <b>{stats.get('total', 0)}</b>",
                     f"异常订阅: <b>{stats.get('expired', 0)}</b>",
                     f"有效缓存: <b>{cache_summary['valid']}</b> / {cache_summary['total']}",
                     "",
-                    "这里集中放总览入口，适合先看整体健康状态。",
+                    "这里集中展示整体运行健康状态。",
                 ]
             )
         if section == "users":
@@ -447,28 +447,28 @@ class AdminService:
             recent_profiles = self.user_profile_service.get_recent_profiles(limit=1000, include_owner=False)
             return "\n".join(
                 [
-                    "<b>Owner 控制台 / 用户</b>",
+                    "<b>管理员控制台 / 用户</b>",
                     f"授权用户: <b>{total_users}</b>",
                     f"24小时活跃: <b>{self._count_recent_profiles(recent_profiles)}</b>",
                     "",
-                    "这里集中查看活跃用户与授权名单。",
+                    "这里集中查看活跃用户和授权名单。",
                 ]
             )
         if section == "maintenance":
             public_mode = "开启" if self.access_service.is_allow_all_users_enabled() else "关闭"
             return "\n".join(
                 [
-                    "<b>Owner 控制台 / 维护</b>",
-                    f"全员可用: <b>{public_mode}</b>",
+                    "<b>管理员控制台 / 维护</b>",
+                    f"公开访问: <b>{public_mode}</b>",
                     "",
-                    "低频操作已经收纳到下方子页面。",
-                    "需要执行时，仍建议直接使用命令。",
+                    "低频维护操作已收纳在下方子页面。",
+                    "需要执行时仍建议直接使用命令。",
                 ]
             )
         if section == "maint_backup":
             return "\n".join(
                 [
-                    "<b>Owner 控制台 / 备份迁移</b>",
+                    "<b>管理员控制台 / 备份迁移</b>",
                     "",
                     "常用命令：",
                     "<code>/backup</code> 生成完整备份 ZIP",
@@ -483,20 +483,20 @@ class AdminService:
             public_mode = "开启" if self.access_service.is_allow_all_users_enabled() else "关闭"
             return "\n".join(
                 [
-                    "<b>Owner 控制台 / 权限开关</b>",
-                    f"当前全员可用: <b>{public_mode}</b>",
+                    "<b>管理员控制台 / 权限开关</b>",
+                    f"当前公开访问: <b>{public_mode}</b>",
                     "",
                     "常用命令：",
                     "<code>/adduser &lt;id&gt;</code> 授权用户",
                     "<code>/deluser &lt;id&gt;</code> 取消授权",
-                    "<code>/allowall</code> 开启全员可用",
+                    "<code>/allowall</code> 开启公开访问",
                     "<code>/denyall</code> 恢复授权模式",
                 ]
             )
         if section == "maint_ops":
             return "\n".join(
                 [
-                    "<b>Owner 控制台 / 维护命令</b>",
+                    "<b>管理员控制台 / 维护命令</b>",
                     "",
                     "低频但重要：",
                     "<code>/broadcast 内容</code> 广播通知",
