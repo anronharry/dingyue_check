@@ -1,7 +1,6 @@
 """Basic user command handlers built from injected dependencies."""
 from __future__ import annotations
 
-
 from services.report_service import build_help_message, build_start_message, build_stats_message
 
 

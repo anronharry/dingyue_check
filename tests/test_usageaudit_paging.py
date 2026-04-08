@@ -4,10 +4,70 @@ import shutil
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from services.admin_service import AdminService
+from services.export_cache_service import ExportCacheService
 from services.usage_audit_service import UsageAuditService
 from services.user_profile_service import UserProfileService
+
+
+class _FakeStorage:
+    def __init__(self):
+        self.grouped = {
+            1: {
+                "https://owner.example.com/sub": {
+                    "name": "owner-sub",
+                    "owner_uid": 1,
+                    "remaining": 1,
+                    "expire_time": "2099-01-01 00:00:00",
+                }
+            },
+            2: {
+                "https://example.com/1": {
+                    "name": "alpha",
+                    "owner_uid": 2,
+                    "remaining": 100,
+                    "expire_time": "2099-01-01 00:00:00",
+                },
+                "https://example.com/2": {
+                    "name": "beta",
+                    "owner_uid": 2,
+                    "remaining": 200,
+                    "expire_time": "2099-01-02 00:00:00",
+                },
+                "https://example.com/3": {
+                    "name": "gamma",
+                    "owner_uid": 2,
+                    "remaining": 300,
+                    "expire_time": "2099-01-03 00:00:00",
+                },
+                "https://example.com/4": {
+                    "name": "delta",
+                    "owner_uid": 2,
+                    "remaining": 400,
+                    "expire_time": "2099-01-04 00:00:00",
+                },
+                "https://example.com/5": {
+                    "name": "epsilon",
+                    "owner_uid": 2,
+                    "remaining": 500,
+                    "expire_time": "2099-01-05 00:00:00",
+                },
+            },
+        }
+
+    def get_all(self):
+        merged = {}
+        for subs in self.grouped.values():
+            merged.update(subs)
+        return merged
+
+    def get_grouped_by_user(self):
+        return self.grouped
+
+    def get_statistics(self):
+        return {"total": 6, "expired": 1, "active": 5, "total_remaining": 1500}
 
 
 class UsageAuditPagingTest(unittest.TestCase):
@@ -17,8 +77,12 @@ class UsageAuditPagingTest(unittest.TestCase):
         self.tmpdir.mkdir(parents=True, exist_ok=True)
         audit_path = self.tmpdir / "audit.jsonl"
         profile_path = self.tmpdir / "profiles.json"
+        cache_index = self.tmpdir / "db" / "export_cache_index.json"
+        cache_dir = self.tmpdir / "cache_exports"
         self.audit = UsageAuditService(str(audit_path))
         self.profiles = UserProfileService(str(profile_path))
+        self.cache = ExportCacheService(index_path=str(cache_index), cache_dir=str(cache_dir), ttl_hours=48)
+        self.storage = _FakeStorage()
         self.owner = SimpleNamespace(id=1, username="owner", full_name="Owner")
         self.other = SimpleNamespace(id=2, username="bob", full_name="Bob")
         self.profiles.touch_user(user=self.owner, source="/start", is_owner=True, is_authorized=True)
@@ -27,15 +91,16 @@ class UsageAuditPagingTest(unittest.TestCase):
             self.audit.log_check(user=self.other, urls=[f"https://example.com/{index}"], source="/check")
         for index in range(2):
             self.audit.log_check(user=self.owner, urls=[f"https://owner.example.com/{index}"], source="/usageaudit")
+        self.cache.save_generated_artifact(owner_uid=2, source="https://example.com/1", yaml_text="a: 1", txt_text="a")
         self.admin = AdminService(
-            get_storage=lambda: None,
+            get_storage=lambda: self.storage,
             user_manager=SimpleNamespace(get_all=lambda: {1, 2}, is_owner=lambda uid: uid == 1),
             owner_id=1,
             format_traffic=lambda value: str(value),
             access_service=SimpleNamespace(is_allow_all_users_enabled=lambda: False),
             usage_audit_service=self.audit,
             user_profile_service=self.profiles,
-            export_cache_service=SimpleNamespace(get_entry=lambda **kwargs: None, get_index_snapshot=lambda: {}),
+            export_cache_service=self.cache,
         )
 
     def tearDown(self) -> None:
@@ -95,3 +160,26 @@ class UsageAuditPagingTest(unittest.TestCase):
         self.assertIn("24小时导出", report)
         self.assertIn("YAML", report)
         self.assertEqual(paging["page"], 1)
+
+    def test_owner_panel_text_includes_health_summary(self) -> None:
+        panel = self.admin.build_owner_panel_text()
+        self.assertIn("Owner 控制台", panel)
+        self.assertIn("异常订阅", panel)
+        self.assertIn("有效缓存", panel)
+        self.assertIn("全员可用", panel)
+
+    def test_globallist_report_compacts_per_user_output(self) -> None:
+        report = self.admin.build_globallist_report(max_users=5, max_subs_per_user=2)
+        self.assertIn("全局订阅概览", report)
+        self.assertIn("alpha", report)
+        self.assertIn("beta", report)
+        self.assertIn("其余 3 条已折叠", report)
+
+    def test_admin_usage_report_reads_audit_file_once(self) -> None:
+        with patch.object(self.audit, "get_recent_records", wraps=self.audit.get_recent_records) as mocked:
+            self.admin.build_usage_audit_report(mode="others", page=1, page_size=5)
+        self.assertEqual(mocked.call_count, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

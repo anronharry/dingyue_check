@@ -2,17 +2,19 @@
 from __future__ import annotations
 
 import html
-import os
+import time
 from datetime import datetime
 
 from core.json_store import JsonStore
 
 
 class UserProfileService:
-    def __init__(self, path: str):
+    def __init__(self, path: str, *, auto_flush_interval_seconds: float = 30.0):
         self.path = path
         self.store = JsonStore(path, default_factory=dict)
         self._profiles = self.store.get_data()
+        self.auto_flush_interval_seconds = max(0.0, float(auto_flush_interval_seconds))
+        self._last_flush_monotonic = time.monotonic()
 
     def touch_user(self, *, user, source: str, is_owner: bool, is_authorized: bool) -> None:
         if not user:
@@ -30,7 +32,20 @@ class UserProfileService:
             "is_owner": bool(is_owner),
             "is_authorized": bool(is_authorized),
         }
-        self.store.save()
+        self.store.mark_dirty()
+        if self._should_auto_flush():
+            self.flush()
+
+    def flush(self) -> bool:
+        flushed = self.store.flush()
+        if flushed:
+            self._last_flush_monotonic = time.monotonic()
+        return flushed
+
+    def _should_auto_flush(self) -> bool:
+        if self.auto_flush_interval_seconds == 0:
+            return True
+        return (time.monotonic() - self._last_flush_monotonic) >= self.auto_flush_interval_seconds
 
     def get_profile(self, user_id: int | None) -> dict | None:
         if not user_id:

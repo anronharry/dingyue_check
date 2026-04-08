@@ -520,9 +520,9 @@ async def _async_run_node_latency_test(target_files, mode: str = 'auto', clean_p
     export_policy = 'no' if export_policy in ('ask', None) else export_policy
     sub_clean_policy = 'no' if sub_clean_policy in ('ask', None) else sub_clean_policy
 
-    sub_conn = aiohttp.TCPConnector(ssl=False, limit=_cfg.get("SUB_DOWNLOAD_WORKERS", 30))
+    sub_conn = aiohttp.TCPConnector(ssl=_cfg.VERIFY_SSL, limit=_cfg.get("SUB_DOWNLOAD_WORKERS", 30))
     sub_timeout = aiohttp.ClientTimeout(total=_cfg.get("SUB_TIMEOUT", 12))
-    test_conn = aiohttp.TCPConnector(ssl=False, limit=_cfg.NODE_TEST_WORKERS)
+    test_conn = aiohttp.TCPConnector(ssl=_cfg.VERIFY_SSL, limit=_cfg.NODE_TEST_WORKERS)
     test_timeout = aiohttp.ClientTimeout(total=max(30, _cfg.TIMEOUT_MS / 1000 + 10))
 
     try:

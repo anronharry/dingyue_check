@@ -73,7 +73,7 @@ def make_check_command(
                     }
                 except Exception as exc:
                     logger.error("检测失败 %s: %s", url, exc)
-                    store.remove(url)
+                    store.mark_check_failed(url, str(exc), operator_uid=uid, require_owner=True)
                     res = {
                         "url": url,
                         "name": data.get("name", "未知"),

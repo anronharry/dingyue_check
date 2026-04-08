@@ -100,7 +100,12 @@ class Runtime:
 
             self.shared_session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=100, limit_per_host=20))
         if self.parser is None:
-            self.parser = SubscriptionParser(proxy_port=self.proxy_port, use_proxy=False, session=self.shared_session)
+            self.parser = SubscriptionParser(
+                proxy_port=self.proxy_port,
+                use_proxy=False,
+                session=self.shared_session,
+                verify_ssl=config.VERIFY_SSL,
+            )
         return self.parser
 
     def make_sub_keyboard(self, url: str) -> InlineKeyboardMarkup:
@@ -123,6 +128,7 @@ class Runtime:
     async def periodic_cache_cleanup(self, context: ContextTypes.DEFAULT_TYPE):
         def _cleanup_all():
             self.cleanup_url_cache()
+            self.user_profile_service.flush()
             self.export_cache_service.cleanup_expired()
 
         await run_cache_cleanup(context, _cleanup_all)
@@ -254,6 +260,7 @@ def create_runtime(*, logger: logging.Logger, proxy_port: int, url_cache_max_siz
         get_storage=runtime.get_storage,
         logger=runtime.logger,
         export_cache_service=runtime.export_cache_service,
+        quick_ping_runner=latency_tester.ping_all_nodes,
     )
     return runtime
 

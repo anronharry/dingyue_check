@@ -1,14 +1,14 @@
-# 环境变量文件（包含敏感信息）
+# Environment variables
 .env
 
-# Python 缓存
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 
-# 虚拟环境
+# Virtual environments
 venv/
 env/
 ENV/
@@ -20,27 +20,25 @@ ENV/
 *.swp
 *.swo
 
-# 日志文件
+# Logs
 *.log
 
-# 操作系统
+# OS files
 .DS_Store
 Thumbs.db
 
-# 内核二进制文件 (应由部署脚本自动下载，不建议上传)
+# External binaries
 bin/
 
-# 数据目录（含订阅链接等敏感信息，不应提交到版本库）
+# Runtime data
 data/
 
-# 测试 & 覆盖率产物
+# Test and coverage artifacts
 htmlcov/
 .coverage
 .coverage.*
 coverage.xml
 *.cover
 .pytest_cache/
+pytest-cache-files-*/
 test_output.txt
-
-# 本地维护文档（仅本地保留，不提交到 GitHub）
-LOCAL_OWNER_GUIDE.md

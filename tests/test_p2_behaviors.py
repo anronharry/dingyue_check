@@ -4,6 +4,7 @@ import os
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
+from unittest.mock import patch
 
 from handlers.commands.admin import make_checkall_command
 from handlers.commands.basic import make_start_command
@@ -56,6 +57,12 @@ class _FakeStorage:
 
     def add_or_update(self, url, result, user_id=0):
         self.subs[url] = {"owner_uid": user_id, **result}
+
+    def mark_check_failed(self, url, error, operator_uid=0, require_owner=False):
+        if url in self.subs:
+            self.subs[url]["last_check_status"] = "failed"
+            self.subs[url]["last_check_error"] = str(error)
+        return True
 
     def remove(self, url):
         self.subs.pop(url, None)
@@ -140,6 +147,29 @@ class P2BehaviorTest(unittest.IsolatedAsyncioTestCase):
             records = service.get_recent_records(limit=10)
             self.assertEqual(len(records), 3)
             self.assertEqual(records[-1]["urls"][0], "https://example.com/sub/4?token=secret-4")
+        finally:
+            if path.exists():
+                path.unlink()
+
+    def test_usage_audit_service_trims_with_single_rewrite_when_full(self):
+        tmpdir = Path("data/test_tmp")
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        path = tmpdir / "audit_trim_once.jsonl"
+        if path.exists():
+            path.unlink()
+
+        try:
+            service = UsageAuditService(str(path), max_records=1)
+            user = SimpleNamespace(id=7, username="u", full_name="User")
+            service.log_check(user=user, urls=["https://example.com/sub/0"], source="test")
+
+            with patch.object(service, "_write_lines_locked", wraps=service._write_lines_locked) as mocked_write:
+                service.log_check(user=user, urls=["https://example.com/sub/1"], source="test")
+
+            self.assertEqual(mocked_write.call_count, 1)
+            records = service.get_recent_records(limit=10)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["urls"][0], "https://example.com/sub/1")
         finally:
             if path.exists():
                 path.unlink()

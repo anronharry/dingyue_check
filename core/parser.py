@@ -15,16 +15,18 @@ import aiohttp
 import yaml
 
 from core import node_extractor as ip_extractor
+from core.file_handler import FileHandler
 
 
 class SubscriptionParser:
     """订阅解析器"""
 
-    def __init__(self, proxy_port=7890, use_proxy=False, session=None):
+    def __init__(self, proxy_port=7890, use_proxy=False, session=None, verify_ssl: bool = True):
         self.proxy_port = proxy_port
         self.use_proxy = use_proxy
         self.proxy_url = f"http://127.0.0.1:{proxy_port}" if use_proxy else None
         self.session = session
+        self.verify_ssl = bool(verify_ssl)
 
     async def parse(self, url):
         try:
@@ -32,7 +34,7 @@ class SubscriptionParser:
             if self._is_pseudo_200_response(response_text, response_headers):
                 raise Exception("检测到伪装的存活页面，判定为失效源")
             traffic_info = self._parse_traffic_info(response_headers)
-            nodes, content_format, normalized_nodes = self._parse_nodes(response_text)
+            nodes, content_format, normalized_nodes, normalized_content = self._parse_nodes(response_text)
             airport_name = self._extract_airport_name(nodes, url, response_headers, response_text)
             node_stats = await self._analyze_nodes(nodes)
             if not nodes:
@@ -43,7 +45,7 @@ class SubscriptionParser:
                 "node_stats": node_stats,
                 "_raw_nodes": nodes,
                 "_normalized_nodes": normalized_nodes,
-                "_raw_content": response_text,
+                "_raw_content": normalized_content,
                 "_content_format": content_format,
                 **traffic_info,
             }
@@ -56,7 +58,7 @@ class SubscriptionParser:
         from utils.retry_utils import async_retry_on_failure
 
         headers = {
-            "User-Agent": "Clash-verge/1.3.8 (Windows NT 10.0; Win64; x64) AppleWebkit/537.36",
+            "User-Agent": "Clash-verge/1.3.8",
             "Accept": "*/*",
         }
         session_to_use = self.session
@@ -67,15 +69,18 @@ class SubscriptionParser:
 
         @async_retry_on_failure(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
         async def _fetch():
-            async with session_to_use.get(
-                url,
-                headers=headers,
-                proxy=self.proxy_url,
-                timeout=aiohttp.ClientTimeout(total=30),
-                ssl=False,
-            ) as response:
+            request_kwargs = {
+                "headers": headers,
+                "proxy": self.proxy_url,
+                "timeout": aiohttp.ClientTimeout(total=30),
+            }
+            if not self.verify_ssl:
+                request_kwargs["ssl"] = False
+
+            async with session_to_use.get(url, **request_kwargs) as response:
                 response.raise_for_status()
-                text = await response.text()
+                body = await response.read()
+                text = self._decode_response_body(body, response.charset)
                 return text, {k.lower(): v for k, v in response.headers.items()}
 
         try:
@@ -135,31 +140,12 @@ class SubscriptionParser:
         return traffic_info
 
     def _parse_nodes(self, content):
-        nodes = []
         max_nodes = 300
-        if content.strip().startswith("#") or "proxies:" in content[:5000] or "proxy-groups:" in content[:5000]:
-            yaml_content = content
-            if len(yaml_content) > 300 * 1024:
-                truncate_idx = yaml_content.rfind("\n", 0, 300 * 1024)
-                yaml_content = yaml_content[: truncate_idx if truncate_idx != -1 else 300 * 1024]
-            try:
-                config = yaml.safe_load(yaml_content)
-                if config and "proxies" in config:
-                    for proxy in config["proxies"]:
-                        if len(nodes) >= max_nodes:
-                            break
-                        if isinstance(proxy, dict):
-                            nodes.append(
-                                {
-                                    "name": proxy.get("name", "未知节点"),
-                                    "protocol": proxy.get("type", "unknown").lower(),
-                                    "server": proxy.get("server", ""),
-                                    "port": proxy.get("port", 0),
-                                }
-                            )
-                return nodes, "yaml", list(nodes)
-            except Exception:
-                pass
+
+        yaml_nodes = self._parse_yaml_nodes(content, max_nodes=max_nodes)
+        if yaml_nodes is not None:
+            return yaml_nodes, "yaml", list(yaml_nodes), content
+
         decoded_content = content
         cleaned_content = content.replace("\n", "").replace("\r", "").replace(" ", "").strip()
         detected_format = "text"
@@ -179,18 +165,59 @@ class SubscriptionParser:
         temp_decoded = try_b64_decode(cleaned_content)
         if temp_decoded:
             decoded_content = temp_decoded
-            detected_format = "base64"
+            yaml_nodes = self._parse_yaml_nodes(decoded_content, max_nodes=max_nodes)
+            if yaml_nodes is not None:
+                return yaml_nodes, "yaml", list(yaml_nodes), decoded_content
+            detected_format = "text"
 
-        for line in decoded_content.strip().split("\n"):
+        nodes = FileHandler.parse_txt_file(decoded_content.encode("utf-8"))[:max_nodes]
+        return nodes, detected_format, list(nodes), decoded_content
+
+    @staticmethod
+    def _decode_response_body(body: bytes, charset: str | None) -> str:
+        candidates = []
+        if charset:
+            candidates.append(charset)
+        candidates.extend(["utf-8", "utf-8-sig", "gb18030"])
+        for encoding in candidates:
+            try:
+                return body.decode(encoding)
+            except Exception:
+                continue
+        return body.decode("utf-8", errors="ignore")
+
+    @staticmethod
+    def _parse_yaml_nodes(content: str, *, max_nodes: int) -> list[dict] | None:
+        if not (content.strip().startswith("#") or "proxies:" in content[:5000] or "proxy-groups:" in content[:5000]):
+            return None
+
+        yaml_content = content
+        if len(yaml_content) > 300 * 1024:
+            truncate_idx = yaml_content.rfind("\n", 0, 300 * 1024)
+            yaml_content = yaml_content[: truncate_idx if truncate_idx != -1 else 300 * 1024]
+
+        try:
+            config = yaml.safe_load(yaml_content)
+        except Exception:
+            return None
+
+        if not isinstance(config, dict) or "proxies" not in config:
+            return None
+
+        nodes = []
+        for proxy in config["proxies"]:
             if len(nodes) >= max_nodes:
                 break
-            line = line.strip()
-            if not line:
-                continue
-            node_info = self._parse_node_line(line)
-            if node_info:
-                nodes.append(node_info)
-        return nodes, detected_format, list(nodes)
+            if isinstance(proxy, dict):
+                nodes.append(
+                    {
+                        "name": proxy.get("name", "未知节点"),
+                        "protocol": proxy.get("type", "unknown").lower(),
+                        "server": proxy.get("server", ""),
+                        "port": proxy.get("port", 0),
+                    }
+                )
+        return nodes
 
     def _parse_node_line(self, line):
         protocols = ["vmess://", "vless://", "ss://", "ssr://", "trojan://", "hysteria://", "hysteria2://"]

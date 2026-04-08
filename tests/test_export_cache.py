@@ -6,7 +6,7 @@ import shutil
 import unittest
 from pathlib import Path
 
-from services.export_cache_service import ExportCacheService
+from services.export_cache_service import ERROR_FORBIDDEN, ExportCacheService
 
 
 class ExportCacheTest(unittest.TestCase):
@@ -47,7 +47,7 @@ class ExportCacheTest(unittest.TestCase):
             is_owner=False,
         )
         self.assertIsNone(path)
-        self.assertIn("无权", error)
+        self.assertEqual(error, ERROR_FORBIDDEN)
 
     def test_expired_entries_are_cleaned_up(self) -> None:
         self.service.save_subscription_cache(owner_uid=1, source="https://example.com/sub", result=self.result)
@@ -60,3 +60,28 @@ class ExportCacheTest(unittest.TestCase):
             json.dump(data, handle, ensure_ascii=False)
         self.service = ExportCacheService(index_path=str(index_path), cache_dir=str(self.tmpdir / "cache_exports"), ttl_hours=48)
         self.assertEqual(self.service.cleanup_expired(), 1)
+
+    def test_yaml_subscription_txt_export_contains_protocol_urls(self) -> None:
+        yaml_result = {
+            "_raw_content": (
+                "proxies:\n"
+                "  - name: hk-01\n"
+                "    type: trojan\n"
+                "    server: hk.example.com\n"
+                "    port: 443\n"
+                "    password: secret\n"
+                "    sni: hk.example.com\n"
+            ),
+            "_content_format": "yaml",
+            "_normalized_nodes": [
+                {"name": "hk-01", "protocol": "trojan", "server": "hk.example.com", "port": 443}
+            ],
+        }
+        entry = self.service.save_subscription_cache(owner_uid=1, source="https://example.com/yaml", result=yaml_result)
+        txt_text = Path(entry["txt_path"]).read_text(encoding="utf-8")
+        self.assertIn("trojan://", txt_text)
+        self.assertIn("hk.example.com:443", txt_text)
+
+
+if __name__ == "__main__":
+    unittest.main()

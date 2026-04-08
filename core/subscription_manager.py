@@ -21,7 +21,8 @@ from core.converters.ss_converter import SSNodeConverter
 from core.models import ProxyNode, SubFetchResult
 
 init(autoreset=True)
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+if not _cfg.VERIFY_SSL:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # #6 修复：导入 node_tester 中共享的 print_lock，不再单独定义
 from core.node_tester import print_lock
@@ -54,7 +55,7 @@ async def async_fetch_nodes_from_subscriptions(target_file: str, client_session:
     own_session = False
 
     if client_session is None:
-        conn = aiohttp.TCPConnector(ssl=False, limit=_cfg.get("SUB_DOWNLOAD_WORKERS", 30))
+        conn = aiohttp.TCPConnector(ssl=_cfg.VERIFY_SSL, limit=_cfg.get("SUB_DOWNLOAD_WORKERS", 30))
         timeout = aiohttp.ClientTimeout(total=_cfg.get("SUB_TIMEOUT", 12))
         client_session = aiohttp.ClientSession(connector=conn, timeout=timeout)
         own_session = True

@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import unittest
+import zipfile
 from pathlib import Path
 
 from services.backup_service import BackupService
@@ -59,3 +60,29 @@ class BackupRestoreTest(unittest.TestCase):
         shutil.copy(zip_path, bootstrap)
         restored, _ = self.service.auto_restore_if_needed(str(bootstrap))
         self.assertTrue(restored)
+
+    def test_restore_skips_unsafe_zip_members(self) -> None:
+        unsafe_zip = Path("unsafe_backup.zip")
+        with zipfile.ZipFile(unsafe_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("../../evil.txt", "hacked")
+            archive.writestr("C:/tmp/evil_windows.txt", "hacked")
+            archive.writestr("data/db/users.json", "[2]")
+
+        restored = self.service.restore_backup(str(unsafe_zip))
+        self.assertIn(os.path.normpath("data/db/users.json"), restored)
+        self.assertFalse(Path("evil.txt").exists())
+        self.assertFalse(any("evil" in item for item in restored))
+
+    def test_restore_rejects_oversized_uncompressed_payload(self) -> None:
+        constrained = BackupService(base_dir="data", max_restore_total_bytes=8)
+        large_zip = Path("too_large_backup.zip")
+        with zipfile.ZipFile(large_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("data/db/too_large.txt", "0123456789")
+
+        with self.assertRaises(ValueError):
+            constrained.restore_backup(str(large_zip))
+
+    def test_restore_backup_bytes_rejects_oversized_package(self) -> None:
+        constrained = BackupService(base_dir="data", max_restore_total_bytes=8)
+        with self.assertRaises(ValueError):
+            constrained.restore_backup_bytes(b"0123456789")

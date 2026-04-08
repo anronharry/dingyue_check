@@ -43,3 +43,15 @@ class UserProfileServiceTest(unittest.TestCase):
         formatted = self.service.format_user_identity(123)
         self.assertIn("tg://user?id=123", formatted)
         self.assertIn("@alice", formatted)
+
+    def test_touch_user_defers_disk_flush_until_flush_called(self) -> None:
+        service = UserProfileService(str(self.path), auto_flush_interval_seconds=999)
+        service.touch_user(user=self.user, source="/check", is_owner=False, is_authorized=True)
+        self.assertFalse(self.path.exists())
+        flushed = service.flush()
+        self.assertTrue(flushed)
+        self.assertTrue(self.path.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

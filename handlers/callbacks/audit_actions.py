@@ -18,8 +18,9 @@ def make_audit_callback_handler(
         if action not in {"audit", "audit_detail", "recent", "recent_detail", "panel"}:
             return False
         if not is_owner(update):
-            await query.answer("仅 Owner 可查看", show_alert=True)
+            await query.answer("只有 Owner 可以查看。", show_alert=True)
             return True
+
         if action == "panel":
             await query.answer("打开控制台...")
             target = hash_key
@@ -27,7 +28,25 @@ def make_audit_callback_handler(
                 await query.edit_message_text(
                     admin_service.build_owner_panel_text(),
                     parse_mode="HTML",
-                    reply_markup=build_owner_panel_keyboard(),
+                    reply_markup=build_owner_panel_keyboard(section="root"),
+                )
+                return True
+            if target in {"overview", "users", "maintenance", "maint_backup", "maint_access", "maint_ops"}:
+                section = target
+                keyboard_section = "maintenance" if target.startswith("maint_") else target
+                await query.edit_message_text(
+                    admin_service.build_owner_panel_section_text(section),
+                    parse_mode="HTML",
+                    reply_markup=build_owner_panel_keyboard(section=keyboard_section),
+                )
+                return True
+            if target == "listusers":
+                report = admin_service.build_user_list_message() or "当前暂无授权用户"
+                await query.edit_message_text(
+                    report,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    reply_markup=inline_keyboard_markup([[inline_keyboard_button("返回用户页", callback_data="panel:users")]]),
                 )
                 return True
             if target == "audit":
@@ -75,20 +94,21 @@ def make_audit_callback_handler(
                 )
                 return True
             if target == "globallist":
-                report = admin_service.build_globallist_report() or "✨ 当前除了 Owner 外暂无其他用户的订阅"
+                report = admin_service.build_globallist_report() or "当前除了 Owner 外暂无其他用户订阅"
                 await query.edit_message_text(
                     report,
                     parse_mode="HTML",
                     disable_web_page_preview=True,
-                    reply_markup=inline_keyboard_markup([[inline_keyboard_button("返回控制台", callback_data="panel:root")]]),
+                    reply_markup=inline_keyboard_markup([[inline_keyboard_button("返回总览页", callback_data="panel:overview")]]),
                 )
                 return True
             await query.edit_message_text(
                 admin_service.build_owner_panel_text(),
                 parse_mode="HTML",
-                reply_markup=build_owner_panel_keyboard(),
+                reply_markup=build_owner_panel_keyboard(section="root"),
             )
             return True
+
         if action == "audit":
             await query.answer("加载审计记录...")
             try:
@@ -109,6 +129,7 @@ def make_audit_callback_handler(
                 ),
             )
             return True
+
         if action == "recent":
             await query.answer("加载最近记录...")
             try:
@@ -134,6 +155,7 @@ def make_audit_callback_handler(
                 ),
             )
             return True
+
         if action == "recent_detail":
             await query.answer("读取详情信息...")
             try:
@@ -166,6 +188,7 @@ def make_audit_callback_handler(
                 ),
             )
             return True
+
         try:
             await query.answer("读取详情信息...")
             mode, page_str, index_str = hash_key.split("|", 2)
@@ -180,17 +203,17 @@ def make_audit_callback_handler(
             detail_text,
             parse_mode="HTML",
             disable_web_page_preview=True,
-                reply_markup=inline_keyboard_markup(
+            reply_markup=inline_keyboard_markup(
+                [
+                    [inline_keyboard_button("返回审计列表", callback_data=f"audit:{mode}:{page}")],
                     [
-                        [inline_keyboard_button("返回审计列表", callback_data=f"audit:{mode}:{page}")],
-                        [
-                            inline_keyboard_button("上一页", callback_data=f"audit:{mode}:{max(1, page - 1)}"),
-                            inline_keyboard_button("下一页", callback_data=f"audit:{mode}:{min(paging['total_pages'], page + 1)}"),
-                        ],
-                        [inline_keyboard_button("返回控制台", callback_data="panel:root")],
-                    ]
-                ),
-            )
+                        inline_keyboard_button("上一页", callback_data=f"audit:{mode}:{max(1, page - 1)}"),
+                        inline_keyboard_button("下一页", callback_data=f"audit:{mode}:{min(paging['total_pages'], page + 1)}"),
+                    ],
+                    [inline_keyboard_button("返回控制台", callback_data="panel:root")],
+                ]
+            ),
+        )
         return True
 
     return handle_callback

@@ -13,21 +13,21 @@ def make_broadcast_command(*, is_owner, owner_only_msg, user_manager, schedule_a
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
         if not context.args:
-            reply_msg = await update.message.reply_text("用法：/broadcast <通知内容>")
+            reply_msg = await update.message.reply_text("Usage: /broadcast <message>")
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         content = " ".join(context.args)
-        broadcast_msg = f"📢 <b>系统通知（来自 Owner）</b>\n\n{content}"
-        status_msg = await update.message.reply_text("📡 正在准备发送广播...")
+        broadcast_msg = f"📢 <b>System Broadcast (from Owner)</b>\n\n{content}"
+        status_msg = await update.message.reply_text("📤 Preparing broadcast...")
         success, fail = 0, 0
         for uid in user_manager.get_all():
             try:
                 await context.bot.send_message(chat_id=uid, text=broadcast_msg, parse_mode="HTML")
                 success += 1
             except Exception as exc:
-                logger.warning("广播发送失败 UID:%s: %s", uid, exc)
+                logger.warning("Broadcast failed for UID %s: %s", uid, exc)
                 fail += 1
-        final_msg = await status_msg.edit_text(f"✅ 广播发送完成\n成功：{success}\n失败：{fail}")
+        final_msg = await status_msg.edit_text(f"✅ Broadcast finished\nSuccess: {success}\nFailed: {fail}")
         schedule_auto_delete(context, update.message, final_msg, delay=30)
 
     return broadcast_command
@@ -41,17 +41,17 @@ def make_set_public_access_command(*, is_owner, owner_only_msg, access_service, 
             return
         changed, saved = access_service.set_allow_all_users(enabled)
         if not saved:
-            reply_msg = await update.message.reply_text("❌ 状态保存失败，请检查磁盘权限或数据目录。")
+            reply_msg = await update.message.reply_text("❌ Failed to save state. Check file permissions or data directory.")
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         if enabled:
-            text = "✅ 已开启全员可用模式。"
+            text = "✅ Public access enabled."
             if not changed:
-                text = "ℹ️ 全员可用模式已经是开启状态。"
+                text = "ℹ️ Public access is already enabled."
         else:
-            text = "✅ 已关闭全员可用模式。"
+            text = "✅ Public access disabled."
             if not changed:
-                text = "ℹ️ 全员可用模式已经是关闭状态。"
+                text = "ℹ️ Public access is already disabled."
         reply_msg = await update.message.reply_text(text)
         schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
@@ -167,11 +167,11 @@ def make_delete_command(
         if not context.args:
             subscriptions = store.get_by_user(update.effective_user.id)
             if not subscriptions:
-                await update.message.reply_text("📭 您没有订阅可删除")
+                await update.message.reply_text("📭 You have no subscriptions to delete.")
                 return
             reply_msg = await update.message.reply_text(
-                "📋 请使用 /list 查看订阅列表，点击每条下方的删除按钮直接操作\n"
-                "或使用: <code>/delete &lt;订阅链接&gt;</code>",
+                "🧭 Use /list and click the delete button under an item,\n"
+                "or run <code>/delete &lt;subscription_url&gt;</code> directly.",
                 parse_mode="HTML",
             )
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
@@ -180,15 +180,18 @@ def make_delete_command(
         user_subs = store.get_by_user(update.effective_user.id) if not is_owner(update) else store.get_all()
         sub_data = user_subs.get(url)
         if not sub_data:
-            reply_msg = await update.message.reply_text("❌ 未找到该订阅")
+            reply_msg = await update.message.reply_text("❌ Subscription not found.")
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         keyboard = [[
             inline_keyboard_button(confirm_delete_label, callback_data=get_short_callback_data("del_confirm", url)),
-            inline_keyboard_button("❌ 取消", callback_data="del_cancel"),
+            inline_keyboard_button("❌ Cancel", callback_data="del_cancel"),
         ]]
         reply_msg = await update.message.reply_text(
-            f"⚠️ <b>删除确认</b>\n\n确定要删除以下订阅吗？\n名称：<b>{sub_data['name']}</b>\n链接：<code>{url}</code>",
+            f"⚠️ <b>Confirm Deletion</b>\n\n"
+            f"Are you sure you want to delete this subscription?\n"
+            f"Name: <b>{sub_data['name']}</b>\n"
+            f"URL: <code>{url}</code>",
             parse_mode="HTML",
             reply_markup=inline_keyboard_markup(keyboard),
         )
@@ -208,10 +211,14 @@ def make_export_command(*, is_owner, owner_only_msg, get_storage, schedule_auto_
         export_success = await asyncio.get_event_loop().run_in_executor(None, store.export_to_file, export_file)
         if export_success:
             with open(export_file, "rb") as handle:
-                await update.message.reply_document(document=handle, filename=export_name, caption=f"✅ 已导出 {len(store.get_all())} 个订阅")
+                await update.message.reply_document(
+                    document=handle,
+                    filename=export_name,
+                    caption=f"✅ Exported {len(store.get_all())} subscriptions.",
+                )
             await asyncio.get_event_loop().run_in_executor(None, os.remove, export_file)
             return
-        reply_msg = await update.message.reply_text("❌ 导出失败，请稍后重试")
+        reply_msg = await update.message.reply_text("❌ Export failed. Please try again later.")
         schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
     return export_command
@@ -224,7 +231,10 @@ def make_import_command(*, is_owner, owner_only_msg, schedule_auto_delete):
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
         context.user_data["awaiting_import"] = True
-        reply_msg = await update.message.reply_text("请上传由 /export 导出的 JSON 文件，我会自动导入到当前订阅列表。")
+        reply_msg = await update.message.reply_text(
+            "Please upload the JSON file generated by /export. "
+            "I will import it into the current subscription list."
+        )
         schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
     return import_command
@@ -251,7 +261,10 @@ def make_restore_command(*, is_owner, owner_only_msg, schedule_auto_delete):
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
         context.user_data["awaiting_restore"] = True
-        reply_msg = await update.message.reply_text("请上传由 /backup 导出的 ZIP 备份包，我会执行全量恢复。")
+        reply_msg = await update.message.reply_text(
+            "Please upload the ZIP backup generated by /backup. "
+            "I will perform a full restore."
+        )
         schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
     return restore_command
@@ -264,17 +277,17 @@ def make_add_user_command(*, is_owner, owner_only_msg, user_manager, schedule_au
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
         if not context.args:
-            reply_msg = await update.message.reply_text("用法：/adduser <用户ID>")
+            reply_msg = await update.message.reply_text("Usage: /adduser <user_id>")
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         uid_str = context.args[0]
         if not uid_str.isdigit():
-            reply_msg = await update.message.reply_text("❌ 用户 ID 格式无效")
+            reply_msg = await update.message.reply_text("❌ Invalid user ID format.")
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         uid = int(uid_str)
         reply_msg = await update.message.reply_text(
-            f"✅ 已授权用户：<code>{uid}</code>" if user_manager.add_user(uid) else "ℹ️ 该用户已在授权名单中",
+            f"✅ User authorized: <code>{uid}</code>" if user_manager.add_user(uid) else "ℹ️ This user is already authorized.",
             parse_mode="HTML" if user_manager.is_authorized(uid) else None,
         )
         schedule_auto_delete(context, update.message, reply_msg, delay=30)
@@ -289,21 +302,21 @@ def make_del_user_command(*, is_owner, owner_only_msg, user_manager, owner_id, s
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
         if not context.args:
-            reply_msg = await update.message.reply_text("用法：/deluser <用户ID>")
+            reply_msg = await update.message.reply_text("Usage: /deluser <user_id>")
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         uid_str = context.args[0]
         if not uid_str.isdigit():
-            reply_msg = await update.message.reply_text("❌ 用户 ID 格式无效")
+            reply_msg = await update.message.reply_text("❌ Invalid user ID format.")
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         uid = int(uid_str)
         if uid == owner_id:
-            reply_msg = await update.message.reply_text("❌ 无法移除 Owner 自身")
+            reply_msg = await update.message.reply_text("❌ Cannot remove the Owner account.")
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         reply_msg = await update.message.reply_text(
-            f"✅ 已移除授权用户：<code>{uid}</code>" if user_manager.remove_user(uid) else "❌ 名单中未找到该用户",
+            f"✅ User removed: <code>{uid}</code>" if user_manager.remove_user(uid) else "❌ User not found in authorized list.",
             parse_mode="HTML" if uid_str.isdigit() else None,
         )
         schedule_auto_delete(context, update.message, reply_msg, delay=30)
@@ -318,7 +331,10 @@ def make_list_users_command(*, is_owner, owner_only_msg, admin_service, schedule
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
         message = admin_service.build_user_list_message()
-        reply_msg = await update.message.reply_text(message or "📭 当前无授权用户", parse_mode="HTML" if message else None)
+        reply_msg = await update.message.reply_text(
+            message or "📭 No authorized users at the moment.",
+            parse_mode="HTML" if message else None,
+        )
         schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
     return list_users_command
@@ -328,12 +344,12 @@ def make_refresh_menu_command(*, is_owner, post_init):
     async def refresh_menu_command(update, context):
         if not is_owner(update):
             return
-        await update.message.reply_text("⏳ 正在尝试重新推送快捷菜单...")
+        await update.message.reply_text("🔄 Re-registering command menus...")
         try:
             await post_init(context.application)
-            await update.message.reply_text("✅ 菜单重新注册请求已发送。")
+            await update.message.reply_text("✅ Command menu refresh request sent.")
         except Exception as exc:
-            await update.message.reply_text(f"❌ 菜单注册失败：{exc}")
+            await update.message.reply_text(f"❌ Failed to refresh command menu: {exc}")
 
     return refresh_menu_command
 
@@ -345,7 +361,7 @@ def make_globallist_command(*, is_owner, owner_only_msg, admin_service, schedule
             return
         report = admin_service.build_globallist_report()
         if not report:
-            reply_msg = await update.message.reply_text("✨ 当前除了 Owner 外暂无其他用户的订阅")
+            reply_msg = await update.message.reply_text("✅ No subscriptions from other users. Only Owner data exists.")
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         reply_msg = await update.message.reply_text(report, parse_mode="HTML")
@@ -363,11 +379,14 @@ def make_checkall_command(*, is_owner, owner_only_msg, get_storage, get_parser, 
         store = get_storage()
         subscriptions = store.get_all()
         if not subscriptions:
-            reply_msg = await update.message.reply_text("📭 暂无任何订阅记录")
+            reply_msg = await update.message.reply_text("📭 No subscription records found.")
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         usage_audit_service.log_check(user=update.effective_user, urls=list(subscriptions.keys()), source="/checkall")
-        progress_msg = await update.message.reply_text("🌍 <b>正在检测所有用户的订阅</b>\n请稍候...", parse_mode="HTML")
+        progress_msg = await update.message.reply_text(
+            "🧪 <b>Checking all user subscriptions...</b>\nPlease wait...",
+            parse_mode="HTML",
+        )
         schedule_auto_delete(context, update.message, progress_msg, delay=30)
         semaphore = asyncio.Semaphore(20)
         total_count = len(subscriptions)
@@ -381,15 +400,15 @@ def make_checkall_command(*, is_owner, owner_only_msg, get_storage, get_parser, 
                     parser_instance = await get_parser()
                     result = await parser_instance.parse(url)
                     if result.get("remaining", 1) <= 0:
-                        raise Exception("流量已耗尽")
+                        raise Exception("Traffic quota exhausted")
                     original_owner = data.get("owner_uid", 0)
                     store.add_or_update(url, result, user_id=original_owner)
-                    res = {"url": url, "name": result.get("name", "未知"), "owner_uid": original_owner, "status": "success"}
+                    res = {"url": url, "name": result.get("name", "Unknown"), "owner_uid": original_owner, "status": "success"}
                 except Exception as exc:
-                    store.remove(url)
+                    store.mark_check_failed(url, str(exc))
                     res = {
                         "url": url,
-                        "name": data.get("name", "未知"),
+                        "name": data.get("name", "Unknown"),
                         "owner_uid": data.get("owner_uid", 0),
                         "status": "failed",
                         "error": str(exc),
@@ -398,7 +417,9 @@ def make_checkall_command(*, is_owner, owner_only_msg, get_storage, get_parser, 
                 current_time = time.time()
                 if current_time - last_update_time > 2.0 or completed_count == total_count:
                     try:
-                        await progress_msg.edit_text(f"⏳ 正在检测所有用户的订阅：{completed_count} / {total_count} 已完成...")
+                        await progress_msg.edit_text(
+                            f"🔄 Checking all user subscriptions: {completed_count} / {total_count} completed..."
+                        )
                         last_update_time = current_time
                     except Exception:
                         pass

@@ -1,11 +1,9 @@
 """
-项目功能开关配置。
+Project feature flags and runtime configuration.
 
-通过修改下方的 True / False 控制各模块的启用状态。
-也可以通过 .env 文件覆盖这里的默认值，.env 优先级更高。
+All options can be overridden through environment variables in `.env`.
 """
 from __future__ import annotations
-
 
 import os
 
@@ -15,7 +13,7 @@ load_dotenv()
 
 
 def _bool(key: str, default: bool) -> bool:
-    """从环境变量读取布尔值，未配置时使用代码默认值。"""
+    """Read a boolean value from environment variables."""
     val = os.getenv(key)
     if val is None:
         return default
@@ -23,7 +21,7 @@ def _bool(key: str, default: bool) -> bool:
 
 
 # ============================================================
-# 服务器档位预设（快速选择，会被下方单项开关覆盖）
+# Server profile presets (base defaults, can be overridden below)
 # ============================================================
 _profile_env = os.getenv("SERVER_PROFILE", "").strip().lower()
 if _profile_env in ("256mb", "512mb", "1gb"):
@@ -42,18 +40,19 @@ _profile = _defaults.get(SERVER_PROFILE, _defaults["1gb"])
 
 
 # ============================================================
-# 功能开关（单独配置优先于 SERVER_PROFILE）
+# Feature flags (explicit env vars take precedence over profile)
 # ============================================================
 ENABLE_LATENCY_TESTER: bool = _bool("ENABLE_LATENCY_TESTER", _profile["latency_tester"])
 ENABLE_MONITOR: bool = _bool("ENABLE_MONITOR", _profile["monitor"])
 ENABLE_GEO_LOOKUP: bool = _bool("ENABLE_GEO_LOOKUP", _profile["geo_lookup"])
+VERIFY_SSL: bool = _bool("VERIFY_SSL", True)
 
-# 所有者 (Owner) ID，拥有最高管理权限
+# Owner ID (highest admin permission)
 OWNER_ID: int = int(os.getenv("OWNER_ID", "0"))
 
 
 # ============================================================
-# 性能参数（可按服务器规格调整）
+# Performance settings
 # ============================================================
 URL_CACHE_MAX_SIZE: int = int(os.getenv("URL_CACHE_MAX_SIZE", "5000"))
 URL_CACHE_TTL_SECONDS: int = int(os.getenv("URL_CACHE_TTL_SECONDS", "86400"))
@@ -64,27 +63,28 @@ MAX_GEO_QUERIES: int = int(os.getenv("MAX_GEO_QUERIES", "50"))
 
 
 def print_config_summary():
-    """启动时打印当前功能开关状态。"""
+    """Print current runtime config summary at startup."""
     import logging
 
     logger = logging.getLogger("config")
 
     def _flag(value: bool) -> str:
-        return "已开启" if value else "已关闭"
+        return "ENABLED" if value else "DISABLED"
 
     logger.info("=" * 50)
-    logger.info("当前配置摘要")
-    logger.info(f"服务器档位: {SERVER_PROFILE.upper()}")
-    logger.info(f"节点测速: {_flag(ENABLE_LATENCY_TESTER)}")
-    logger.info(f"定时监控告警: {_flag(ENABLE_MONITOR)}")
-    logger.info(f"真实 IP 查询: {_flag(ENABLE_GEO_LOOKUP)}")
-    logger.info(f"单次解析节点上限: {MAX_NODES_PER_PARSE}")
-    logger.info(f"URL 缓存上限: {URL_CACHE_MAX_SIZE}")
+    logger.info("Configuration Summary")
+    logger.info(f"Server profile: {SERVER_PROFILE.upper()}")
+    logger.info(f"Latency tester: {_flag(ENABLE_LATENCY_TESTER)}")
+    logger.info(f"Monitor scheduler: {_flag(ENABLE_MONITOR)}")
+    logger.info(f"Geo lookup: {_flag(ENABLE_GEO_LOOKUP)}")
+    logger.info(f"SSL verification: {_flag(VERIFY_SSL)}")
+    logger.info(f"Max nodes per parse: {MAX_NODES_PER_PARSE}")
+    logger.info(f"URL cache size limit: {URL_CACHE_MAX_SIZE}")
     logger.info("=" * 50)
 
 
 # ============================================================
-# 测速引擎配置
+# Latency tester configuration
 # ============================================================
 TIMEOUT_MS: int = int(os.getenv("TIMEOUT_MS", "6000"))
 API_PORT: int = int(os.getenv("API_PORT", "19090"))
@@ -92,7 +92,7 @@ TEST_URL: str = os.getenv("TEST_URL", "http://www.gstatic.com/generate_204")
 NODE_TEST_WORKERS: int = LATENCY_TEST_CONCURRENCY
 PROXY_TOP_N: int = int(os.getenv("PROXY_TOP_N", "10"))
 
-# 订阅解析优化设置
+# Subscription parsing optimization settings
 SUB_TIMEOUT: int = int(os.getenv("SUB_TIMEOUT", str(_profile["timeout"])))
 SUB_DOWNLOAD_WORKERS: int = int(os.getenv("SUB_DOWNLOAD_WORKERS", "30"))
 UA_CLASH: str = "ClashForAndroid/2.5.12"
@@ -100,7 +100,7 @@ UA_CLASH: str = "ClashForAndroid/2.5.12"
 LOG_KEEP_DAYS: int = int(os.getenv("LOG_KEEP_DAYS", "30"))
 NODE_TEST_VERBOSE: bool = _bool("NODE_TEST_VERBOSE", False)
 
-# 基础目录配置
+# Base directory settings
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TXT_FOLDER = "data/txt_workspace"
 YAML_FOLDER = "data/yaml_workspace"
