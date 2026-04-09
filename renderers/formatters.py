@@ -46,6 +46,37 @@ def _format_quick_check(info: dict, *, compact: bool = False) -> str:
     return f"<b>快速检测：</b> {' | '.join(parts)}{suffix}{skipped_detail}"
 
 
+def _quick_check_metrics(info: dict) -> dict | None:
+    quick_check = info.get("quick_check") or {}
+    if not quick_check:
+        return None
+    tested = int(quick_check.get("tested") or 0)
+    alive = int(quick_check.get("alive") or 0)
+    dead = int(quick_check.get("dead") or 0)
+    skipped = int(quick_check.get("skipped") or 0)
+    sampled = bool(quick_check.get("sampled"))
+    rate = (alive / tested * 100.0) if tested > 0 else 0.0
+    return {
+        "tested": tested,
+        "alive": alive,
+        "dead": dead,
+        "skipped": skipped,
+        "sampled": sampled,
+        "rate": rate,
+    }
+
+
+def _format_quick_check_highlight(info: dict) -> list[str]:
+    metrics = _quick_check_metrics(info)
+    if not metrics:
+        return []
+    sampled_suffix = "（仅抽样）" if metrics["sampled"] else ""
+    return [
+        f"<b>快速检测：</b> ✅ <b>{metrics['alive']}/{metrics['tested']}</b> 存活 | ❌ {metrics['dead']} | 跳过 {metrics['skipped']}{sampled_suffix}",
+        f"<b>存活率：</b> {create_progress_bar(metrics['rate'], length=10)} {metrics['rate']:.1f}%",
+    ]
+
+
 def _render_latency_top(info: dict) -> list[str]:
     quick_check = info.get("quick_check") or {}
     latency_top = quick_check.get("latency_top") or []
@@ -164,12 +195,7 @@ def format_subscription_info(info, url=None):
     if info.get("usage_percent") is not None:
         percent = float(info["usage_percent"])
         summary_lines.append(f"<b>使用进度：</b> {create_progress_bar(percent, length=8)} {percent:.1f}%")
-    elif info.get("quick_check"):
-        quick_check = info.get("quick_check") or {}
-        tested = int(quick_check.get("tested") or 0)
-        alive = int(quick_check.get("alive") or 0)
-        ratio = (alive / tested * 100.0) if tested > 0 else 0.0
-        summary_lines.append(f"<b>测速概览：</b> {create_progress_bar(ratio, length=8)} {alive}/{tested} 存活")
+    summary_lines.extend(_format_quick_check_highlight(info))
 
     remain_text = format_remaining_time(info.get("expire_time", ""), include_seconds=False) if info.get("expire_time") else ""
     if remain_text:

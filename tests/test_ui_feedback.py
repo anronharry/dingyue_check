@@ -154,7 +154,8 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<blockquote expandable>", text)
         self.assertIn("节点列表（共 3 个）", text)
         self.assertIn("快速检测", text)
-        self.assertIn("已测 3 | 存活 2 | 失败 1", text)
+        self.assertIn("✅ <b>2/3</b> 存活", text)
+        self.assertIn("存活率", text)
         self.assertIn("测速 Top（延迟）", text)
 
     def test_verbose_formatter_collapses_large_node_list(self):
