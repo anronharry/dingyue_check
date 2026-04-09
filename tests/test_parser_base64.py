@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 import unittest
@@ -10,45 +10,72 @@ class ParserBase64Test(unittest.TestCase):
     def setUp(self) -> None:
         self.parser = SubscriptionParser()
 
-    def test_parse_nodes_supports_base64_encoded_raw_nodes(self) -> None:
-        raw_text = (
-            "ss://YWVzLTI1Ni1nY206cGFzc0BleGFtcGxlLmNvbTo0NDM=#香港01\n"
-            "trojan://password@example.org:443#日本01"
-        )
-        encoded = base64.b64encode(raw_text.encode("utf-8")).decode("ascii")
+    def test_parse_nodes_keeps_direct_vmess_without_base64_decode(self) -> None:
+        content = "vmess://eyJwcyI6IkhLMDEifQ==\ntrojan://pass@example.com:443#JP"
 
-        nodes, content_format, _, normalized_content = self.parser._parse_nodes(encoded)
+        nodes, content_format, _, normalized_content, notes = self.parser._parse_nodes(content)
 
         self.assertEqual(content_format, "text")
         self.assertEqual(len(nodes), 2)
-        self.assertEqual(nodes[0]["protocol"], "ss")
-        self.assertEqual(nodes[0]["server"], "example.com")
-        self.assertEqual(nodes[0]["port"], 443)
-        self.assertEqual(nodes[1]["server"], "example.org")
-        self.assertEqual(nodes[1]["port"], 443)
+        self.assertIn("direct-protocol", notes)
+        self.assertNotIn("base64-decoded", notes)
+        self.assertIn("vmess://", normalized_content)
+
+    def test_parse_nodes_keeps_direct_trojan_without_base64_decode(self) -> None:
+        content = "trojan://password@example.org:443#jp01"
+
+        nodes, content_format, _, normalized_content, notes = self.parser._parse_nodes(content)
+
+        self.assertEqual(content_format, "text")
+        self.assertEqual(len(nodes), 1)
+        self.assertIn("direct-protocol", notes)
+        self.assertNotIn("base64-decoded", notes)
         self.assertIn("trojan://", normalized_content)
 
-    def test_parse_nodes_supports_base64_encoded_yaml(self) -> None:
-        yaml_text = (
-            "proxies:\n"
-            "  - name: 香港01\n"
-            "    type: ss\n"
-            "    server: hk.example.com\n"
-            "    port: 443\n"
-            "  - name: 日本01\n"
-            "    type: trojan\n"
-            "    server: jp.example.com\n"
-            "    port: 443\n"
+    def test_parse_nodes_supports_base64_encoded_raw_nodes(self) -> None:
+        raw_text = (
+            "ss://YWVzLTI1Ni1nY206cGFzc0BleGFtcGxlLmNvbTo0NDM=#HK01\n"
+            "trojan://password@example.org:443#JP01"
         )
-        encoded = base64.b64encode(yaml_text.encode("utf-8")).decode("ascii")
+        encoded = base64.b64encode(raw_text.encode("utf-8")).decode("ascii")
 
-        nodes, content_format, _, normalized_content = self.parser._parse_nodes(encoded)
+        nodes, content_format, _, normalized_content, notes = self.parser._parse_nodes(encoded)
 
-        self.assertEqual(content_format, "yaml")
+        self.assertEqual(content_format, "text")
         self.assertEqual(len(nodes), 2)
-        self.assertEqual(nodes[0]["name"], "香港01")
-        self.assertEqual(nodes[1]["protocol"], "trojan")
-        self.assertIn("proxies:", normalized_content)
+        self.assertIn("base64-decoded", notes)
+        self.assertIn("trojan://", normalized_content)
+
+    def test_parse_nodes_returns_empty_for_blank_input(self) -> None:
+        nodes, content_format, _, normalized_content, notes = self.parser._parse_nodes("\n\r\t  ")
+
+        self.assertEqual(content_format, "text")
+        self.assertEqual(nodes, [])
+        self.assertEqual(normalized_content, "")
+        self.assertIn("unrecognized-content", notes)
+
+    def test_parse_nodes_rejects_non_base64_plain_text(self) -> None:
+        content = "hello world this is not a subscription payload"
+
+        nodes, content_format, _, normalized_content, notes = self.parser._parse_nodes(content)
+
+        self.assertEqual(content_format, "text")
+        self.assertEqual(nodes, [])
+        self.assertEqual(normalized_content, content)
+        self.assertNotIn("base64-decoded", notes)
+        self.assertIn("unrecognized-content", notes)
+
+    def test_parse_nodes_supports_urlsafe_missing_padding_and_noise(self) -> None:
+        raw_text = "vmess://eyJwcyI6IkhLMDEifQ==\nss://YWVzLTI1Ni1nY206cGFzc0BleGFtcGxlLmNvbTo0NDM=#HK"
+        encoded = base64.urlsafe_b64encode(raw_text.encode("utf-8")).decode("ascii").rstrip("=")
+        noisy = "\ufeff  " + encoded[:12] + "\n" + encoded[12:] + "$$$\x00"
+
+        nodes, content_format, _, normalized_content, notes = self.parser._parse_nodes(noisy)
+
+        self.assertEqual(content_format, "text")
+        self.assertEqual(len(nodes), 2)
+        self.assertIn("base64-decoded", notes)
+        self.assertIn("vmess://", normalized_content)
 
 
 if __name__ == "__main__":

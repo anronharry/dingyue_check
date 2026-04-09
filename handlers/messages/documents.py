@@ -131,26 +131,9 @@ def make_document_handler(
                         if item["status"] == "success":
                             message = f"<b>Subscription {item['index']} Result</b>\n\n{format_subscription_info(item['data'], item['url'])}"
                             reply_markup = make_sub_keyboard(item["url"])
-                            compact_info = dict(item["data"])
-                            cache_status = export_cache_service.get_cache_status(
-                                owner_uid=update.effective_user.id,
-                                source=item["url"],
-                            )
-                            if cache_status:
-                                compact_info["_cache_expires_at"] = cache_status.get("expires_at")
-                                compact_info["_cache_remaining_text"] = cache_status.get("remaining_text")
-                                compact_info["_cache_last_exported_at"] = cache_status.get("last_exported_at")
-                            sent_msg = await update.message.reply_text(
+                            await update.message.reply_text(
                                 message,
                                 parse_mode="HTML",
-                                reply_markup=reply_markup,
-                            )
-                            schedule_result_collapse(
-                                context=context,
-                                message=sent_msg,
-                                info=compact_info,
-                                url=item["url"],
-                                formatter=format_subscription_compact,
                                 reply_markup=reply_markup,
                             )
                         else:
@@ -188,15 +171,7 @@ def make_document_handler(
                 await processing_msg.delete()
             except Exception as exc:
                 logger.warning("删除进度消息失败: %s", exc)
-            sent_msg = await update.message.reply_text(message, parse_mode="HTML")
-            schedule_result_collapse(
-                context=context,
-                message=sent_msg,
-                info=result,
-                url=None,
-                formatter=format_node_analysis_compact,
-                reply_markup=None,
-            )
+            await update.message.reply_text(message, parse_mode="HTML")
         except Exception as exc:
             logger.error("文件处理失败: %s", exc)
             error_msg = str(exc)
@@ -222,15 +197,7 @@ def make_node_text_handler(*, document_service, format_subscription_info, format
                 await processing_msg.delete()
             except Exception as exc:
                 logger.warning("删除进度消息失败: %s", exc)
-            sent_msg = await update.message.reply_text(message, parse_mode="HTML")
-            schedule_result_collapse(
-                context=context,
-                message=sent_msg,
-                info=result,
-                url=None,
-                formatter=format_node_analysis_compact,
-                reply_markup=None,
-            )
+            await update.message.reply_text(message, parse_mode="HTML")
         except Exception as exc:
             logger.error("节点文本解析失败: %s", exc)
             error_msg = str(exc)

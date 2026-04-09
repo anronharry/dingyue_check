@@ -320,7 +320,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("恢复完成", update.message.replies[-1].text)
         shutil.rmtree(tmpdir, ignore_errors=True)
 
-    async def test_node_text_handler_schedules_result_collapse(self):
+    async def test_node_text_handler_sends_verbose_only(self):
         scheduled = []
         
         class _DocService:
@@ -345,8 +345,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertGreaterEqual(len(update.message.replies), 2)
         self.assertEqual(update.message.replies[-1].text, "verbose:节点列表")
-        self.assertEqual(len(scheduled), 1)
-        self.assertIsNone(scheduled[0]["url"])
+        self.assertEqual(len(scheduled), 0)
 
     async def test_document_handler_passes_owner_uid_to_document_analysis(self):
         calls = []

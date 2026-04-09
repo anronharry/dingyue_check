@@ -1,10 +1,8 @@
-"""
-订阅链接解析模块
-负责下载、解析和提取订阅信息
-"""
+﻿"""Subscription parsing utilities."""
 from __future__ import annotations
 
 import base64
+import binascii
 import math
 import re
 from collections import Counter
@@ -19,7 +17,11 @@ from core.file_handler import FileHandler
 
 
 class SubscriptionParser:
-    """订阅解析器"""
+    """Download and parse subscription payloads."""
+
+    DIRECT_PROTOCOL_PATTERN = re.compile(
+        r"(?im)^\s*(vmess|vless|trojan|ss|ssr|hysteria|hysteria2|hy2|tuic|wireguard)://"
+    )
 
     def __init__(self, proxy_port=7890, use_proxy=False, session=None, verify_ssl: bool = True):
         self.proxy_port = proxy_port
@@ -32,13 +34,15 @@ class SubscriptionParser:
         try:
             response_text, response_headers = await self._download_subscription(url)
             if self._is_pseudo_200_response(response_text, response_headers):
-                raise Exception("检测到伪装的存活页面，判定为失效源")
+                raise Exception("检测到伪装响应页面，判定为无效订阅")
+
             traffic_info = self._parse_traffic_info(response_headers)
-            nodes, content_format, normalized_nodes, normalized_content = self._parse_nodes(response_text)
+            nodes, content_format, normalized_nodes, normalized_content, parse_notes = self._parse_nodes(response_text)
             airport_name = self._extract_airport_name(nodes, url, response_headers, response_text)
             node_stats = await self._analyze_nodes(nodes)
             if not nodes:
                 raise Exception("未解析到任何有效节点")
+
             return {
                 "name": airport_name,
                 "node_count": len(nodes),
@@ -47,6 +51,7 @@ class SubscriptionParser:
                 "_normalized_nodes": normalized_nodes,
                 "_raw_content": normalized_content,
                 "_content_format": content_format,
+                "_parse_notes": parse_notes,
                 **traffic_info,
             }
         except aiohttp.ClientError as exc:
@@ -117,6 +122,7 @@ class SubscriptionParser:
         userinfo = headers.get("subscription-userinfo", "")
         if not userinfo:
             return traffic_info
+
         for part in userinfo.split(";"):
             part = part.strip()
             if "=" not in part:
@@ -131,6 +137,7 @@ class SubscriptionParser:
                     traffic_info["expire_time"] = datetime.fromtimestamp(int(value)).strftime("%Y-%m-%d %H:%M:%S")
                 except Exception:
                     pass
+
         if "upload" in traffic_info and "download" in traffic_info:
             traffic_info["used"] = traffic_info["upload"] + traffic_info["download"]
         if "total" in traffic_info and "used" in traffic_info:
@@ -141,37 +148,127 @@ class SubscriptionParser:
 
     def _parse_nodes(self, content):
         max_nodes = 300
+        parse_notes: list[str] = []
+        normalized_original = self._normalize_subscription_text(content)
 
-        yaml_nodes = self._parse_yaml_nodes(content, max_nodes=max_nodes)
+        yaml_nodes = self._parse_yaml_nodes(normalized_original, max_nodes=max_nodes)
         if yaml_nodes is not None:
-            return yaml_nodes, "yaml", list(yaml_nodes), content
+            parse_notes.append("direct-yaml")
+            return yaml_nodes, "yaml", list(yaml_nodes), normalized_original, parse_notes
 
-        decoded_content = content
-        cleaned_content = content.replace("\n", "").replace("\r", "").replace(" ", "").strip()
-        detected_format = "text"
+        if self._contains_direct_protocol(normalized_original):
+            parse_notes.append("direct-protocol")
+            nodes = FileHandler.parse_txt_file(normalized_original.encode("utf-8"))[:max_nodes]
+            return nodes, "text", list(nodes), normalized_original, parse_notes
 
-        def try_b64_decode(data):
-            missing_padding = len(data) % 4
-            if missing_padding:
-                data += "=" * (4 - missing_padding)
-            try:
-                return base64.b64decode(data).decode("utf-8", errors="ignore")
-            except Exception:
-                try:
-                    return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                except Exception:
-                    return None
-
-        temp_decoded = try_b64_decode(cleaned_content)
-        if temp_decoded:
-            decoded_content = temp_decoded
+        decoded_content = self._try_decode_subscription_base64(normalized_original)
+        if decoded_content:
+            parse_notes.append("base64-decoded")
             yaml_nodes = self._parse_yaml_nodes(decoded_content, max_nodes=max_nodes)
             if yaml_nodes is not None:
-                return yaml_nodes, "yaml", list(yaml_nodes), decoded_content
-            detected_format = "text"
+                parse_notes.append("decoded-yaml")
+                return yaml_nodes, "yaml", list(yaml_nodes), decoded_content, parse_notes
 
-        nodes = FileHandler.parse_txt_file(decoded_content.encode("utf-8"))[:max_nodes]
-        return nodes, detected_format, list(nodes), decoded_content
+            nodes = FileHandler.parse_txt_file(decoded_content.encode("utf-8"))[:max_nodes]
+            return nodes, "text", list(nodes), decoded_content, parse_notes
+
+        parse_notes.append("unrecognized-content")
+        nodes = FileHandler.parse_txt_file(normalized_original.encode("utf-8"))[:max_nodes]
+        return nodes, "text", list(nodes), normalized_original, parse_notes
+
+    @staticmethod
+    def _normalize_subscription_text(content: str) -> str:
+        if not content:
+            return ""
+        normalized = content.replace("\ufeff", "").replace("\x00", "")
+        return normalized.strip()
+
+    @classmethod
+    def _contains_direct_protocol(cls, content: str) -> bool:
+        if not content:
+            return False
+        return bool(cls.DIRECT_PROTOCOL_PATTERN.search(content))
+
+    def _try_decode_subscription_base64(self, content: str) -> str | None:
+        candidate = self._sanitize_base64_candidate(content)
+        if not self._is_probable_base64(candidate):
+            return None
+
+        for decoder in (self._decode_base64_standard, self._decode_base64_urlsafe):
+            decoded = decoder(candidate)
+            if decoded and self._looks_like_subscription_payload(decoded):
+                return self._normalize_subscription_text(decoded)
+        return None
+
+    @staticmethod
+    def _sanitize_base64_candidate(content: str) -> str:
+        if not content:
+            return ""
+
+        compact = re.sub(r"\s+", "", content.replace("\ufeff", "").replace("\x00", ""))
+        if not compact:
+            return ""
+
+        allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
+        filtered = "".join(ch for ch in compact if ch in allowed)
+        if not filtered:
+            return ""
+
+        noise_ratio = 1.0 - (len(filtered) / len(compact))
+        if noise_ratio > 0.08:
+            return ""
+        return filtered
+
+    def _is_probable_base64(self, candidate: str) -> bool:
+        if not candidate or len(candidate) < 24:
+            return False
+        if self._contains_direct_protocol(candidate):
+            return False
+        if not re.fullmatch(r"[A-Za-z0-9+/=_-]+", candidate):
+            return False
+
+        padded = candidate + ("=" * ((4 - len(candidate) % 4) % 4))
+        try:
+            base64.b64decode(padded, validate=True)
+            return True
+        except (ValueError, binascii.Error):
+            normalized = padded.replace("-", "+").replace("_", "/")
+            try:
+                base64.b64decode(normalized, validate=True)
+                return True
+            except (ValueError, binascii.Error):
+                return False
+
+    @staticmethod
+    def _decode_base64_standard(candidate: str) -> str | None:
+        padded = candidate + ("=" * ((4 - len(candidate) % 4) % 4))
+        try:
+            decoded = base64.b64decode(padded, validate=True)
+        except (ValueError, binascii.Error):
+            return None
+        return decoded.decode("utf-8-sig", errors="ignore")
+
+    @staticmethod
+    def _decode_base64_urlsafe(candidate: str) -> str | None:
+        normalized = candidate.replace("-", "+").replace("_", "/")
+        padded = normalized + ("=" * ((4 - len(normalized) % 4) % 4))
+        try:
+            decoded = base64.b64decode(padded, validate=True)
+        except (ValueError, binascii.Error):
+            return None
+        return decoded.decode("utf-8-sig", errors="ignore")
+
+    def _looks_like_subscription_payload(self, content: str) -> bool:
+        if not content:
+            return False
+        normalized = self._normalize_subscription_text(content)
+        if not normalized:
+            return False
+        if self._contains_direct_protocol(normalized):
+            return True
+        if self._parse_yaml_nodes(normalized, max_nodes=1) is not None:
+            return True
+        return False
 
     @staticmethod
     def _decode_response_body(body: bytes, charset: str | None) -> str:
@@ -211,7 +308,7 @@ class SubscriptionParser:
             if isinstance(proxy, dict):
                 nodes.append(
                     {
-                        "name": proxy.get("name", "未知节点"),
+                        "name": proxy.get("name", "未命名节点"),
                         "protocol": proxy.get("type", "unknown").lower(),
                         "server": proxy.get("server", ""),
                         "port": proxy.get("port", 0),
@@ -220,7 +317,18 @@ class SubscriptionParser:
         return nodes
 
     def _parse_node_line(self, line):
-        protocols = ["vmess://", "vless://", "ss://", "ssr://", "trojan://", "hysteria://", "hysteria2://"]
+        protocols = [
+            "vmess://",
+            "vless://",
+            "ss://",
+            "ssr://",
+            "trojan://",
+            "hysteria://",
+            "hysteria2://",
+            "hy2://",
+            "tuic://",
+            "wireguard://",
+        ]
         for protocol in protocols:
             if line.startswith(protocol):
                 return {"protocol": protocol.replace("://", ""), "name": self._extract_node_name(line, protocol), "raw": line}
@@ -291,16 +399,18 @@ class SubscriptionParser:
                     name = re.sub(r"\.(yaml|yml|txt|conf)$", "", unquote(match.group(1)), flags=re.IGNORECASE)
                     if not is_trash(name):
                         return name
+
         if content:
             first_line = content[:500].split("\n", 1)[0].strip()
             if first_line.startswith(("#", "//")):
                 comment_title = first_line.lstrip("#/ ").strip()
                 if comment_title and not is_trash(comment_title):
                     return comment_title
+
         if nodes:
             prefixes = []
             for node in nodes:
-                match = re.match(r"^([^| \-—:：/.]+)", node.get("name", ""))
+                match = re.match(r"^([^| \-，,.]+)", node.get("name", ""))
                 if match:
                     prefix = match.group(1).strip()
                     if len(prefix) >= 3:
@@ -309,15 +419,18 @@ class SubscriptionParser:
                 most_common = Counter(prefixes).most_common(1)
                 if most_common and most_common[0][1] >= (len(nodes) * 0.3):
                     return most_common[0][0]
+
         parsed = urlparse(url)
         for part in reversed([part for part in parsed.path.split("/") if part]):
             clean = re.sub(r"\.(yaml|yml|txt|conf)$", "", part, flags=re.IGNORECASE)
             if not is_trash(clean):
                 return clean
+
         domain = parsed.netloc.split(":")[0]
         domain_parts = [part for part in domain.split(".") if part.lower() not in common_tlds and part.lower() not in ["api", "sub", "www", "cdn"]]
         if domain_parts and not is_trash(domain_parts[-1]):
             return domain_parts[-1]
+
         return "未知机场"
 
     async def _analyze_nodes(self, nodes):

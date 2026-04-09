@@ -129,25 +129,11 @@ def make_subscription_callback_handler(
                 owner_uid = store.get_all().get(url, {}).get("owner_uid", 0)
                 store.add_or_update(url, result, user_id=owner_uid)
                 export_cache_service.save_subscription_cache(owner_uid=owner_uid, source=url, result=result)
-                compact_info = dict(result)
-                cache_status = export_cache_service.get_cache_status(owner_uid=owner_uid, source=url)
-                if cache_status:
-                    compact_info["_cache_expires_at"] = cache_status.get("expires_at")
-                    compact_info["_cache_remaining_text"] = cache_status.get("remaining_text")
-                    compact_info["_cache_last_exported_at"] = cache_status.get("last_exported_at")
                 usage_audit_service.log_check(user=update.effective_user, urls=[url], source="按钮重检")
                 reply_markup = make_sub_keyboard(url)
                 await query.edit_message_text(
                     format_subscription_info(result, url),
                     parse_mode="HTML",
-                    reply_markup=reply_markup,
-                )
-                schedule_result_collapse(
-                    context=context,
-                    message=query.message,
-                    info=compact_info,
-                    url=url,
-                    formatter=format_subscription_compact,
                     reply_markup=reply_markup,
                 )
             except Exception as exc:

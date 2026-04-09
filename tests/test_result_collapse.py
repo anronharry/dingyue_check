@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
@@ -18,7 +18,7 @@ class _FakeMessage:
 
 
 class ResultCollapseTest(unittest.IsolatedAsyncioTestCase):
-    async def test_verbose_text_and_scheduled_collapse(self):
+    async def test_subscription_handler_sends_verbose_result_without_delayed_collapse(self):
         scheduled = []
         audit_calls = []
 
@@ -43,8 +43,7 @@ class ResultCollapseTest(unittest.IsolatedAsyncioTestCase):
         update = SimpleNamespace(effective_user=SimpleNamespace(id=7), message=_FakeMessage())
         await handler(update, SimpleNamespace(job_queue=True))
         self.assertTrue(update.message.sent[1].text.startswith("verbose:"))
-        self.assertEqual(len(scheduled), 1)
-        self.assertEqual(scheduled[0]["formatter"]({"name": "A"}), "compact:A")
+        self.assertEqual(len(scheduled), 0)
 
     async def test_edit_failure_is_ignored(self):
         async def _edit_text(*args, **kwargs):
@@ -69,3 +68,7 @@ class ResultCollapseTest(unittest.IsolatedAsyncioTestCase):
             reply_markup=None,
         )
         await scheduled_job(SimpleNamespace())
+
+
+if __name__ == "__main__":
+    unittest.main()

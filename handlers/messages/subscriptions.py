@@ -36,26 +36,9 @@ def make_subscription_handler(
             for item in results:
                 if item["status"] == "success":
                     reply_markup = make_sub_keyboard(item["url"])
-                    compact_info = dict(item["data"])
-                    cache_status = export_cache_service.get_cache_status(
-                        owner_uid=update.effective_user.id,
-                        source=item["url"],
-                    )
-                    if cache_status:
-                        compact_info["_cache_expires_at"] = cache_status.get("expires_at")
-                        compact_info["_cache_remaining_text"] = cache_status.get("remaining_text")
-                        compact_info["_cache_last_exported_at"] = cache_status.get("last_exported_at")
-                    sent_msg = await update.message.reply_text(
+                    await update.message.reply_text(
                         format_subscription_info(item["data"], item["url"]),
                         parse_mode="HTML",
-                        reply_markup=reply_markup,
-                    )
-                    schedule_result_collapse(
-                        context=context,
-                        message=sent_msg,
-                        info=compact_info,
-                        url=item["url"],
-                        formatter=format_subscription_compact,
                         reply_markup=reply_markup,
                     )
                 else:
