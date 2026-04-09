@@ -105,6 +105,9 @@ class Runtime:
                 use_proxy=False,
                 session=self.shared_session,
                 verify_ssl=config.VERIFY_SSL,
+                max_parse_concurrency=config.PARSE_GLOBAL_CONCURRENCY,
+                success_cache_ttl_seconds=config.PARSE_SUCCESS_CACHE_TTL_SECONDS,
+                success_cache_max_size=config.PARSE_SUCCESS_CACHE_MAX_SIZE,
             )
         return self.parser
 

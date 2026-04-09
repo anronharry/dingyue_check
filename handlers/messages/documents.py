@@ -1,4 +1,4 @@
-"""Document and node-text message handlers."""
+﻿"""Document and node-text message handlers."""
 from __future__ import annotations
 
 import asyncio
@@ -28,15 +28,19 @@ def make_document_handler(
     usage_audit_service,
     logger,
 ):
+    del export_cache_service, format_subscription_compact, format_node_analysis_compact, schedule_result_collapse
+
     async def handle_document(update, context):
         document = update.message.document
+        reply_to_message_id = getattr(update.message, "message_id", None)
+        reply_kwargs = {"reply_to_message_id": reply_to_message_id} if reply_to_message_id else {}
 
         if context.user_data.get("awaiting_restore") and document.file_name.lower().endswith(".zip"):
             if document.file_size and document.file_size > MAX_RESTORE_ZIP_SIZE_BYTES:
-                await update.message.reply_text("备份 ZIP 过大（最大 20MB），已拒绝恢复。")
+                await update.message.reply_text("备份 ZIP 过大（最大 20MB），已拒绝恢复。", **reply_kwargs)
                 return
 
-            processing_msg = await update.message.reply_text("正在恢复备份，请稍候...")
+            processing_msg = await update.message.reply_text("正在恢复备份，请稍候...", **reply_kwargs)
             temp_dir = os.path.join("data", "temp")
             os.makedirs(temp_dir, exist_ok=True)
             temp_zip_path = os.path.join(
@@ -77,14 +81,14 @@ def make_document_handler(
 
         file_type = input_detector.detect_file_type(document.file_name)
         if file_type == "unknown":
-            await update.message.reply_text("暂不支持该文件类型。请上传 TXT/YAML；导入 JSON 请先执行 /import。")
+            await update.message.reply_text("暂不支持该文件类型。请上传 TXT/YAML；导入 JSON 请先执行 /import。", **reply_kwargs)
             return
 
         if file_type in {"txt", "yaml"}:
             progress_text = f"已收到 {file_type.upper()} 文件，正在解析节点并执行快速检测..."
         else:
             progress_text = f"已收到 {file_type.upper()} 文件，正在解析内容..."
-        processing_msg = await update.message.reply_text(progress_text)
+        processing_msg = await update.message.reply_text(progress_text, **reply_kwargs)
 
         if document.file_size and document.file_size > MAX_DOCUMENT_SIZE_BYTES:
             await processing_msg.edit_text("文件过大：超过 5MB 限制。")
@@ -125,20 +129,25 @@ def make_document_handler(
                     try:
                         await processing_msg.delete()
                     except Exception as exc:
-                        logger.warning("删除进度消息失败：%s", exc)
+                        logger.warning("删除进度消息失败: %s", exc)
 
                     for item in sorted(results, key=lambda row: row["index"]):
                         if item["status"] == "success":
-                            message = f"<b>Subscription {item['index']} Result</b>\n\n{format_subscription_info(item['data'], item['url'])}"
+                            message = (
+                                f"<b>Subscription {item['index']} Result</b>\n\n"
+                                f"{format_subscription_info(item['data'], item['url'])}"
+                            )
                             reply_markup = make_sub_keyboard(item["url"])
                             await update.message.reply_text(
                                 message,
                                 parse_mode="HTML",
                                 reply_markup=reply_markup,
+                                **reply_kwargs,
                             )
                         else:
                             await update.message.reply_text(
                                 f"订阅 {item['index']} 检测失败\n原因：{item['error']}",
+                                **reply_kwargs,
                             )
 
                     success_count = sum(1 for item in results if item["status"] == "success")
@@ -149,6 +158,7 @@ def make_document_handler(
                         f"成功：{success_count}\n"
                         f"失败：{failed_count}",
                         parse_mode="HTML",
+                        **reply_kwargs,
                     )
                     return
 
@@ -171,7 +181,7 @@ def make_document_handler(
                 await processing_msg.delete()
             except Exception as exc:
                 logger.warning("删除进度消息失败: %s", exc)
-            await update.message.reply_text(message, parse_mode="HTML")
+            await update.message.reply_text(message, parse_mode="HTML", **reply_kwargs)
         except Exception as exc:
             logger.error("文件处理失败: %s", exc)
             error_msg = str(exc)
@@ -179,14 +189,19 @@ def make_document_handler(
             try:
                 await processing_msg.edit_text(f"文件处理失败：{short_error}")
             except Exception:
-                await update.message.reply_text(f"文件处理失败：{short_error}")
+                await update.message.reply_text(f"文件处理失败：{short_error}", **reply_kwargs)
 
     return handle_document
 
 
 def make_node_text_handler(*, document_service, format_subscription_info, format_node_analysis_compact, schedule_result_collapse, logger):
+    del format_node_analysis_compact, schedule_result_collapse
+
     async def handle_node_text(update, context):
-        processing_msg = await update.message.reply_text("正在解析节点文本并执行快速检测...")
+        del context
+        reply_to_message_id = getattr(update.message, "message_id", None)
+        reply_kwargs = {"reply_to_message_id": reply_to_message_id} if reply_to_message_id else {}
+        processing_msg = await update.message.reply_text("正在解析节点文本并执行快速检测...", **reply_kwargs)
         try:
             result = await document_service.analyze_node_text(text=update.message.text.strip())
             if not result:
@@ -197,7 +212,7 @@ def make_node_text_handler(*, document_service, format_subscription_info, format
                 await processing_msg.delete()
             except Exception as exc:
                 logger.warning("删除进度消息失败: %s", exc)
-            await update.message.reply_text(message, parse_mode="HTML")
+            await update.message.reply_text(message, parse_mode="HTML", **reply_kwargs)
         except Exception as exc:
             logger.error("节点文本解析失败: %s", exc)
             error_msg = str(exc)
@@ -205,6 +220,6 @@ def make_node_text_handler(*, document_service, format_subscription_info, format
             try:
                 await processing_msg.edit_text(f"节点解析失败：{short_error}")
             except Exception:
-                await update.message.reply_text(f"节点解析失败：{short_error}")
+                await update.message.reply_text(f"节点解析失败：{short_error}", **reply_kwargs)
 
     return handle_node_text

@@ -1,10 +1,13 @@
 ﻿"""Subscription parsing utilities."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
+import copy
 import math
 import re
+import time
 from collections import Counter
 from datetime import datetime
 from urllib.parse import unquote, urlparse
@@ -23,14 +26,80 @@ class SubscriptionParser:
         r"(?im)^\s*(vmess|vless|trojan|ss|ssr|hysteria|hysteria2|hy2|tuic|wireguard)://"
     )
 
-    def __init__(self, proxy_port=7890, use_proxy=False, session=None, verify_ssl: bool = True):
+    def __init__(
+        self,
+        proxy_port=7890,
+        use_proxy=False,
+        session=None,
+        verify_ssl: bool = True,
+        *,
+        max_parse_concurrency: int = 24,
+        success_cache_ttl_seconds: int = 12,
+        success_cache_max_size: int = 512,
+    ):
         self.proxy_port = proxy_port
         self.use_proxy = use_proxy
         self.proxy_url = f"http://127.0.0.1:{proxy_port}" if use_proxy else None
         self.session = session
         self.verify_ssl = bool(verify_ssl)
+        self._parse_semaphore = asyncio.Semaphore(max(1, int(max_parse_concurrency)))
+        self._inflight_lock = asyncio.Lock()
+        self._inflight_tasks: dict[str, asyncio.Future] = {}
+        self._success_cache: dict[str, tuple[float, dict]] = {}
+        self._success_cache_ttl_seconds = max(0, int(success_cache_ttl_seconds))
+        self._success_cache_max_size = max(8, int(success_cache_max_size))
 
-    async def parse(self, url):
+    async def parse(self, url, *, force_refresh: bool = False):
+        cache_key = str(url).strip()
+        if not force_refresh:
+            cached = self._get_cached_result(cache_key)
+            if cached is not None:
+                return cached
+
+        is_owner = False
+        async with self._inflight_lock:
+            shared_task = self._inflight_tasks.get(cache_key)
+            if shared_task is None:
+                shared_task = asyncio.create_task(self._parse_with_semaphore(url, cache_key))
+                self._inflight_tasks[cache_key] = shared_task
+                is_owner = True
+
+        try:
+            result = await shared_task
+            return copy.deepcopy(result)
+        finally:
+            if is_owner:
+                async with self._inflight_lock:
+                    if self._inflight_tasks.get(cache_key) is shared_task:
+                        self._inflight_tasks.pop(cache_key, None)
+
+    async def _parse_with_semaphore(self, url: str, cache_key: str) -> dict:
+        async with self._parse_semaphore:
+            result = await self._parse_impl(url)
+        self._set_cached_result(cache_key, result)
+        return result
+
+    def _get_cached_result(self, cache_key: str) -> dict | None:
+        if not cache_key or self._success_cache_ttl_seconds <= 0:
+            return None
+        cached = self._success_cache.get(cache_key)
+        if not cached:
+            return None
+        ts, result = cached
+        if (time.time() - ts) > self._success_cache_ttl_seconds:
+            self._success_cache.pop(cache_key, None)
+            return None
+        return copy.deepcopy(result)
+
+    def _set_cached_result(self, cache_key: str, result: dict) -> None:
+        if not cache_key or self._success_cache_ttl_seconds <= 0:
+            return
+        self._success_cache[cache_key] = (time.time(), copy.deepcopy(result))
+        if len(self._success_cache) > self._success_cache_max_size:
+            oldest_key = next(iter(self._success_cache.keys()))
+            self._success_cache.pop(oldest_key, None)
+
+    async def _parse_impl(self, url):
         try:
             response_text, response_headers = await self._download_subscription(url)
             if self._is_pseudo_200_response(response_text, response_headers):

@@ -130,7 +130,7 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("存活：7/10", text)
         self.assertNotIn("剩余", text)
 
-    def test_verbose_formatter_uses_native_spoiler_fold(self):
+    def test_verbose_formatter_uses_expandable_blockquote_fold(self):
         text = format_subscription_info(
             {
                 "name": "Wcloud.yaml",
@@ -144,7 +144,7 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.assertIn("订阅摘要", text)
-        self.assertIn("<tg-spoiler>", text)
+        self.assertIn("<blockquote expandable>", text)
         self.assertIn("节点列表（共 3 个）", text)
         self.assertIn("快速检测", text)
         self.assertIn("已测 3 | 存活 2 | 失败 1", text)
@@ -159,7 +159,7 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
             },
             url="https://example.com/sub",
         )
-        self.assertIn("<tg-spoiler>", text)
+        self.assertIn("<blockquote expandable>", text)
         self.assertIn("节点列表（共 400 个）", text)
         self.assertIn("已折叠", text)
         self.assertLessEqual(len(text), 3900)

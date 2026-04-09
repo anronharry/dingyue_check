@@ -131,7 +131,7 @@ def _build_details(info: dict, url: str | None, *, node_limit: int, node_char_bu
 
     if not lines:
         return ""
-    return "<tg-spoiler>\n" + "\n".join(lines) + "\n</tg-spoiler>"
+    return "<blockquote expandable>\n" + "\n".join(lines) + "\n</blockquote>"
 
 
 def format_subscription_info(info, url=None):

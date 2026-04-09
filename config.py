@@ -60,6 +60,9 @@ LATENCY_TEST_CONCURRENCY: int = int(os.getenv("LATENCY_TEST_CONCURRENCY", str(_p
 GEO_LOOKUP_MAX_WORKERS: int = int(os.getenv("GEO_LOOKUP_MAX_WORKERS", "8"))
 MAX_NODES_PER_PARSE: int = int(os.getenv("MAX_NODES_PER_PARSE", str(_profile["parse_limit"])))
 MAX_GEO_QUERIES: int = int(os.getenv("MAX_GEO_QUERIES", "50"))
+PARSE_GLOBAL_CONCURRENCY: int = int(os.getenv("PARSE_GLOBAL_CONCURRENCY", "24"))
+PARSE_SUCCESS_CACHE_TTL_SECONDS: int = int(os.getenv("PARSE_SUCCESS_CACHE_TTL_SECONDS", "12"))
+PARSE_SUCCESS_CACHE_MAX_SIZE: int = int(os.getenv("PARSE_SUCCESS_CACHE_MAX_SIZE", "512"))
 
 
 def print_config_summary():
@@ -79,6 +82,8 @@ def print_config_summary():
     logger.info(f"Geo lookup: {_flag(ENABLE_GEO_LOOKUP)}")
     logger.info(f"SSL verification: {_flag(VERIFY_SSL)}")
     logger.info(f"Max nodes per parse: {MAX_NODES_PER_PARSE}")
+    logger.info(f"Global parse concurrency: {PARSE_GLOBAL_CONCURRENCY}")
+    logger.info(f"Parse success cache TTL(s): {PARSE_SUCCESS_CACHE_TTL_SECONDS}")
     logger.info(f"URL cache size limit: {URL_CACHE_MAX_SIZE}")
     logger.info("=" * 50)
 

@@ -1,4 +1,4 @@
-"""Subscription URL text handlers."""
+﻿"""Subscription URL text handlers."""
 from __future__ import annotations
 
 
@@ -14,25 +14,41 @@ def make_subscription_handler(
     usage_audit_service,
     logger,
 ):
+    del export_cache_service, format_subscription_compact, schedule_result_collapse
+
     async def handle_subscription(update, context):
+        del context
+        reply_to_message_id = getattr(update.message, "message_id", None)
+        reply_kwargs = {"reply_to_message_id": reply_to_message_id} if reply_to_message_id else {}
         text = update.message.text.strip()
         candidate_urls = [line.strip() for line in text.split("\n") if line.strip()]
         valid_urls = []
+
         for url in candidate_urls:
             if not is_valid_url(url):
-                await update.message.reply_text(f"❌ 无效的订阅链接：{url[:50]}...")
+                await update.message.reply_text(f"❌ 无效的订阅链接：{url[:80]}", **reply_kwargs)
                 continue
             valid_urls.append(url)
+
         if not valid_urls:
             return
+
         usage_audit_service.log_check(user=update.effective_user, urls=valid_urls, source="文本订阅链接")
-        processing_msg = await update.message.reply_text(f"⏳ 正在解析订阅，共 {len(valid_urls)} 个...")
+        processing_msg = await update.message.reply_text(
+            f"⏳ 正在解析订阅，共 {len(valid_urls)} 个...",
+            **reply_kwargs,
+        )
+
         try:
-            results = await document_service.parse_subscription_urls(subscription_urls=valid_urls, owner_uid=update.effective_user.id)
+            results = await document_service.parse_subscription_urls(
+                subscription_urls=valid_urls,
+                owner_uid=update.effective_user.id,
+            )
             try:
                 await processing_msg.delete()
             except Exception as exc:
                 logger.warning("删除进度消息失败: %s", exc)
+
             for item in results:
                 if item["status"] == "success":
                     reply_markup = make_sub_keyboard(item["url"])
@@ -40,16 +56,22 @@ def make_subscription_handler(
                         format_subscription_info(item["data"], item["url"]),
                         parse_mode="HTML",
                         reply_markup=reply_markup,
+                        **reply_kwargs,
                     )
-                else:
-                    error_msg = str(item["error"])
-                    await update.message.reply_text(f"❌ 订阅解析失败：{error_msg[:500]}{'...' if len(error_msg) > 500 else ''}")
+                    continue
+
+                error_msg = str(item.get("error", "未知错误"))
+                await update.message.reply_text(
+                    f"❌ 订阅解析失败：{error_msg[:500]}{'...' if len(error_msg) > 500 else ''}",
+                    **reply_kwargs,
+                )
         except Exception as exc:
             logger.error("订阅解析失败: %s", exc)
             error_msg = str(exc)
+            short_error = f"{error_msg[:500]}{'...' if len(error_msg) > 500 else ''}"
             try:
-                await processing_msg.edit_text(f"❌ 订阅解析失败：{error_msg[:500]}{'...' if len(error_msg) > 500 else ''}")
+                await processing_msg.edit_text(f"❌ 订阅解析失败：{short_error}")
             except Exception:
-                await update.message.reply_text(f"❌ 订阅解析失败：{error_msg[:500]}{'...' if len(error_msg) > 500 else ''}")
+                await update.message.reply_text(f"❌ 订阅解析失败：{short_error}", **reply_kwargs)
 
     return handle_subscription
