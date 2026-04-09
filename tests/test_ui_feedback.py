@@ -135,7 +135,14 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
             {
                 "name": "Wcloud.yaml",
                 "node_count": 3,
-                "quick_check": {"tested": 3, "alive": 2, "dead": 1, "skipped": 0, "sampled": False},
+                "quick_check": {
+                    "tested": 3,
+                    "alive": 2,
+                    "dead": 1,
+                    "skipped": 0,
+                    "sampled": False,
+                    "latency_top": [{"name": "香港01", "latency": 32.4, "type": "ss"}],
+                },
                 "_raw_nodes": [
                     {"protocol": "ss", "name": "香港01"},
                     {"protocol": "ss", "name": "香港02"},
@@ -148,6 +155,7 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("节点列表（共 3 个）", text)
         self.assertIn("快速检测", text)
         self.assertIn("已测 3 | 存活 2 | 失败 1", text)
+        self.assertIn("测速 Top（延迟）", text)
 
     def test_verbose_formatter_collapses_large_node_list(self):
         nodes = [{"protocol": "vmess", "name": f"Node-{i:03d}"} for i in range(1, 401)]
@@ -163,6 +171,23 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("节点列表（共 400 个）", text)
         self.assertIn("已折叠", text)
         self.assertLessEqual(len(text), 3900)
+
+    def test_subscription_url_is_outside_expandable_block(self):
+        text = format_subscription_info(
+            {
+                "name": "Demo",
+                "node_count": 2,
+                "_raw_nodes": [
+                    {"protocol": "vmess", "name": "Node-A"},
+                    {"protocol": "trojan", "name": "Node-B"},
+                ],
+            },
+            url="https://example.com/sub?token=abc",
+        )
+        self.assertIn("<blockquote expandable>", text)
+        self.assertIn("</blockquote>", text)
+        self.assertIn("<b>原始订阅链接：</b>", text)
+        self.assertGreater(text.index("<b>原始订阅链接：</b>"), text.index("</blockquote>"))
 
 
 if __name__ == "__main__":

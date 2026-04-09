@@ -46,6 +46,20 @@ def _format_quick_check(info: dict, *, compact: bool = False) -> str:
     return f"<b>快速检测：</b> {' | '.join(parts)}{suffix}{skipped_detail}"
 
 
+def _render_latency_top(info: dict) -> list[str]:
+    quick_check = info.get("quick_check") or {}
+    latency_top = quick_check.get("latency_top") or []
+    if not latency_top:
+        return []
+    lines = ["<b>测速 Top（延迟）</b>"]
+    for index, item in enumerate(latency_top[:5], start=1):
+        name = html.escape(str(item.get("name") or f"node-{index}"))
+        protocol = html.escape(str(item.get("type") or "unknown").upper())
+        latency = float(item.get("latency") or 0.0)
+        lines.append(f"{index}. [{protocol}] {name} - <code>{latency:.0f}ms</code>")
+    return lines
+
+
 def _render_node_lines(info: dict, *, max_items: int, char_budget: int) -> tuple[list[str], int]:
     nodes = info.get("_normalized_nodes") or info.get("_raw_nodes") or []
     if not nodes:
@@ -85,7 +99,7 @@ def _format_usage(info: dict) -> tuple[str, str, str]:
     return used, total, remaining
 
 
-def _build_details(info: dict, url: str | None, *, node_limit: int, node_char_budget: int, include_url: bool) -> str:
+def _build_details(info: dict, *, node_limit: int, node_char_budget: int) -> str:
     lines = []
     node_lines, hidden_count = _render_node_lines(info, max_items=node_limit, char_budget=node_char_budget)
     if node_lines:
@@ -114,6 +128,7 @@ def _build_details(info: dict, url: str | None, *, node_limit: int, node_char_bu
     quick_check_text = _format_quick_check(info)
     if quick_check_text:
         lines.append(quick_check_text)
+    lines.extend(_render_latency_top(info))
 
     parse_notes = info.get("_parse_notes") or []
     content_format = info.get("_content_format")
@@ -124,10 +139,6 @@ def _build_details(info: dict, url: str | None, *, node_limit: int, node_char_bu
         note_parts.append("流程=" + html.escape(",".join(str(item) for item in parse_notes[:6])))
     if note_parts:
         lines.append(f"<b>解析备注：</b> {' | '.join(note_parts)}")
-
-    if include_url and url:
-        lines.append("<b>原始订阅链接：</b>")
-        lines.append(f"<code>{html.escape(url)}</code>")
 
     if not lines:
         return ""
@@ -153,20 +164,32 @@ def format_subscription_info(info, url=None):
     if info.get("usage_percent") is not None:
         percent = float(info["usage_percent"])
         summary_lines.append(f"<b>使用进度：</b> {create_progress_bar(percent, length=8)} {percent:.1f}%")
+    elif info.get("quick_check"):
+        quick_check = info.get("quick_check") or {}
+        tested = int(quick_check.get("tested") or 0)
+        alive = int(quick_check.get("alive") or 0)
+        ratio = (alive / tested * 100.0) if tested > 0 else 0.0
+        summary_lines.append(f"<b>测速概览：</b> {create_progress_bar(ratio, length=8)} {alive}/{tested} 存活")
 
     remain_text = format_remaining_time(info.get("expire_time", ""), include_seconds=False) if info.get("expire_time") else ""
     if remain_text:
         summary_lines.append(f"<b>剩余时间：</b> {html.escape(remain_text)}")
 
-    details = _build_details(info, url, node_limit=100, node_char_budget=1800, include_url=True)
+    details = _build_details(info, node_limit=100, node_char_budget=1800)
     message = "\n".join(summary_lines) + ("\n\n" + details if details else "")
+    if url:
+        message += f"\n\n<b>原始订阅链接：</b>\n<code>{html.escape(url)}</code>"
 
     if len(message) > MAX_TELEGRAM_TEXT:
-        details = _build_details(info, url, node_limit=40, node_char_budget=1000, include_url=True)
+        details = _build_details(info, node_limit=40, node_char_budget=1000)
         message = "\n".join(summary_lines) + ("\n\n" + details if details else "")
+        if url:
+            message += f"\n\n<b>原始订阅链接：</b>\n<code>{html.escape(url)}</code>"
     if len(message) > MAX_TELEGRAM_TEXT:
-        details = _build_details(info, url, node_limit=20, node_char_budget=650, include_url=False)
+        details = _build_details(info, node_limit=20, node_char_budget=650)
         message = "\n".join(summary_lines) + ("\n\n" + details if details else "")
+        if url:
+            message += f"\n\n<b>原始订阅链接：</b>\n<code>{html.escape(url)}</code>"
 
     return message[:MAX_TELEGRAM_TEXT]
 

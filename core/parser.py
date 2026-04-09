@@ -449,6 +449,14 @@ class SubscriptionParser:
             "sub",
         ]
         common_tlds = ["com", "net", "org", "me", "io", "cc", "top", "xyz", "shop", "info", "site", "link", "cloud", "vip", "best"]
+        known_airport_alias = {
+            "alberhong": ["alberhong", "alberta", "bobbi", "ndjp"],
+            "wcloud": ["wcloud", "w-cloud"],
+            "nexitally": ["nexitally", "nex"],
+            "mojie": ["mojie", "魔戒"],
+            "bianyuan": ["边缘", "bianyuan"],
+            "jichang": ["机场", "airportsub"],
+        }
 
         def is_trash(value):
             if not value or len(value) < 2 or value.isdigit() or len(value) > 30:
@@ -458,7 +466,7 @@ class SubscriptionParser:
         if headers:
             raw_title = headers.get("profile-title") or headers.get("x-airport-name") or headers.get("x-profile-name")
             if raw_title:
-                title = unquote(raw_title).strip().strip('"').strip("'").strip()
+                title = self._decode_profile_title(raw_title)
                 if not is_trash(title):
                     return title
             content_disposition = headers.get("content-disposition", "")
@@ -468,6 +476,17 @@ class SubscriptionParser:
                     name = re.sub(r"\.(yaml|yml|txt|conf)$", "", unquote(match.group(1)), flags=re.IGNORECASE)
                     if not is_trash(name):
                         return name
+            profile_web = headers.get("profile-web-page-url") or headers.get("x-profile-web-page-url")
+            if profile_web:
+                web_host = urlparse(profile_web).netloc.split(":")[0].strip()
+                if web_host:
+                    parts = [
+                        part
+                        for part in web_host.split(".")
+                        if part and part.lower() not in common_tlds and part.lower() not in {"www", "api", "sub", "cdn"}
+                    ]
+                    if parts and not is_trash(parts[-1]):
+                        return parts[-1]
 
         if content:
             first_line = content[:500].split("\n", 1)[0].strip()
@@ -490,6 +509,11 @@ class SubscriptionParser:
                     return most_common[0][0]
 
         parsed = urlparse(url)
+        lower_url = url.lower()
+        for airport_name, aliases in known_airport_alias.items():
+            if any(alias in lower_url for alias in aliases):
+                return airport_name
+
         for part in reversed([part for part in parsed.path.split("/") if part]):
             clean = re.sub(r"\.(yaml|yml|txt|conf)$", "", part, flags=re.IGNORECASE)
             if not is_trash(clean):
@@ -501,6 +525,46 @@ class SubscriptionParser:
             return domain_parts[-1]
 
         return "未知机场"
+
+    def _decode_profile_title(self, raw_title: str) -> str:
+        title = str(raw_title or "").strip().strip('"').strip("'")
+        if not title:
+            return ""
+
+        decoded = unquote(title).replace("\ufeff", "").replace("\x00", "").strip()
+        if not decoded:
+            return ""
+
+        for candidate in (decoded, decoded.replace("base64:", "", 1).strip()):
+            maybe = self._try_decode_small_base64_text(candidate)
+            if maybe:
+                return maybe
+        return decoded
+
+    @staticmethod
+    def _try_decode_small_base64_text(candidate: str) -> str | None:
+        if not candidate:
+            return None
+        if not re.fullmatch(r"[A-Za-z0-9+/=_-]+", candidate):
+            return None
+        if len(candidate) < 4:
+            return None
+
+        normalized = candidate.replace("-", "+").replace("_", "/")
+        padded = normalized + ("=" * ((4 - len(normalized) % 4) % 4))
+        for encoding in ("utf-8", "utf-8-sig", "gb18030"):
+            try:
+                decoded = base64.b64decode(padded).decode(encoding, errors="ignore").strip()
+            except Exception:
+                continue
+            if not decoded:
+                continue
+            # Avoid decoding random binary-like bytes as title.
+            printable_ratio = sum(ch.isprintable() for ch in decoded) / max(1, len(decoded))
+            if printable_ratio < 0.9:
+                continue
+            return decoded.strip().strip('"').strip("'")
+        return None
 
     async def _analyze_nodes(self, nodes):
         import asyncio

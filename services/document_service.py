@@ -164,5 +164,14 @@ class DocumentService:
             "skipped": skipped_count + max(0, len(testable_nodes) - tested_count),
             "sampled": sampled,
         }
+        if _alive_nodes:
+            result["quick_check"]["latency_top"] = [
+                {
+                    "name": str(item.get("name", "Unknown")),
+                    "latency": float(item.get("latency", 0.0)),
+                    "type": str(item.get("type", "unknown")).lower(),
+                }
+                for item in _alive_nodes[:5]
+            ]
         if skipped_protocols:
             result["quick_check"]["skipped_protocols"] = dict(skipped_protocols)
