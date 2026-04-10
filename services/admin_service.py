@@ -271,7 +271,7 @@ class AdminService:
                 uid = int(row.get("user_id", 0) or 0)
                 item = grouped.setdefault(
                     uid,
-                    {"user_id": uid, "checks": 0, "url_total": 0, "last_ts": "-", "sources": {}},
+                    {"user_id": uid, "checks": 0, "url_total": 0, "last_ts": "-", "rows": []},
                 )
                 item["checks"] += 1
                 urls = row.get("urls", []) or []
@@ -279,13 +279,42 @@ class AdminService:
                 ts = row.get("ts", "-")
                 if ts > item["last_ts"]:
                     item["last_ts"] = ts
-                source = str(row.get("source", "-"))
-                item["sources"][source] = item["sources"].get(source, 0) + 1
+                item["rows"].append(row)
             grouped_list = sorted(grouped.values(), key=lambda x: (-x["checks"], x["user_id"]))
             current, safe_page, total_pages = self._paginate(grouped_list, page=page, page_size=page_size)
             if not current:
                 paging = {"mode": mode, "view": view, "page": 1, "total_pages": 1, "records": [], "total": 0}
                 return f"暂无使用审计记录（模式：{html.escape(mode)}，视图：按用户）。", paging
+
+            def _short_source_label(source: str) -> str:
+                source = source.strip()
+                if source.startswith("document_import:"):
+                    file_name = os.path.basename(source.split(":", 1)[1].strip() or "-")
+                    return f"📄 {html.escape(file_name)}"
+                if source.startswith("导出缓存:"):
+                    return f"📤 {html.escape(source)}"
+                return html.escape(source)
+
+            def _is_file_like(value: str) -> bool:
+                lower = value.lower()
+                return lower.endswith(".yaml") or lower.endswith(".yml") or lower.endswith(".txt") or lower.endswith(".json")
+
+            def _render_log_links(urls: list[str]) -> list[str]:
+                lines: list[str] = []
+                for raw in urls[:6]:
+                    text = str(raw).strip()
+                    if not text:
+                        continue
+                    if _is_file_like(text):
+                        lines.append(f"- 📄 {html.escape(os.path.basename(text))}")
+                        continue
+                    safe = html.escape(text)
+                    lines.append(f"- <code>{safe}</code>")
+                if len(urls) > 6:
+                    lines.append(f"- 其余 {len(urls) - 6} 条已折叠")
+                if not lines:
+                    lines.append("- 无链接")
+                return lines
 
             lines = [
                 "<b>📒 使用审计日志</b>",
@@ -295,12 +324,22 @@ class AdminService:
                 "",
             ]
             for idx, item in enumerate(current, start=1):
-                source_lines = [f"- {html.escape(k)} × {v}" for k, v in sorted(item["sources"].items(), key=lambda x: (-x[1], x[0]))[:6]]
-                details = "\n".join(source_lines) if source_lines else "- 无"
+                detail_entries: list[str] = []
+                rows = sorted(item["rows"], key=lambda r: str(r.get("ts", "-")), reverse=True)
+                for row in rows[:18]:
+                    ts = row.get("ts", "-")
+                    source = _short_source_label(str(row.get("source", "-")))
+                    urls = row.get("urls", []) or []
+                    entry_lines = [f"🕒 {ts} | {source}", "链接："]
+                    entry_lines.extend(_render_log_links(urls))
+                    detail_entries.append("\n".join(entry_lines))
+                if len(rows) > 18:
+                    detail_entries.append(f"（其余 {len(rows) - 18} 条日志已折叠）")
+                details = "\n\n".join(detail_entries) if detail_entries else "暂无日志"
                 lines.append(
                     f"{idx}. {self.user_profile_service.format_user_identity(item['user_id'])} | 检测 <b>{item['checks']}</b> 次 | 链接 <b>{item['url_total']}</b> 条 | 最近 {item['last_ts']}"
                 )
-                lines.append(f"<blockquote expandable>来源分布\n{details}</blockquote>")
+                lines.append(f"<blockquote expandable>日志明细\n{details}</blockquote>")
             paging = {
                 "mode": mode,
                 "view": view,

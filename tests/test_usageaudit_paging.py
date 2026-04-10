@@ -130,6 +130,19 @@ class UsageAuditPagingTest(unittest.TestCase):
         self.assertIn("使用审计", report)
         self.assertEqual(paging["page"], 1)
 
+    def test_admin_report_user_view_uses_expandable_logs(self) -> None:
+        self.audit.log_check(
+            user=self.other,
+            urls=["https://example.com/sub1", "https://example.com/sub2", "custom_nodes.yaml"],
+            source="document_import:my_nodes.yaml",
+        )
+        report, paging = self.admin.build_usage_audit_report(mode="others", page=1, page_size=5, view="user")
+        self.assertIn("视图: <b>按用户</b>", report)
+        self.assertIn("<blockquote expandable>", report)
+        self.assertIn("日志明细", report)
+        self.assertIn("my_nodes.yaml", report)
+        self.assertEqual(paging["view"], "user")
+
     def test_admin_detail_view_contains_full_urls(self) -> None:
         detail = self.admin.build_usage_audit_detail(mode="others", page=1, page_size=5, detail_index=0)
         self.assertIn("使用审计详情", detail)

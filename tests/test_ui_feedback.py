@@ -75,8 +75,8 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         )
         all_text = [btn.text for row in keyboard.inline_keyboard for btn in row]
         self.assertIn("更多操作", all_text)
-        self.assertNotIn("导出 YAML", all_text)
-        self.assertNotIn("导出 TXT", all_text)
+        self.assertFalse(any("导出 YAML" in text for text in all_text))
+        self.assertFalse(any("导出 TXT" in text for text in all_text))
 
     def test_subscription_keyboard_compact_mode_expanded_shows_exports(self):
         keyboard = build_subscription_keyboard(
@@ -88,8 +88,8 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
             user_actions_expanded=True,
         )
         all_text = [btn.text for row in keyboard.inline_keyboard for btn in row]
-        self.assertIn("导出 YAML", all_text)
-        self.assertIn("导出 TXT", all_text)
+        self.assertTrue(any("导出 YAML" in text for text in all_text))
+        self.assertTrue(any("导出 TXT" in text for text in all_text))
         self.assertIn("收起操作", all_text)
 
     async def test_export_cache_callback_replies_with_success(self):
