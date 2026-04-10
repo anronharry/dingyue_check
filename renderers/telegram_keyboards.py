@@ -46,55 +46,39 @@ def build_subscription_keyboard(
 
 
 def build_usage_audit_keyboard(*, mode: str, page: int, total_pages: int, record_count: int = 0) -> InlineKeyboardMarkup:
+    del record_count
     prev_page = page - 1 if page > 1 else 1
     next_page = page + 1 if page < total_pages else total_pages
     rows = [
         [
-            InlineKeyboardButton("其他用户", callback_data=f"audit:others:{page}"),
+            InlineKeyboardButton("👤 其他用户", callback_data=f"audit:others:{page}"),
             InlineKeyboardButton("Owner", callback_data=f"audit:owner:{page}"),
-            InlineKeyboardButton("全部", callback_data=f"audit:all:{page}"),
+            InlineKeyboardButton("🧾 全部", callback_data=f"audit:all:{page}"),
         ],
-    ]
-    if record_count:
-        rows.append(
-            [
-                InlineKeyboardButton(f"详情{index + 1}", callback_data=f"audit_detail:{mode}|{page}|{index}")
-                for index in range(record_count)
-            ]
-        )
-    rows.append(
         [
-            InlineKeyboardButton("上一页", callback_data=f"audit:{mode}:{prev_page}"),
-            InlineKeyboardButton("下一页", callback_data=f"audit:{mode}:{next_page}"),
-        ]
-    )
-    rows.append([InlineKeyboardButton("返回控制台", callback_data="panel:root")])
+            InlineKeyboardButton("⬅️ 上一页", callback_data=f"audit:{mode}:{prev_page}"),
+            InlineKeyboardButton("下一页 ➡️", callback_data=f"audit:{mode}:{next_page}"),
+        ],
+        [InlineKeyboardButton("🏠 返回控制台", callback_data="panel:root")],
+    ]
     return InlineKeyboardMarkup(rows)
 
 
 def build_recent_activity_keyboard(*, category: str, scope: str, page: int, total_pages: int, record_count: int = 0) -> InlineKeyboardMarkup:
+    del record_count
     prev_page = page - 1 if page > 1 else 1
     next_page = page + 1 if page < total_pages else total_pages
     rows = [
         [
-            InlineKeyboardButton("非 Owner", callback_data=f"recent:{category}:others:{page}"),
-            InlineKeyboardButton("全部", callback_data=f"recent:{category}:all:{page}"),
+            InlineKeyboardButton("👤 非 Owner", callback_data=f"recent:{category}:others:{page}"),
+            InlineKeyboardButton("🧾 全部", callback_data=f"recent:{category}:all:{page}"),
         ],
-    ]
-    if record_count:
-        rows.append(
-            [
-                InlineKeyboardButton(f"详情{index + 1}", callback_data=f"recent_detail:{category}|{scope}|{page}|{index}")
-                for index in range(record_count)
-            ]
-        )
-    rows.append(
         [
-            InlineKeyboardButton("上一页", callback_data=f"recent:{category}:{scope}:{prev_page}"),
-            InlineKeyboardButton("下一页", callback_data=f"recent:{category}:{scope}:{next_page}"),
-        ]
-    )
-    rows.append([InlineKeyboardButton("返回控制台", callback_data="panel:root")])
+            InlineKeyboardButton("⬅️ 上一页", callback_data=f"recent:{category}:{scope}:{prev_page}"),
+            InlineKeyboardButton("下一页 ➡️", callback_data=f"recent:{category}:{scope}:{next_page}"),
+        ],
+        [InlineKeyboardButton("🏠 返回控制台", callback_data="panel:root")],
+    ]
     return InlineKeyboardMarkup(rows)
 
 
@@ -102,73 +86,67 @@ def build_owner_panel_keyboard(*, section: str = "root") -> InlineKeyboardMarkup
     if section == "overview":
         rows = [
             [
-                InlineKeyboardButton("使用审计", callback_data="panel:audit"),
-                InlineKeyboardButton("最近导出", callback_data="panel:recentexports"),
+                InlineKeyboardButton("📒 使用审计", callback_data="panel:audit"),
+                InlineKeyboardButton("📤 最近导出", callback_data="panel:recentexports"),
             ],
-            [InlineKeyboardButton("全局订阅", callback_data="panel:globallist")],
-            [InlineKeyboardButton("返回首页", callback_data="panel:root")],
+            [InlineKeyboardButton("🌐 全局订阅", callback_data="panel:globallist")],
+            [InlineKeyboardButton("🏠 返回首页", callback_data="panel:root")],
         ]
     elif section == "users":
         rows = [
             [
-                InlineKeyboardButton("最近活跃", callback_data="panel:recentusers"),
-                InlineKeyboardButton("授权名单", callback_data="panel:listusers"),
+                InlineKeyboardButton("🕒 最近活跃", callback_data="panel:recentusers"),
+                InlineKeyboardButton("👥 授权名单", callback_data="panel:listusers"),
             ],
-            [InlineKeyboardButton("返回首页", callback_data="panel:root")],
+            [InlineKeyboardButton("🏠 返回首页", callback_data="panel:root")],
         ]
     elif section == "maintenance":
         rows = [
             [
-                InlineKeyboardButton("备份迁移", callback_data="panel:maint_backup"),
-                InlineKeyboardButton("权限开关", callback_data="panel:maint_access"),
+                InlineKeyboardButton("💾 备份迁移", callback_data="panel:maint_backup"),
+                InlineKeyboardButton("🔐 权限开关", callback_data="panel:maint_access"),
             ],
             [
-                InlineKeyboardButton("开启公开访问", callback_data="panel:maint_access_enable"),
-                InlineKeyboardButton("关闭公开访问", callback_data="panel:maint_access_disable"),
+                InlineKeyboardButton("🟢 开启公开访问", callback_data="panel:maint_access_enable"),
+                InlineKeyboardButton("🔒 关闭公开访问", callback_data="panel:maint_access_disable"),
             ],
-            [InlineKeyboardButton("刷新命令菜单", callback_data="panel:maint_refresh_menu")],
-            [InlineKeyboardButton("维护命令", callback_data="panel:maint_ops")],
-            [InlineKeyboardButton("返回首页", callback_data="panel:root")],
+            [InlineKeyboardButton("📢 发布广播", callback_data="panel:maint_broadcast_start")],
+            [InlineKeyboardButton("🔄 刷新命令菜单", callback_data="panel:maint_refresh_menu")],
+            [InlineKeyboardButton("🏠 返回首页", callback_data="panel:root")],
         ]
     elif section == "maint_backup":
         rows = [
-            [InlineKeyboardButton("导出订阅 JSON", callback_data="panel:maint_export_json")],
-            [InlineKeyboardButton("生成全量备份 ZIP", callback_data="panel:maint_backup_now")],
+            [InlineKeyboardButton("📤 导出订阅 JSON", callback_data="panel:maint_export_json")],
+            [InlineKeyboardButton("🗄️ 生成全量备份 ZIP", callback_data="panel:maint_backup_now")],
             [
-                InlineKeyboardButton("导入 JSON（上传）", callback_data="panel:maint_import_start"),
-                InlineKeyboardButton("恢复 ZIP（上传）", callback_data="panel:maint_restore_start"),
+                InlineKeyboardButton("📥 导入 JSON（上传）", callback_data="panel:maint_import_start"),
+                InlineKeyboardButton("♻️ 恢复 ZIP（上传）", callback_data="panel:maint_restore_start"),
             ],
-            [InlineKeyboardButton("返回维护页", callback_data="panel:maintenance")],
-            [InlineKeyboardButton("返回首页", callback_data="panel:root")],
+            [InlineKeyboardButton("🛠 返回维护页", callback_data="panel:maintenance")],
+            [InlineKeyboardButton("🏠 返回首页", callback_data="panel:root")],
         ]
     elif section == "maint_ops":
         rows = [
             [
-                InlineKeyboardButton("使用审计", callback_data="panel:audit"),
-                InlineKeyboardButton("全局订阅", callback_data="panel:globallist"),
+                InlineKeyboardButton("📒 使用审计", callback_data="panel:audit"),
+                InlineKeyboardButton("🌐 全局订阅", callback_data="panel:globallist"),
             ],
             [
-                InlineKeyboardButton("最近活跃", callback_data="panel:recentusers"),
-                InlineKeyboardButton("最近导出", callback_data="panel:recentexports"),
+                InlineKeyboardButton("🕒 最近活跃", callback_data="panel:recentusers"),
+                InlineKeyboardButton("📤 最近导出", callback_data="panel:recentexports"),
             ],
-            [
-                InlineKeyboardButton("开启公开访问", callback_data="panel:maint_access_enable"),
-                InlineKeyboardButton("关闭公开访问", callback_data="panel:maint_access_disable"),
-            ],
-            [InlineKeyboardButton("发布广播", callback_data="panel:maint_broadcast_start")],
-            [InlineKeyboardButton("刷新命令菜单", callback_data="panel:maint_refresh_menu")],
-            [InlineKeyboardButton("返回维护页", callback_data="panel:maintenance")],
-            [InlineKeyboardButton("返回首页", callback_data="panel:root")],
+            [InlineKeyboardButton("🛠 返回维护页", callback_data="panel:maintenance")],
+            [InlineKeyboardButton("🏠 返回首页", callback_data="panel:root")],
         ]
     else:
         rows = [
             [
-                InlineKeyboardButton("总览", callback_data="panel:overview"),
-                InlineKeyboardButton("用户", callback_data="panel:users"),
+                InlineKeyboardButton("📊 总览", callback_data="panel:overview"),
+                InlineKeyboardButton("👥 用户", callback_data="panel:users"),
             ],
             [
-                InlineKeyboardButton("审计", callback_data="panel:audit"),
-                InlineKeyboardButton("维护", callback_data="panel:maintenance"),
+                InlineKeyboardButton("📒 审计", callback_data="panel:audit"),
+                InlineKeyboardButton("🛠 维护", callback_data="panel:maintenance"),
             ],
         ]
     return InlineKeyboardMarkup(rows)

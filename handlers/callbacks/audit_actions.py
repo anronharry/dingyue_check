@@ -35,7 +35,7 @@ def make_audit_callback_handler(
     def _build_panel_text() -> str:
         total_users, daily_users = admin_service.get_usage_user_counts(include_owner=False)
         panel_text = admin_service.build_owner_panel_text()
-        return f"{panel_text}\n使用用户: <b>{total_users}</b> | 24 小时内: <b>{daily_users}</b>"
+        return f"{panel_text}\n👤 使用用户: <b>{total_users}</b> | 🕒 24 小时内: <b>{daily_users}</b>"
 
     async def _render_panel_section(query, section: str) -> None:
         await query.edit_message_text(

@@ -164,7 +164,7 @@ def make_owner_panel_command(*, is_owner, owner_only_msg, admin_service, schedul
             return
         total_users, daily_users = admin_service.get_usage_user_counts(include_owner=False)
         panel_text = admin_service.build_owner_panel_text()
-        panel_text = f"{panel_text}\n使用用户: <b>{total_users}</b> | 24 小时内: <b>{daily_users}</b>"
+        panel_text = f"{panel_text}\n👤 使用用户: <b>{total_users}</b> | 🕒 24 小时内: <b>{daily_users}</b>"
         reply_msg = await update.message.reply_text(
             panel_text,
             parse_mode="HTML",
