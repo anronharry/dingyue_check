@@ -1,4 +1,4 @@
-﻿"""Document and node-text message handlers."""
+"""Document and node-text message handlers."""
 from __future__ import annotations
 
 import asyncio
@@ -18,18 +18,12 @@ def make_document_handler(
     is_owner,
     owner_only_msg,
     document_service,
-    export_cache_service,
     format_subscription_info,
-    format_subscription_compact,
-    format_node_analysis_compact,
     make_sub_keyboard,
-    schedule_result_collapse,
     backup_service,
     usage_audit_service,
     logger,
 ):
-    del export_cache_service, format_subscription_compact, format_node_analysis_compact, schedule_result_collapse
-
     async def handle_document(update, context):
         document = update.message.document
         reply_to_message_id = getattr(update.message, "message_id", None)
@@ -85,9 +79,9 @@ def make_document_handler(
             return
 
         if file_type in {"txt", "yaml"}:
-            progress_text = f"已收到 {file_type.upper()} 文件，正在解析节点并执行快速检测..."
+            progress_text = f"🚀 已接收 {file_type.upper()} 文件，正在解析并执行快速检测..."
         else:
-            progress_text = f"已收到 {file_type.upper()} 文件，正在解析内容..."
+            progress_text = f"🚀 已接收 {file_type.upper()} 文件，正在解析内容..."
         processing_msg = await update.message.reply_text(progress_text, **reply_kwargs)
 
         if document.file_size and document.file_size > MAX_DOCUMENT_SIZE_BYTES:
@@ -120,7 +114,7 @@ def make_document_handler(
                             source=f"document_import:{document.file_name}",
                         )
                     await processing_msg.edit_text(
-                        f"识别到 {len(subscription_urls)} 个订阅链接，正在检测并保存..."
+                        f"🚀 识别到 {len(subscription_urls)} 个订阅链接，正在检测并保存..."
                     )
                     results = await document_service.parse_subscription_urls(
                         subscription_urls=subscription_urls,
@@ -134,10 +128,10 @@ def make_document_handler(
                     for item in sorted(results, key=lambda row: row["index"]):
                         if item["status"] == "success":
                             message = (
-                                f"<b>Subscription {item['index']} Result</b>\n\n"
+                                f"<b>🔎 订阅 {item['index']} 检测结果</b>\n\n"
                                 f"{format_subscription_info(item['data'], item['url'])}"
                             )
-                            reply_markup = make_sub_keyboard(item["url"])
+                            reply_markup = make_sub_keyboard(item["url"], owner_mode=is_owner(update))
                             await update.message.reply_text(
                                 message,
                                 parse_mode="HTML",
@@ -146,14 +140,14 @@ def make_document_handler(
                             )
                         else:
                             await update.message.reply_text(
-                                f"订阅 {item['index']} 检测失败\n原因：{item['error']}",
+                                f"❌ 订阅 {item['index']} 检测失败\n原因：{item['error']}",
                                 **reply_kwargs,
                             )
 
                     success_count = sum(1 for item in results if item["status"] == "success")
                     failed_count = sum(1 for item in results if item["status"] == "failed")
                     await update.message.reply_text(
-                        "<b>订阅文件处理完成</b>\n\n"
+                        "<b>✅ 订阅文件处理完成</b>\n\n"
                         f"识别数量：{len(subscription_urls)}\n"
                         f"成功：{success_count}\n"
                         f"失败：{failed_count}",
@@ -194,8 +188,7 @@ def make_document_handler(
     return handle_document
 
 
-def make_node_text_handler(*, document_service, format_subscription_info, format_node_analysis_compact, schedule_result_collapse, logger):
-    del format_node_analysis_compact, schedule_result_collapse
+def make_node_text_handler(*, document_service, format_subscription_info, logger):
 
     async def handle_node_text(update, context):
         del context

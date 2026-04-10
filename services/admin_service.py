@@ -48,6 +48,34 @@ class AdminService:
         threshold = datetime.now() - timedelta(hours=hours)
         return sum(1 for row in records if (self._parse_dt(row.get("ts")) or datetime.min) >= threshold)
 
+    def _count_unique_audit_users(
+        self,
+        records: list[dict],
+        *,
+        hours: int | None = None,
+        include_owner: bool = False,
+    ) -> int:
+        threshold = datetime.now() - timedelta(hours=hours) if hours and hours > 0 else None
+        user_ids: set[int] = set()
+        for row in records:
+            uid = row.get("user_id")
+            if not isinstance(uid, int):
+                continue
+            if not include_owner and uid == self.owner_id:
+                continue
+            if threshold is not None:
+                ts = self._parse_dt(row.get("ts"))
+                if ts is None or ts < threshold:
+                    continue
+            user_ids.add(uid)
+        return len(user_ids)
+
+    def get_usage_user_counts(self, *, include_owner: bool = False) -> tuple[int, int]:
+        records = self._get_audit_records(limit=self.usage_audit_service.max_read_records)
+        total = self._count_unique_audit_users(records, include_owner=include_owner)
+        daily = self._count_unique_audit_users(records, hours=24, include_owner=include_owner)
+        return total, daily
+
     @staticmethod
     def _paginate(items: list[dict], *, page: int, page_size: int) -> tuple[list[dict], int, int]:
         total = len(items)

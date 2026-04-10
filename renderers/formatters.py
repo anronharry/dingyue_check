@@ -1,4 +1,4 @@
-﻿"""Telegram-facing message formatters."""
+"""Telegram-facing message formatters."""
 from __future__ import annotations
 
 import html
@@ -66,16 +66,31 @@ def _quick_check_metrics(info: dict) -> dict | None:
     }
 
 
+def _quick_check_badge(metrics: dict) -> str:
+    tested = int(metrics.get("tested") or 0)
+    rate = float(metrics.get("rate") or 0.0)
+    if tested <= 0:
+        return "⚪️ 无样本"
+    if rate >= 90:
+        return "🟢 优秀"
+    if rate >= 70:
+        return "🟡 良好"
+    if rate >= 40:
+        return "🟠 偏低"
+    return "🔴 较差"
+
+
 def _format_quick_check_highlight(info: dict) -> list[str]:
     metrics = _quick_check_metrics(info)
     if not metrics:
         return []
     sampled_suffix = "（仅抽样）" if metrics["sampled"] else ""
+    badge = _quick_check_badge(metrics)
     return [
-        f"<b>快速检测：</b> ✅ <b>{metrics['alive']}/{metrics['tested']}</b> 存活 | ❌ {metrics['dead']} | 跳过 {metrics['skipped']}{sampled_suffix}",
+        "<b>🚀 快速检测</b>",
+        f"<b>结果：</b> {badge} | ✅ <b>{metrics['alive']}/{metrics['tested']}</b> 存活 | ❌ {metrics['dead']} | ⏭ {metrics['skipped']}{sampled_suffix}",
         f"<b>存活率：</b> {create_progress_bar(metrics['rate'], length=10)} {metrics['rate']:.1f}%",
     ]
-
 
 def _render_latency_top(info: dict) -> list[str]:
     quick_check = info.get("quick_check") or {}
@@ -89,6 +104,30 @@ def _render_latency_top(info: dict) -> list[str]:
         latency = float(item.get("latency") or 0.0)
         lines.append(f"{index}. [{protocol}] {name} - <code>{latency:.0f}ms</code>")
     return lines
+
+
+def _build_protocol_summary(info: dict, *, top_n: int = 4) -> str:
+    stats = info.get("node_stats") or {}
+    protocols = stats.get("protocols") or {}
+    if not protocols:
+        return ""
+    parts = [
+        f"{html.escape(str(protocol).upper())} {count}"
+        for protocol, count in sorted(protocols.items(), key=lambda item: item[1], reverse=True)[:top_n]
+    ]
+    return " / ".join(parts)
+
+
+def _build_country_summary(info: dict, *, top_n: int = 4) -> str:
+    stats = info.get("node_stats") or {}
+    countries = stats.get("countries") or {}
+    if not countries:
+        return ""
+    parts = [
+        f"{get_country_flag(country)}{html.escape(country)} {count}"
+        for country, count in sorted(countries.items(), key=lambda item: item[1], reverse=True)[:top_n]
+    ]
+    return " / ".join(parts)
 
 
 def _render_node_lines(info: dict, *, max_items: int, char_budget: int) -> tuple[list[str], int]:
@@ -139,23 +178,6 @@ def _build_details(info: dict, *, node_limit: int, node_char_budget: int) -> str
         if hidden_count:
             lines.append(f"... 其余 {hidden_count} 个节点已折叠")
 
-    stats = info.get("node_stats") or {}
-    protocols = stats.get("protocols") or {}
-    if protocols:
-        protocol_text = " / ".join(
-            f"{html.escape(str(protocol).upper())} {count}"
-            for protocol, count in sorted(protocols.items(), key=lambda item: item[1], reverse=True)[:5]
-        )
-        lines.append(f"<b>协议分布：</b> {protocol_text}")
-
-    countries = stats.get("countries") or {}
-    if countries:
-        country_text = " / ".join(
-            f"{get_country_flag(country)}{html.escape(country)} {count}"
-            for country, count in sorted(countries.items(), key=lambda item: item[1], reverse=True)[:5]
-        )
-        lines.append(f"<b>地区分布：</b> {country_text}")
-
     quick_check_text = _format_quick_check(info)
     if quick_check_text:
         lines.append(quick_check_text)
@@ -192,9 +214,17 @@ def format_subscription_info(info, url=None):
         f"<b>节点总数：</b> {node_count}",
     ]
 
+    protocol_summary = _build_protocol_summary(info)
+    if protocol_summary:
+        summary_lines.append(f"<b>协议分布：</b> {protocol_summary}")
+    country_summary = _build_country_summary(info)
+    if country_summary:
+        summary_lines.append(f"<b>地区分布：</b> {country_summary}")
+
     if info.get("usage_percent") is not None:
         percent = float(info["usage_percent"])
         summary_lines.append(f"<b>使用进度：</b> {create_progress_bar(percent, length=8)} {percent:.1f}%")
+
     summary_lines.extend(_format_quick_check_highlight(info))
 
     remain_text = format_remaining_time(info.get("expire_time", ""), include_seconds=False) if info.get("expire_time") else ""
@@ -278,3 +308,4 @@ def format_node_analysis_compact(info, url=None):
 
     lines.append("<b>说明：</b> 纯节点列表，不含订阅流量和到期信息")
     return "\n".join(lines)
+

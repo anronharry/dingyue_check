@@ -57,6 +57,7 @@ from services.backup_service import BackupService
 from services.conversion_service import ConversionService
 from services.document_service import DocumentService
 from services.export_cache_service import ExportCacheService
+from services.subscription_check_service import SubscriptionCheckService
 from services.usage_audit_service import UsageAuditService
 from services.user_profile_service import UserProfileService
 from utils.utils import InputDetector, format_traffic, is_valid_url
@@ -80,6 +81,7 @@ class Runtime:
     admin_service: AdminService
     conversion_service: ConversionService
     document_service: DocumentService
+    subscription_check_service: SubscriptionCheckService
     parser: SubscriptionParser | None = None
     storage: SubscriptionStorage | None = None
     shared_session: object | None = None
@@ -111,8 +113,21 @@ class Runtime:
             )
         return self.parser
 
-    def make_sub_keyboard(self, url: str) -> InlineKeyboardMarkup:
-        return build_subscription_keyboard(url, self.get_short_callback_data, enable_latency_tester=config.ENABLE_LATENCY_TESTER)
+    def make_sub_keyboard(
+        self,
+        url: str,
+        *,
+        owner_mode: bool = False,
+        user_actions_expanded: bool = False,
+    ) -> InlineKeyboardMarkup:
+        return build_subscription_keyboard(
+            url,
+            self.get_short_callback_data,
+            enable_latency_tester=config.ENABLE_LATENCY_TESTER,
+            owner_mode=owner_mode,
+            compact_user_mode=config.ENABLE_USER_COMPACT_SUB_BUTTONS,
+            user_actions_expanded=user_actions_expanded,
+        )
 
     def get_short_callback_data(self, action: str, url: str) -> str:
         hash_key = hashlib.md5(url.encode("utf-8")).hexdigest()[:16]
@@ -242,6 +257,7 @@ def create_runtime(*, logger: logging.Logger, proxy_port: int, url_cache_max_siz
         admin_service=None,
         conversion_service=None,
         document_service=None,
+        subscription_check_service=None,
     )
     runtime.admin_service = AdminService(
         get_storage=runtime.get_storage,
@@ -258,12 +274,25 @@ def create_runtime(*, logger: logging.Logger, proxy_port: int, url_cache_max_siz
         latency_runner=_async_run_node_latency_test,
         export_cache_service=runtime.export_cache_service,
     )
+    runtime.subscription_check_service = SubscriptionCheckService(
+        get_parser=runtime.get_parser,
+        get_storage=runtime.get_storage,
+        logger=runtime.logger,
+        export_cache_service=runtime.export_cache_service,
+        global_concurrency=config.PARSE_GLOBAL_CONCURRENCY,
+        user_concurrency=config.PARSE_USER_CONCURRENCY,
+        retry_attempts=2,
+        retry_backoff_seconds=0.35,
+        slow_threshold_seconds=config.PARSE_SLOW_THRESHOLD_SECONDS,
+        stats_report_every=config.PARSE_STATS_REPORT_EVERY,
+    )
     runtime.document_service = DocumentService(
         get_parser=runtime.get_parser,
         get_storage=runtime.get_storage,
         logger=runtime.logger,
         export_cache_service=runtime.export_cache_service,
         quick_ping_runner=latency_tester.ping_all_nodes,
+        subscription_check_service=runtime.subscription_check_service,
     )
     return runtime
 
@@ -275,6 +304,7 @@ def build_handlers(runtime: Runtime, *, post_init):
     handlers["stats"] = make_stats_command(is_authorized=runtime.is_authorized, is_owner=runtime.is_owner, send_no_permission_msg=runtime.send_no_permission_msg, get_storage=runtime.get_storage, schedule_auto_delete=runtime.schedule_auto_delete)
     handlers["check"] = make_check_command(
         is_authorized=runtime.is_authorized,
+        is_owner=runtime.is_owner,
         send_no_permission_msg=runtime.send_no_permission_msg,
         get_storage=runtime.get_storage,
         get_parser=runtime.get_parser,
@@ -282,6 +312,7 @@ def build_handlers(runtime: Runtime, *, post_init):
         make_sub_keyboard=runtime.make_sub_keyboard,
         usage_audit_service=runtime.usage_audit_service,
         logger=runtime.logger,
+        subscription_check_service=runtime.subscription_check_service,
     )
     handlers["list"] = make_list_command(
         is_authorized=runtime.is_authorized,
@@ -302,6 +333,7 @@ def build_handlers(runtime: Runtime, *, post_init):
         admin_service=runtime.admin_service,
         usage_audit_service=runtime.usage_audit_service,
         schedule_auto_delete=runtime.schedule_auto_delete,
+        subscription_check_service=runtime.subscription_check_service,
     )
     handlers["broadcast"] = make_broadcast_command(
         is_owner=runtime.is_owner,
@@ -346,12 +378,8 @@ def build_handlers(runtime: Runtime, *, post_init):
         is_owner=runtime.is_owner,
         owner_only_msg=OWNER_ONLY_MSG,
         document_service=runtime.document_service,
-        export_cache_service=runtime.export_cache_service,
         format_subscription_info=format_subscription_info,
-        format_subscription_compact=format_subscription_compact,
-        format_node_analysis_compact=format_node_analysis_compact,
         make_sub_keyboard=runtime.make_sub_keyboard,
-        schedule_result_collapse=runtime.schedule_result_collapse,
         backup_service=runtime.backup_service,
         usage_audit_service=runtime.usage_audit_service,
         logger=runtime.logger,
@@ -359,18 +387,14 @@ def build_handlers(runtime: Runtime, *, post_init):
     handle_node_text = make_node_text_handler(
         document_service=runtime.document_service,
         format_subscription_info=format_subscription_info,
-        format_node_analysis_compact=format_node_analysis_compact,
-        schedule_result_collapse=runtime.schedule_result_collapse,
         logger=runtime.logger,
     )
     handle_subscription = make_subscription_handler(
         is_valid_url=is_valid_url,
+        is_owner=runtime.is_owner,
         document_service=runtime.document_service,
-        export_cache_service=runtime.export_cache_service,
         format_subscription_info=format_subscription_info,
-        format_subscription_compact=format_subscription_compact,
         make_sub_keyboard=runtime.make_sub_keyboard,
-        schedule_result_collapse=runtime.schedule_result_collapse,
         usage_audit_service=runtime.usage_audit_service,
         logger=runtime.logger,
     )
@@ -384,6 +408,8 @@ def build_handlers(runtime: Runtime, *, post_init):
         handle_subscription=handle_subscription,
         handle_node_text=handle_node_text,
         tag_forbidden_msg=TAG_FORBIDDEN_MSG,
+        inline_keyboard_button=InlineKeyboardButton,
+        inline_keyboard_markup=InlineKeyboardMarkup,
     )
     subscription_callback_handler = make_subscription_callback_handler(
         get_storage=runtime.get_storage,
@@ -409,6 +435,11 @@ def build_handlers(runtime: Runtime, *, post_init):
         format_subscription_compact=format_subscription_compact,
         schedule_result_collapse=runtime.schedule_result_collapse,
         logger=runtime.logger,
+        access_service=runtime.access_service,
+        post_init=post_init,
+        user_manager=runtime.user_manager,
+        backup_service=runtime.backup_service,
+        subscription_check_service=runtime.subscription_check_service,
     )
     handlers["button_callback"] = make_button_callback(is_authorized=runtime.is_authorized, no_permission_alert=runtime.access_service.get_no_permission_alert(), subscription_callback_handler=subscription_callback_handler)
 

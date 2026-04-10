@@ -31,12 +31,10 @@ class ResultCollapseTest(unittest.IsolatedAsyncioTestCase):
 
         handler = make_subscription_handler(
             is_valid_url=lambda url: True,
+            is_owner=lambda update: False,
             document_service=_DocService(),
-            export_cache_service=SimpleNamespace(get_cache_status=lambda **kwargs: None),
             format_subscription_info=lambda info, url=None: f"verbose:{info['name']}",
-            format_subscription_compact=lambda info, url=None: f"compact:{info['name']}",
-            make_sub_keyboard=lambda url: f"kb:{url}",
-            schedule_result_collapse=schedule_result_collapse,
+            make_sub_keyboard=lambda url, owner_mode=False: f"kb:{url}:{owner_mode}",
             usage_audit_service=SimpleNamespace(log_check=lambda **kwargs: audit_calls.append(kwargs)),
             logger=SimpleNamespace(warning=lambda *a, **k: None, error=lambda *a, **k: None),
         )

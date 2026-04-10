@@ -197,6 +197,17 @@ scripts/     辅助脚本
 - 贡献指南：[CONTRIBUTING.md](CONTRIBUTING.md)
 - 安全策略：[SECURITY.md](SECURITY.md)
 
-## 11. License
+## 11. Recent UX & Admin Updates
+
+- Owner management is now panel-first: use `/ownerpanel` as the main entry.
+- Owner command menu is intentionally minimized (default: `/ownerpanel`, `/refresh_menu`).
+- Legacy owner read commands can be toggled by `ENABLE_OWNER_LEGACY_READ_COMMANDS`.
+- Normal users now use compact subscription action buttons by default:
+  - Primary actions: `重新检测`, `节点测速` (if enabled), `更多操作`
+  - Secondary actions (expand on demand): `导出 YAML`, `导出 TXT`
+  - Dangerous actions such as `删除缓存` are hidden from normal users.
+- Compact button mode can be toggled by `ENABLE_USER_COMPACT_SUB_BUTTONS`.
+
+## 12. License
 
 MIT License，见 [LICENSE](LICENSE)。

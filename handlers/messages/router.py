@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 
-
 def make_message_handler(
     *,
     is_authorized,
@@ -14,6 +13,8 @@ def make_message_handler(
     handle_subscription,
     handle_node_text,
     tag_forbidden_msg,
+    inline_keyboard_button=None,
+    inline_keyboard_markup=None,
 ):
     async def handle_message(update, context):
         if not is_authorized(update):
@@ -36,6 +37,36 @@ def make_message_handler(
                 else:
                     await update.message.reply_text("❌ 添加标签失败")
             del context.user_data["pending_tag_url"]
+            return
+
+        if context.user_data.get("awaiting_owner_broadcast"):
+            if not is_owner(update):
+                context.user_data.pop("awaiting_owner_broadcast", None)
+                context.user_data.pop("pending_owner_broadcast_text", None)
+                await update.message.reply_text("❌ 仅管理员可以发送广播。")
+                return
+            content = (update.message.text or "").strip()
+            if not content:
+                await update.message.reply_text("❌ 广播内容不能为空，请重新发送。")
+                return
+            context.user_data["pending_owner_broadcast_text"] = content
+            context.user_data.pop("awaiting_owner_broadcast", None)
+            if inline_keyboard_button and inline_keyboard_markup:
+                keyboard = inline_keyboard_markup(
+                    [
+                        [inline_keyboard_button("发送广播", callback_data="panel:maint_broadcast_send")],
+                        [
+                            inline_keyboard_button("重新编辑", callback_data="panel:maint_broadcast_edit"),
+                            inline_keyboard_button("取消", callback_data="panel:maint_broadcast_cancel"),
+                        ],
+                    ]
+                )
+            else:
+                keyboard = None
+            await update.message.reply_text(
+                "广播草稿已保存，请使用下方按钮发送或继续编辑。",
+                reply_markup=keyboard,
+            )
             return
 
         input_type = input_detector.detect_message_type(update)

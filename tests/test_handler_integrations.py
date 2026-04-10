@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 from handlers.callbacks.subscription_actions import make_subscription_callback_handler
 from handlers.messages.documents import make_document_handler, make_node_text_handler
+from handlers.messages.router import make_message_handler
 
 
 class _FakeQuery:
@@ -69,6 +70,14 @@ class _FakeMessage:
 
     async def delete(self):
         return None
+
+
+class _FakeBot:
+    def __init__(self):
+        self.sent = []
+
+    async def send_message(self, **kwargs):
+        self.sent.append(kwargs)
 
 
 class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
@@ -285,7 +294,156 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         handled = await handler(update, context, "panel", "maint_backup")
         self.assertTrue(handled)
         self.assertEqual(query.edits[-1][0], "section:maint_backup")
-        self.assertEqual(query.edits[-1][1]["reply_markup"], [["panel", {"section": "maintenance"}]])
+        self.assertEqual(query.edits[-1][1]["reply_markup"], [["panel", {"section": "maint_backup"}]])
+
+    async def test_owner_panel_callback_routes_maint_ops_to_dedicated_keyboard(self):
+        query = _FakeQuery()
+        handler = make_subscription_callback_handler(
+            get_storage=lambda: SimpleNamespace(get_all=lambda: {}, get_by_user=lambda uid: {}),
+            is_owner=lambda update: True,
+            get_parser=None,
+            format_subscription_info=None,
+            make_sub_keyboard=None,
+            cleanup_url_cache=lambda: None,
+            url_cache={},
+            tag_forbidden_msg="forbidden",
+            tag_exists_alert="exists",
+            confirm_delete_label="confirm",
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_markup=lambda rows: rows,
+            get_short_callback_data=lambda action, url: f"{action}:{url}",
+            latency_tester=None,
+            admin_service=SimpleNamespace(
+                get_usage_user_counts=lambda **kwargs: (2, 1),
+                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": [1]}),
+                build_usage_audit_detail=lambda **kwargs: "detail text",
+                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_detail=lambda **kwargs: "recent detail",
+                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_detail=lambda **kwargs: "recent exports detail",
+                build_owner_panel_text=lambda: "owner panel",
+                build_owner_panel_section_text=lambda section: f"section:{section}",
+                build_user_list_message=lambda: "user list",
+                build_globallist_report=lambda: "global list",
+            ),
+            access_service=None,
+            post_init=None,
+            export_cache_service=None,
+            usage_audit_service=SimpleNamespace(log_check=lambda **kwargs: None),
+            build_usage_audit_keyboard=lambda **kwargs: kwargs,
+            build_recent_activity_keyboard=lambda **kwargs: kwargs,
+            build_owner_panel_keyboard=lambda **kwargs: [["panel", kwargs]],
+            format_subscription_compact=lambda *args, **kwargs: "",
+            schedule_result_collapse=lambda **kwargs: None,
+            logger=SimpleNamespace(error=lambda *a, **k: None),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=1))
+        context = SimpleNamespace(user_data={})
+
+        handled = await handler(update, context, "panel", "maint_ops")
+        self.assertTrue(handled)
+        self.assertEqual(query.edits[-1][0], "section:maint_ops")
+        self.assertEqual(query.edits[-1][1]["reply_markup"], [["panel", {"section": "maint_ops"}]])
+
+    async def test_owner_panel_callback_can_toggle_public_access(self):
+        query = _FakeQuery()
+        access_calls = []
+        handler = make_subscription_callback_handler(
+            get_storage=lambda: SimpleNamespace(get_all=lambda: {}, get_by_user=lambda uid: {}),
+            is_owner=lambda update: True,
+            get_parser=None,
+            format_subscription_info=None,
+            make_sub_keyboard=None,
+            cleanup_url_cache=lambda: None,
+            url_cache={},
+            tag_forbidden_msg="forbidden",
+            tag_exists_alert="exists",
+            confirm_delete_label="confirm",
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_markup=lambda rows: rows,
+            get_short_callback_data=lambda action, url: f"{action}:{url}",
+            latency_tester=None,
+            admin_service=SimpleNamespace(
+                get_usage_user_counts=lambda **kwargs: (2, 1),
+                build_owner_panel_text=lambda: "owner panel",
+                build_owner_panel_section_text=lambda section: f"section:{section}",
+                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_usage_audit_detail=lambda **kwargs: "detail text",
+                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_detail=lambda **kwargs: "recent detail",
+                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_detail=lambda **kwargs: "recent exports detail",
+                build_user_list_message=lambda: "user list",
+                build_globallist_report=lambda: "global list",
+            ),
+            access_service=SimpleNamespace(set_allow_all_users=lambda enabled: (access_calls.append(enabled) or True, True)),
+            post_init=None,
+            export_cache_service=None,
+            usage_audit_service=SimpleNamespace(log_check=lambda **kwargs: None),
+            build_usage_audit_keyboard=lambda **kwargs: kwargs,
+            build_recent_activity_keyboard=lambda **kwargs: kwargs,
+            build_owner_panel_keyboard=lambda **kwargs: [["panel", kwargs]],
+            format_subscription_compact=lambda *args, **kwargs: "",
+            schedule_result_collapse=lambda **kwargs: None,
+            logger=SimpleNamespace(error=lambda *a, **k: None),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=1))
+        context = SimpleNamespace(user_data={}, application=SimpleNamespace())
+        handled = await handler(update, context, "panel", "maint_access_enable")
+        self.assertTrue(handled)
+        self.assertEqual(access_calls, [True])
+        self.assertIn("已开启公开访问模式", query.edits[-1][0])
+
+    async def test_owner_panel_callback_can_send_broadcast_from_panel(self):
+        query = _FakeQuery()
+        fake_bot = _FakeBot()
+        handler = make_subscription_callback_handler(
+            get_storage=lambda: SimpleNamespace(get_all=lambda: {}, get_by_user=lambda uid: {}),
+            is_owner=lambda update: True,
+            get_parser=None,
+            format_subscription_info=None,
+            make_sub_keyboard=None,
+            cleanup_url_cache=lambda: None,
+            url_cache={},
+            tag_forbidden_msg="forbidden",
+            tag_exists_alert="exists",
+            confirm_delete_label="confirm",
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_markup=lambda rows: rows,
+            get_short_callback_data=lambda action, url: f"{action}:{url}",
+            latency_tester=None,
+            admin_service=SimpleNamespace(
+                get_usage_user_counts=lambda **kwargs: (2, 1),
+                build_owner_panel_text=lambda: "owner panel",
+                build_owner_panel_section_text=lambda section: f"section:{section}",
+                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_usage_audit_detail=lambda **kwargs: "detail text",
+                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_detail=lambda **kwargs: "recent detail",
+                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_detail=lambda **kwargs: "recent exports detail",
+                build_user_list_message=lambda: "user list",
+                build_globallist_report=lambda: "global list",
+            ),
+            access_service=None,
+            post_init=None,
+            user_manager=SimpleNamespace(get_all=lambda: {11, 22}),
+            export_cache_service=None,
+            usage_audit_service=SimpleNamespace(log_check=lambda **kwargs: None),
+            build_usage_audit_keyboard=lambda **kwargs: kwargs,
+            build_recent_activity_keyboard=lambda **kwargs: kwargs,
+            build_owner_panel_keyboard=lambda **kwargs: [["panel", kwargs]],
+            format_subscription_compact=lambda *args, **kwargs: "",
+            schedule_result_collapse=lambda **kwargs: None,
+            logger=SimpleNamespace(error=lambda *a, **k: None, warning=lambda *a, **k: None),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=1))
+        context = SimpleNamespace(user_data={"pending_owner_broadcast_text": "hello everyone"}, application=SimpleNamespace(), bot=fake_bot)
+        handled = await handler(update, context, "panel", "maint_broadcast_send")
+        self.assertTrue(handled)
+        self.assertEqual(len(fake_bot.sent), 2)
+        self.assertIn("广播完成", query.edits[-1][0])
+        self.assertNotIn("pending_owner_broadcast_text", context.user_data)
 
     async def test_document_restore_flow_accepts_zip(self):
         tmpdir = Path("data/test_tmp/test_handler_restore")
@@ -301,12 +459,8 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             is_owner=lambda update: True,
             owner_only_msg="owner only",
             document_service=None,
-            export_cache_service=SimpleNamespace(get_cache_status=lambda **kwargs: None),
             format_subscription_info=lambda *args, **kwargs: "",
-            format_subscription_compact=lambda *args, **kwargs: "",
-            format_node_analysis_compact=lambda *args, **kwargs: "",
-            make_sub_keyboard=lambda url: None,
-            schedule_result_collapse=lambda **kwargs: None,
+            make_sub_keyboard=lambda url, owner_mode=False: None,
             backup_service=SimpleNamespace(restore_backup_bytes=lambda content: ["data/db/users.json"]),
             usage_audit_service=None,
             logger=SimpleNamespace(warning=lambda *a, **k: None, error=lambda *a, **k: None),
@@ -330,8 +484,6 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         handler = make_node_text_handler(
             document_service=_DocService(),
             format_subscription_info=lambda result: f"verbose:{result['name']}",
-            format_node_analysis_compact=lambda result, url=None: f"compact:{result['name']}",
-            schedule_result_collapse=lambda **kwargs: scheduled.append(kwargs),
             logger=SimpleNamespace(warning=lambda *a, **k: None, error=lambda *a, **k: None),
         )
         update = SimpleNamespace(
@@ -346,6 +498,156 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(update.message.replies), 2)
         self.assertEqual(update.message.replies[-1].text, "verbose:节点列表")
         self.assertEqual(len(scheduled), 0)
+
+    async def test_message_router_handles_owner_broadcast_draft(self):
+        handler = make_message_handler(
+            is_authorized=lambda update: True,
+            send_no_permission_msg=lambda update: None,
+            is_owner=lambda update: True,
+            get_storage=lambda: SimpleNamespace(),
+            input_detector=SimpleNamespace(detect_message_type=lambda update: "other"),
+            handle_document=lambda update, context: None,
+            handle_subscription=lambda update, context: None,
+            handle_node_text=lambda update, context: None,
+            tag_forbidden_msg="forbidden",
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_markup=lambda rows: rows,
+        )
+        update = SimpleNamespace(
+            message=_FakeMessage(),
+            effective_user=SimpleNamespace(id=1),
+        )
+        update.message.text = "broadcast text"
+        context = SimpleNamespace(user_data={"awaiting_owner_broadcast": True})
+
+        await handler(update, context)
+
+        self.assertEqual(context.user_data.get("pending_owner_broadcast_text"), "broadcast text")
+        self.assertNotIn("awaiting_owner_broadcast", context.user_data)
+        self.assertIn("广播草稿已保存", update.message.replies[-1].text)
+
+    async def test_owner_panel_callback_start_import_mode(self):
+        query = _FakeQuery()
+        handler = make_subscription_callback_handler(
+            get_storage=lambda: SimpleNamespace(get_all=lambda: {}, get_by_user=lambda uid: {}),
+            is_owner=lambda update: True,
+            get_parser=None,
+            format_subscription_info=None,
+            make_sub_keyboard=None,
+            cleanup_url_cache=lambda: None,
+            url_cache={},
+            tag_forbidden_msg="forbidden",
+            tag_exists_alert="exists",
+            confirm_delete_label="confirm",
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_markup=lambda rows: rows,
+            get_short_callback_data=lambda action, url: f"{action}:{url}",
+            latency_tester=None,
+            admin_service=SimpleNamespace(
+                get_usage_user_counts=lambda **kwargs: (2, 1),
+                build_owner_panel_text=lambda: "owner panel",
+                build_owner_panel_section_text=lambda section: f"section:{section}",
+                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_usage_audit_detail=lambda **kwargs: "detail text",
+                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_detail=lambda **kwargs: "recent detail",
+                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_detail=lambda **kwargs: "recent exports detail",
+                build_user_list_message=lambda: "user list",
+                build_globallist_report=lambda: "global list",
+            ),
+            access_service=None,
+            post_init=None,
+            user_manager=SimpleNamespace(get_all=lambda: set()),
+            export_cache_service=None,
+            usage_audit_service=SimpleNamespace(log_check=lambda **kwargs: None),
+            build_usage_audit_keyboard=lambda **kwargs: kwargs,
+            build_recent_activity_keyboard=lambda **kwargs: kwargs,
+            build_owner_panel_keyboard=lambda **kwargs: [["panel", kwargs]],
+            format_subscription_compact=lambda *args, **kwargs: "",
+            schedule_result_collapse=lambda **kwargs: None,
+            logger=SimpleNamespace(error=lambda *a, **k: None, warning=lambda *a, **k: None),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=1))
+        context = SimpleNamespace(user_data={}, application=SimpleNamespace(), bot=_FakeBot())
+        handled = await handler(update, context, "panel", "maint_import_start")
+        self.assertTrue(handled)
+        self.assertTrue(context.user_data.get("awaiting_import"))
+        self.assertIn("已进入导入模式", query.edits[-1][0])
+
+    async def test_owner_panel_callback_export_json_sends_document(self):
+        query = _FakeQuery()
+
+        class _FakeStore:
+            def __init__(self, out_path: Path):
+                self.out_path = out_path
+
+            def export_to_file(self, file_path: str):
+                self.out_path.write_text("{}", encoding="utf-8")
+                return True
+
+            @staticmethod
+            def get_all():
+                return {"u1": {}}
+
+        tmp_file = Path("data/test_tmp/test_panel_export.json")
+        tmp_file.parent.mkdir(parents=True, exist_ok=True)
+        if tmp_file.exists():
+            tmp_file.unlink()
+        store = _FakeStore(tmp_file)
+
+        handler = make_subscription_callback_handler(
+            get_storage=lambda: store,
+            is_owner=lambda update: True,
+            get_parser=None,
+            format_subscription_info=None,
+            make_sub_keyboard=None,
+            cleanup_url_cache=lambda: None,
+            url_cache={},
+            tag_forbidden_msg="forbidden",
+            tag_exists_alert="exists",
+            confirm_delete_label="confirm",
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_markup=lambda rows: rows,
+            get_short_callback_data=lambda action, url: f"{action}:{url}",
+            latency_tester=None,
+            admin_service=SimpleNamespace(
+                get_usage_user_counts=lambda **kwargs: (2, 1),
+                build_owner_panel_text=lambda: "owner panel",
+                build_owner_panel_section_text=lambda section: f"section:{section}",
+                make_export_file_path=lambda: (str(tmp_file), tmp_file.name),
+                build_backup_caption=lambda **kwargs: "caption",
+                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_usage_audit_detail=lambda **kwargs: "detail text",
+                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_detail=lambda **kwargs: "recent detail",
+                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_detail=lambda **kwargs: "recent exports detail",
+                build_user_list_message=lambda: "user list",
+                build_globallist_report=lambda: "global list",
+            ),
+            access_service=None,
+            post_init=None,
+            user_manager=SimpleNamespace(get_all=lambda: set()),
+            export_cache_service=None,
+            usage_audit_service=SimpleNamespace(log_check=lambda **kwargs: None),
+            build_usage_audit_keyboard=lambda **kwargs: kwargs,
+            build_recent_activity_keyboard=lambda **kwargs: kwargs,
+            build_owner_panel_keyboard=lambda **kwargs: [["panel", kwargs]],
+            format_subscription_compact=lambda *args, **kwargs: "",
+            schedule_result_collapse=lambda **kwargs: None,
+            logger=SimpleNamespace(error=lambda *a, **k: None, warning=lambda *a, **k: None),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=1))
+        context = SimpleNamespace(user_data={}, application=SimpleNamespace(), bot=_FakeBot())
+
+        handled = await handler(update, context, "panel", "maint_export_json")
+
+        self.assertTrue(handled)
+        self.assertEqual(len(query.documents), 1)
+        self.assertIn("导出完成", query.edits[-1][0])
+        if tmp_file.exists():
+            tmp_file.unlink()
 
     async def test_document_handler_passes_owner_uid_to_document_analysis(self):
         calls = []
@@ -366,12 +668,8 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             is_owner=lambda update: False,
             owner_only_msg="owner only",
             document_service=_DocService(),
-            export_cache_service=SimpleNamespace(get_cache_status=lambda **kwargs: None),
             format_subscription_info=lambda result, url=None: f"verbose:{result['name']}",
-            format_subscription_compact=lambda *args, **kwargs: "",
-            format_node_analysis_compact=lambda result, url=None: f"compact:{result['name']}",
-            make_sub_keyboard=lambda url: None,
-            schedule_result_collapse=lambda **kwargs: None,
+            make_sub_keyboard=lambda url, owner_mode=False: None,
             backup_service=SimpleNamespace(),
             usage_audit_service=SimpleNamespace(log_check=lambda **kwargs: None),
             logger=SimpleNamespace(warning=lambda *a, **k: None, error=lambda *a, **k: None),

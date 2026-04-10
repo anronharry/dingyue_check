@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from handlers.callbacks.cache_actions import make_cache_callback_handler
 from renderers.formatters import format_node_analysis_compact, format_subscription_compact, format_subscription_info
+from renderers.telegram_keyboards import build_subscription_keyboard
 from services.export_cache_service import ERROR_CACHE_MISSING
 
 
@@ -51,6 +52,46 @@ class _FakeJobQueue:
 
 
 class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
+    def test_subscription_keyboard_hides_delete_cache_for_normal_user(self):
+        keyboard = build_subscription_keyboard(
+            "https://example.com/sub",
+            lambda action, _url: action,
+            enable_latency_tester=True,
+            owner_mode=False,
+        )
+        all_text = [btn.text for row in keyboard.inline_keyboard for btn in row]
+        self.assertNotIn("删除缓存", all_text)
+        self.assertNotIn("删除", all_text)
+        self.assertNotIn("标签", "".join(all_text))
+
+    def test_subscription_keyboard_compact_mode_uses_more_ops(self):
+        keyboard = build_subscription_keyboard(
+            "https://example.com/sub",
+            lambda action, _url: action,
+            enable_latency_tester=True,
+            owner_mode=False,
+            compact_user_mode=True,
+            user_actions_expanded=False,
+        )
+        all_text = [btn.text for row in keyboard.inline_keyboard for btn in row]
+        self.assertIn("更多操作", all_text)
+        self.assertNotIn("导出 YAML", all_text)
+        self.assertNotIn("导出 TXT", all_text)
+
+    def test_subscription_keyboard_compact_mode_expanded_shows_exports(self):
+        keyboard = build_subscription_keyboard(
+            "https://example.com/sub",
+            lambda action, _url: action,
+            enable_latency_tester=True,
+            owner_mode=False,
+            compact_user_mode=True,
+            user_actions_expanded=True,
+        )
+        all_text = [btn.text for row in keyboard.inline_keyboard for btn in row]
+        self.assertIn("导出 YAML", all_text)
+        self.assertIn("导出 TXT", all_text)
+        self.assertIn("收起操作", all_text)
+
     async def test_export_cache_callback_replies_with_success(self):
         handler = make_cache_callback_handler(
             get_storage=lambda: SimpleNamespace(get_all=lambda: {"https://example.com/sub": {"owner_uid": 1}}),

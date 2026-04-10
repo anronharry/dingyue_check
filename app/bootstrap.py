@@ -7,6 +7,7 @@ from typing import Callable
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, JobQueue, MessageHandler, filters
 
+import config
 from app.constants import APP_FEATURES, APP_STARTUP, APP_TITLE
 
 logger = logging.getLogger(__name__)
@@ -25,34 +26,41 @@ def build_application(token: str, post_init: Callable, post_shutdown: Callable) 
 
 
 def register_handlers(application: Application, handlers: dict[str, Callable]) -> None:
-    command_names = [
+    base_commands = [
         "start",
         "help",
         "check",
-        "checkall",
-        "allowall",
-        "denyall",
         "list",
         "stats",
-        "export",
-        "import",
-        "adduser",
-        "deluser",
-        "listusers",
         "ownerpanel",
-        "recentusers",
-        "recentexports",
-        "usageaudit",
-        "globallist",
-        "broadcast",
         "to_yaml",
         "to_txt",
         "deepcheck",
         "delete",
         "refresh_menu",
+    ]
+    owner_ops_commands = [
+        "checkall",
+        "allowall",
+        "denyall",
+        "export",
+        "import",
+        "adduser",
+        "deluser",
+        "broadcast",
         "backup",
         "restore",
     ]
+    owner_legacy_read_commands = [
+        "listusers",
+        "recentusers",
+        "recentexports",
+        "usageaudit",
+        "globallist",
+    ]
+    command_names = base_commands + owner_ops_commands
+    if config.ENABLE_OWNER_LEGACY_READ_COMMANDS:
+        command_names.extend(owner_legacy_read_commands)
     for name in command_names:
         application.add_handler(CommandHandler(name, handlers[name]))
     application.add_handler(CallbackQueryHandler(handlers["button_callback"]))

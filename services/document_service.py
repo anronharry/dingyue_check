@@ -10,12 +10,22 @@ from core.file_handler import FileHandler
 
 
 class DocumentService:
-    def __init__(self, *, get_parser, get_storage, logger, export_cache_service=None, quick_ping_runner=None):
+    def __init__(
+        self,
+        *,
+        get_parser,
+        get_storage,
+        logger,
+        export_cache_service=None,
+        quick_ping_runner=None,
+        subscription_check_service=None,
+    ):
         self.get_parser = get_parser
         self.get_storage = get_storage
         self.logger = logger
         self.export_cache_service = export_cache_service
         self.quick_ping_runner = quick_ping_runner
+        self.subscription_check_service = subscription_check_service
 
     async def import_json(self, *, content_bytes: bytes) -> int:
         loop = asyncio.get_event_loop()
@@ -32,6 +42,12 @@ class DocumentService:
                 self.logger.warning("删除导入临时文件失败: %s", import_file)
 
     async def parse_subscription_urls(self, *, subscription_urls: list[str], owner_uid: int) -> list[dict]:
+        if self.subscription_check_service:
+            return await self.subscription_check_service.parse_subscription_urls(
+                subscription_urls=subscription_urls,
+                owner_uid=owner_uid,
+            )
+
         store = self.get_storage()
         store.begin_batch()
         semaphore = asyncio.Semaphore(20)

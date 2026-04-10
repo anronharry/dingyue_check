@@ -1,7 +1,6 @@
 """Subscription-facing command handlers."""
 from __future__ import annotations
 
-
 import asyncio
 import html
 import time
@@ -11,6 +10,7 @@ from datetime import datetime
 def make_check_command(
     *,
     is_authorized,
+    is_owner,
     send_no_permission_msg,
     get_storage,
     get_parser,
@@ -18,6 +18,7 @@ def make_check_command(
     make_sub_keyboard,
     usage_audit_service,
     logger,
+    subscription_check_service=None,
 ):
     async def check_command(update, context):
         if not is_authorized(update):
@@ -58,12 +59,19 @@ def make_check_command(
             nonlocal completed_count, last_update_time
             async with semaphore:
                 try:
-                    parser_instance = await get_parser()
-                    result = await parser_instance.parse(url)
+                    if subscription_check_service:
+                        result = await subscription_check_service.parse_and_store(
+                            url=url,
+                            owner_uid=data.get("owner_uid", uid),
+                        )
+                    else:
+                        parser_instance = await get_parser()
+                        result = await parser_instance.parse(url)
+                        store.add_or_update(url, result)
+
                     remaining = result.get("remaining")
                     if remaining is not None and remaining <= 0:
                         raise Exception("当前订阅流量已完全耗尽（剩余 0 B）")
-                    store.add_or_update(url, result)
                     res = {
                         "url": url,
                         "name": result.get("name", "未知"),
@@ -162,7 +170,11 @@ def make_check_command(
             if item.get("expire_time"):
                 msg += f" | 到期: {item['expire_time']}"
             msg += f"\n<code>{url}</code>"
-            await update.message.reply_text(msg, parse_mode="HTML", reply_markup=make_sub_keyboard(url))
+            await update.message.reply_text(
+                msg,
+                parse_mode="HTML",
+                reply_markup=make_sub_keyboard(url, owner_mode=is_owner(update)),
+            )
 
     return check_command
 

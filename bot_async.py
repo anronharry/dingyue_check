@@ -83,18 +83,8 @@ async def post_init(application: Application):
         owner_id = int(os.getenv("OWNER_ID", 0))
         if owner_id:
             owner_commands = user_commands + [
-                BotCommand("listusers", "查看授权用户"),
-                BotCommand("ownerpanel", "打开管理员控制面板"),
-                BotCommand("recentusers", "查看最近活跃用户"),
-                BotCommand("recentexports", "查看最近导出记录"),
-                BotCommand("allowall", "开启公开访问模式"),
-                BotCommand("denyall", "关闭公开访问模式"),
-                BotCommand("usageaudit", "查看最近使用日志"),
-                BotCommand("checkall", "检查所有用户订阅"),
-                BotCommand("globallist", "查看全局订阅"),
-                BotCommand("broadcast", "发送广播消息"),
-                BotCommand("backup", "导出完整备份"),
-                BotCommand("restore", "从备份包恢复"),
+                BotCommand("ownerpanel", "Owner control panel"),
+                BotCommand("refresh_menu", "Refresh command menu"),
             ]
             await application.bot.set_my_commands(owner_commands, scope=BotCommandScopeChat(chat_id=owner_id))
         if config.ENABLE_MONITOR:

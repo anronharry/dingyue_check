@@ -1,21 +1,17 @@
-﻿"""Subscription URL text handlers."""
+"""Subscription URL text handlers."""
 from __future__ import annotations
 
 
 def make_subscription_handler(
     *,
     is_valid_url,
+    is_owner,
     document_service,
-    export_cache_service,
     format_subscription_info,
-    format_subscription_compact,
     make_sub_keyboard,
-    schedule_result_collapse,
     usage_audit_service,
     logger,
 ):
-    del export_cache_service, format_subscription_compact, schedule_result_collapse
-
     async def handle_subscription(update, context):
         del context
         reply_to_message_id = getattr(update.message, "message_id", None)
@@ -35,7 +31,7 @@ def make_subscription_handler(
 
         usage_audit_service.log_check(user=update.effective_user, urls=valid_urls, source="文本订阅链接")
         processing_msg = await update.message.reply_text(
-            f"⏳ 正在解析订阅，共 {len(valid_urls)} 个...",
+            f"🚀 正在解析订阅，共 {len(valid_urls)} 个...",
             **reply_kwargs,
         )
 
@@ -51,7 +47,7 @@ def make_subscription_handler(
 
             for item in results:
                 if item["status"] == "success":
-                    reply_markup = make_sub_keyboard(item["url"])
+                    reply_markup = make_sub_keyboard(item["url"], owner_mode=is_owner(update))
                     await update.message.reply_text(
                         format_subscription_info(item["data"], item["url"]),
                         parse_mode="HTML",

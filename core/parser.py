@@ -1,16 +1,17 @@
-﻿"""Subscription parsing utilities."""
+"""Subscription parsing utilities."""
 from __future__ import annotations
 
 import asyncio
 import base64
 import binascii
 import copy
+import ipaddress
 import math
 import re
 import time
 from collections import Counter
 from datetime import datetime
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, unquote_plus, urlparse
 
 import aiohttp
 import yaml
@@ -107,7 +108,7 @@ class SubscriptionParser:
 
             traffic_info = self._parse_traffic_info(response_headers)
             nodes, content_format, normalized_nodes, normalized_content, parse_notes = self._parse_nodes(response_text)
-            airport_name = self._extract_airport_name(nodes, url, response_headers, response_text)
+            airport_name = self._extract_airport_name(nodes, url, response_headers, normalized_content)
             node_stats = await self._analyze_nodes(nodes)
             if not nodes:
                 raise Exception("未解析到任何有效节点")
@@ -459,23 +460,52 @@ class SubscriptionParser:
         }
 
         def is_trash(value):
-            if not value or len(value) < 2 or value.isdigit() or len(value) > 30:
+            cleaned = self._normalize_airport_candidate(str(value or ""))
+            lowered = cleaned.lower()
+            if not cleaned or len(cleaned) < 2 or cleaned.isdigit() or len(cleaned) > 40:
                 return True
-            return any(keyword in value for keyword in bad_keywords)
+            if lowered in {
+                "api",
+                "sub",
+                "subscribe",
+                "subscription",
+                "client",
+                "config",
+                "profile",
+                "default",
+                "clash",
+                "mihomo",
+                "v1",
+                "v2",
+                "v3",
+            }:
+                return True
+            if re.fullmatch(r"v\d+(\.\d+){0,2}", lowered):
+                return True
+            if re.fullmatch(r"[a-z]{1,2}\d{0,2}", lowered):
+                return True
+            if re.fullmatch(r"[a-f0-9]{8,}", lowered):
+                return True
+            return any(keyword.lower() in lowered for keyword in bad_keywords)
+
+        candidates: list[tuple[int, str]] = []
+
+        def add_candidate(value: str | None, score: int) -> None:
+            if value is None:
+                return
+            normalized = self._normalize_airport_candidate(value)
+            if not normalized or is_trash(normalized):
+                return
+            candidates.append((score, normalized))
 
         if headers:
-            raw_title = headers.get("profile-title") or headers.get("x-airport-name") or headers.get("x-profile-name")
-            if raw_title:
-                title = self._decode_profile_title(raw_title)
-                if not is_trash(title):
-                    return title
+            for raw_title in self._header_name_candidates(headers):
+                add_candidate(self._decode_profile_title(raw_title), 120)
+
             content_disposition = headers.get("content-disposition", "")
-            if "filename" in content_disposition:
-                match = re.search(r"filename=['\"]?(.+?)['\"]?(?:;|$)", content_disposition, re.IGNORECASE)
-                if match:
-                    name = re.sub(r"\.(yaml|yml|txt|conf)$", "", unquote(match.group(1)), flags=re.IGNORECASE)
-                    if not is_trash(name):
-                        return name
+            if content_disposition:
+                add_candidate(self._extract_name_from_content_disposition(content_disposition), 112)
+
             profile_web = headers.get("profile-web-page-url") or headers.get("x-profile-web-page-url")
             if profile_web:
                 web_host = urlparse(profile_web).netloc.split(":")[0].strip()
@@ -485,57 +515,259 @@ class SubscriptionParser:
                         for part in web_host.split(".")
                         if part and part.lower() not in common_tlds and part.lower() not in {"www", "api", "sub", "cdn"}
                     ]
-                    if parts and not is_trash(parts[-1]):
-                        return parts[-1]
+                    if parts:
+                        add_candidate(parts[-1], 90)
 
         if content:
-            first_line = content[:500].split("\n", 1)[0].strip()
-            if first_line.startswith(("#", "//")):
-                comment_title = first_line.lstrip("#/ ").strip()
-                if comment_title and not is_trash(comment_title):
-                    return comment_title
+            for name_candidate, score in self._content_name_candidates(content):
+                add_candidate(name_candidate, score)
 
         if nodes:
+            brand_name = self._extract_brand_from_nodes(nodes)
+            add_candidate(brand_name, 85)
+
             prefixes = []
             for node in nodes:
-                match = re.match(r"^([^| \-，,.]+)", node.get("name", ""))
+                match = re.match(r"^([^| \-，,.]+)", str(node.get("name", "")))
                 if match:
                     prefix = match.group(1).strip()
                     if len(prefix) >= 3:
                         prefixes.append(prefix)
             if prefixes:
                 most_common = Counter(prefixes).most_common(1)
-                if most_common and most_common[0][1] >= (len(nodes) * 0.3):
-                    return most_common[0][0]
+                if most_common and most_common[0][1] >= (len(nodes) * 0.35):
+                    add_candidate(most_common[0][0], 65)
 
         parsed = urlparse(url)
         lower_url = url.lower()
         for airport_name, aliases in known_airport_alias.items():
             if any(alias in lower_url for alias in aliases):
-                return airport_name
+                add_candidate(airport_name, 80)
 
-        for part in reversed([part for part in parsed.path.split("/") if part]):
+        for query_name in self._query_name_candidates(parsed.query):
+            add_candidate(query_name, 84)
+
+        for index, part in enumerate(reversed([part for part in parsed.path.split("/") if part])):
             clean = re.sub(r"\.(yaml|yml|txt|conf)$", "", part, flags=re.IGNORECASE)
-            if not is_trash(clean):
-                return clean
+            add_candidate(clean, max(45 - index, 30))
 
         domain = parsed.netloc.split(":")[0]
+        try:
+            ipaddress.ip_address(domain)
+            add_candidate(domain, 25)
+        except ValueError:
+            pass
+
         domain_parts = [part for part in domain.split(".") if part.lower() not in common_tlds and part.lower() not in ["api", "sub", "www", "cdn"]]
-        if domain_parts and not is_trash(domain_parts[-1]):
-            return domain_parts[-1]
+        if domain_parts:
+            add_candidate(domain_parts[-1], 35)
+
+        if candidates:
+            score_map: dict[str, dict[str, int]] = {}
+            for score, name in candidates:
+                entry = score_map.setdefault(name, {"total": 0, "max": 0, "hits": 0})
+                entry["total"] += int(score)
+                entry["max"] = max(entry["max"], int(score))
+                entry["hits"] += 1
+            best_name, _stats = max(
+                score_map.items(),
+                key=lambda item: (item[1]["total"], item[1]["max"], item[1]["hits"], len(item[0])),
+            )
+            return best_name
 
         return "未知机场"
+
+    @staticmethod
+    def _header_name_candidates(headers: dict) -> list[str]:
+        keys = [
+            "profile-title",
+            "x-profile-title",
+            "x-airport-name",
+            "x-profile-name",
+            "subscription-title",
+            "x-subscription-title",
+            "profile-name",
+            "x-profile",
+            "title",
+        ]
+        candidates = []
+        for key in keys:
+            value = headers.get(key)
+            if value and str(value).strip():
+                candidates.append(str(value).strip())
+        return candidates
+
+    def _content_name_candidates(self, content: str) -> list[tuple[str, int]]:
+        if not content:
+            return []
+
+        candidates: list[tuple[str, int]] = []
+        normalized = self._normalize_subscription_text(content)
+        if not normalized:
+            return candidates
+
+        lines = normalized.splitlines()
+        for line in lines[:40]:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith(("#", "//", ";")):
+                body = stripped.lstrip("#/; ").strip()
+                match = re.search(r"(profile[-_ ]?title|airport[-_ ]?name|subscription[-_ ]?name|name)\s*[:=]\s*(.+)$", body, re.IGNORECASE)
+                if match:
+                    candidates.append((match.group(2).strip(), 105))
+                elif len(body) >= 2:
+                    candidates.append((body, 68))
+                continue
+            break
+
+        if "proxies:" in normalized[:8000] or "proxy-providers:" in normalized[:8000]:
+            yaml_content = normalized
+            if len(yaml_content) > 256 * 1024:
+                truncate_idx = yaml_content.rfind("\n", 0, 256 * 1024)
+                yaml_content = yaml_content[: truncate_idx if truncate_idx != -1 else 256 * 1024]
+            try:
+                config = yaml.safe_load(yaml_content)
+            except Exception:
+                config = None
+
+            if isinstance(config, dict):
+                for key in ("name", "profile-title", "title", "subscription-name", "provider", "provider-name"):
+                    value = config.get(key)
+                    if isinstance(value, str) and value.strip():
+                        candidates.append((value.strip(), 110))
+
+                providers = config.get("proxy-providers")
+                if isinstance(providers, dict) and 1 <= len(providers) <= 3:
+                    for provider_name in providers.keys():
+                        if isinstance(provider_name, str) and provider_name.strip():
+                            candidates.append((provider_name.strip(), 88))
+
+        return candidates
+
+    @staticmethod
+    def _query_name_candidates(query: str) -> list[str]:
+        if not query:
+            return []
+
+        values: list[str] = []
+        params = parse_qs(query, keep_blank_values=False)
+        preferred_keys = (
+            "name",
+            "title",
+            "profile",
+            "profile_name",
+            "subscription_name",
+            "provider",
+            "provider_name",
+            "airport",
+            "airport_name",
+            "tag",
+        )
+        for key in preferred_keys:
+            for item in params.get(key, []):
+                text = str(item).strip()
+                if text:
+                    values.append(text)
+        return values
+
+    @staticmethod
+    def _normalize_airport_candidate(value: str) -> str:
+        text = str(value or "").strip().strip('"').strip("'")
+        if not text:
+            return ""
+
+        for _ in range(2):
+            text = unquote_plus(text).strip()
+
+        text = text.replace("\ufeff", "").replace("\x00", "")
+        text = re.sub(r"^[\[\(（【<\s]+|[\]\)）】>\s]+$", "", text)
+        text = re.sub(r"\.(yaml|yml|txt|conf)$", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"\s{2,}", " ", text)
+        return text
+
+    @staticmethod
+    def _extract_name_from_content_disposition(content_disposition: str) -> str | None:
+        # RFC5987: filename*=UTF-8''TigerCloud.yaml
+        match_star = re.search(r"filename\*\s*=\s*([^;]+)", content_disposition, re.IGNORECASE)
+        if match_star:
+            raw = match_star.group(1).strip().strip('"').strip("'")
+            if "''" in raw:
+                _, encoded = raw.split("''", 1)
+            else:
+                encoded = raw
+            decoded = unquote(encoded).strip()
+            decoded = re.sub(r"\.(yaml|yml|txt|conf)$", "", decoded, flags=re.IGNORECASE).strip()
+            if decoded:
+                return decoded
+
+        match_plain = re.search(r"filename=['\"]?(.+?)['\"]?(?:;|$)", content_disposition, re.IGNORECASE)
+        if match_plain:
+            name = unquote(match_plain.group(1)).strip()
+            name = re.sub(r"\.(yaml|yml|txt|conf)$", "", name, flags=re.IGNORECASE).strip()
+            if name:
+                return name
+        return None
+
+    @staticmethod
+    def _extract_brand_from_nodes(nodes: list[dict]) -> str | None:
+        if not nodes:
+            return None
+
+        stop_words = {
+            "hk",
+            "jp",
+            "sg",
+            "us",
+            "tw",
+            "kr",
+            "vip",
+            "net",
+            "node",
+            "trojan",
+            "vmess",
+            "vless",
+            "ss",
+            "ssr",
+        }
+        counter = Counter()
+        casing: dict[str, str] = {}
+
+        for node in nodes:
+            name = str(node.get("name") or "")
+            for token in re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}", name):
+                key = token.lower()
+                if key in stop_words or re.fullmatch(r"[a-z]{1,2}\d*", key):
+                    continue
+                counter[key] += 1
+                casing.setdefault(key, token)
+
+        if not counter:
+            return None
+
+        candidate, hits = counter.most_common(1)[0]
+        threshold = max(3, int(len(nodes) * 0.2))
+        if hits < threshold:
+            return None
+        return casing.get(candidate, candidate)
 
     def _decode_profile_title(self, raw_title: str) -> str:
         title = str(raw_title or "").strip().strip('"').strip("'")
         if not title:
             return ""
 
-        decoded = unquote(title).replace("\ufeff", "").replace("\x00", "").strip()
+        decoded = title
+        for _ in range(2):
+            decoded = unquote_plus(decoded).strip()
+        decoded = decoded.replace("\ufeff", "").replace("\x00", "").strip()
         if not decoded:
             return ""
 
-        for candidate in (decoded, decoded.replace("base64:", "", 1).strip()):
+        b64_candidate = decoded
+        if ":" in b64_candidate and b64_candidate.split(":", 1)[0].lower() in {"base64", "b64"}:
+            b64_candidate = b64_candidate.split(":", 1)[1].strip()
+
+        for candidate in (decoded, b64_candidate):
             maybe = self._try_decode_small_base64_text(candidate)
             if maybe:
                 return maybe
@@ -643,3 +875,4 @@ class SubscriptionParser:
             if any(keyword in node_name for keyword in keywords):
                 return country
         return "其他"
+

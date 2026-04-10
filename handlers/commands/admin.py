@@ -2,8 +2,36 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import os
 import time
+
+
+async def deliver_broadcast(*, bot, user_ids, content: str, logger, title: str = "系统广播（管理员）") -> tuple[int, int]:
+    """Send broadcast and return (success, failed)."""
+    message_text = f"<b>{html.escape(title)}</b>\n\n{html.escape(content)}"
+    success, failed = 0, 0
+    for uid in user_ids:
+        try:
+            await bot.send_message(chat_id=uid, text=message_text, parse_mode="HTML")
+            success += 1
+        except Exception as exc:
+            failed += 1
+            if logger:
+                logger.warning("Broadcast send failed uid=%s error=%s", uid, exc)
+    return success, failed
+
+
+async def export_subscriptions_file(*, store, admin_service) -> tuple[bool, str, str, int]:
+    """Export subscriptions to file and return (ok, file_path, file_name, total)."""
+    export_file, export_name = admin_service.make_export_file_path()
+    ok = await asyncio.get_event_loop().run_in_executor(None, store.export_to_file, export_file)
+    return ok, export_file, export_name, len(store.get_all())
+
+
+async def create_backup_file(*, backup_service) -> tuple[str, str]:
+    """Create backup zip and return (zip_path, zip_name)."""
+    return await asyncio.get_event_loop().run_in_executor(None, backup_service.create_backup)
 
 
 def make_broadcast_command(*, is_owner, owner_only_msg, user_manager, schedule_auto_delete, logger):
@@ -17,16 +45,13 @@ def make_broadcast_command(*, is_owner, owner_only_msg, user_manager, schedule_a
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         content = " ".join(context.args)
-        broadcast_msg = f"<b>系统广播（来自管理员）</b>\n\n{content}"
         status_msg = await update.message.reply_text("正在准备广播...")
-        success, fail = 0, 0
-        for uid in user_manager.get_all():
-            try:
-                await context.bot.send_message(chat_id=uid, text=broadcast_msg, parse_mode="HTML")
-                success += 1
-            except Exception as exc:
-                logger.warning("广播发送失败，UID=%s，错误=%s", uid, exc)
-                fail += 1
+        success, fail = await deliver_broadcast(
+            bot=context.bot,
+            user_ids=user_manager.get_all(),
+            content=content,
+            logger=logger,
+        )
         final_msg = await status_msg.edit_text(f"广播完成\n成功：{success}\n失败：{fail}")
         schedule_auto_delete(context, update.message, final_msg, delay=30)
 
@@ -137,8 +162,11 @@ def make_owner_panel_command(*, is_owner, owner_only_msg, admin_service, schedul
             reply_msg = await update.message.reply_text(owner_only_msg)
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
+        total_users, daily_users = admin_service.get_usage_user_counts(include_owner=False)
+        panel_text = admin_service.build_owner_panel_text()
+        panel_text = f"{panel_text}\n使用用户: <b>{total_users}</b> | 24 小时内: <b>{daily_users}</b>"
         reply_msg = await update.message.reply_text(
-            admin_service.build_owner_panel_text(),
+            panel_text,
             parse_mode="HTML",
             reply_markup=context.application.bot_data["build_owner_panel_keyboard"](),
         )
@@ -207,14 +235,16 @@ def make_export_command(*, is_owner, owner_only_msg, get_storage, schedule_auto_
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
         store = get_storage()
-        export_file, export_name = admin_service.make_export_file_path()
-        export_success = await asyncio.get_event_loop().run_in_executor(None, store.export_to_file, export_file)
+        export_success, export_file, export_name, total = await export_subscriptions_file(
+            store=store,
+            admin_service=admin_service,
+        )
         if export_success:
             with open(export_file, "rb") as handle:
                 await update.message.reply_document(
                     document=handle,
                     filename=export_name,
-                    caption=f"导出完成，共 {len(store.get_all())} 条订阅。",
+                    caption=f"导出完成，共 {total} 条订阅。",
                 )
             await asyncio.get_event_loop().run_in_executor(None, os.remove, export_file)
             return
@@ -246,7 +276,7 @@ def make_backup_command(*, is_owner, owner_only_msg, backup_service, schedule_au
             reply_msg = await update.message.reply_text(owner_only_msg)
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
-        zip_path, zip_name = backup_service.create_backup()
+        zip_path, zip_name = await create_backup_file(backup_service=backup_service)
         with open(zip_path, "rb") as handle:
             caption = context.application.bot_data["admin_service"].build_backup_caption(zip_name=zip_name)
             await update.message.reply_document(document=handle, filename=zip_name, caption=caption, parse_mode="HTML")
@@ -372,7 +402,18 @@ def make_globallist_command(*, is_owner, owner_only_msg, admin_service, schedule
     return globallist_command
 
 
-def make_checkall_command(*, is_owner, owner_only_msg, get_storage, get_parser, make_sub_keyboard, admin_service, usage_audit_service, schedule_auto_delete):
+def make_checkall_command(
+    *,
+    is_owner,
+    owner_only_msg,
+    get_storage,
+    get_parser,
+    make_sub_keyboard,
+    admin_service,
+    usage_audit_service,
+    schedule_auto_delete,
+    subscription_check_service=None,
+):
     async def checkall_command(update, context):
         if not is_owner(update):
             reply_msg = await update.message.reply_text(owner_only_msg)
@@ -399,12 +440,18 @@ def make_checkall_command(*, is_owner, owner_only_msg, get_storage, get_parser, 
             nonlocal completed_count, last_update_time
             async with semaphore:
                 try:
-                    parser_instance = await get_parser()
-                    result = await parser_instance.parse(url)
+                    original_owner = data.get("owner_uid", 0)
+                    if subscription_check_service:
+                        result = await subscription_check_service.parse_and_store(
+                            url=url,
+                            owner_uid=original_owner,
+                        )
+                    else:
+                        parser_instance = await get_parser()
+                        result = await parser_instance.parse(url)
+                        store.add_or_update(url, result, user_id=original_owner)
                     if result.get("remaining", 1) <= 0:
                         raise Exception("流量已耗尽")
-                    original_owner = data.get("owner_uid", 0)
-                    store.add_or_update(url, result, user_id=original_owner)
                     res = {
                         "url": url,
                         "name": result.get("name", "未知"),
