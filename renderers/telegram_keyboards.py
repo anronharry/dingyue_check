@@ -45,19 +45,30 @@ def build_subscription_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-def build_usage_audit_keyboard(*, mode: str, page: int, total_pages: int, record_count: int = 0) -> InlineKeyboardMarkup:
+def build_usage_audit_keyboard(
+    *,
+    mode: str,
+    page: int,
+    total_pages: int,
+    record_count: int = 0,
+    view: str = "time",
+) -> InlineKeyboardMarkup:
     del record_count
     prev_page = page - 1 if page > 1 else 1
     next_page = page + 1 if page < total_pages else total_pages
+    view = "user" if view == "user" else "time"
+    switch_to = "time" if view == "user" else "user"
+    switch_label = "🕒 按时间" if switch_to == "time" else "👤 按用户"
     rows = [
         [
-            InlineKeyboardButton("👤 其他用户", callback_data=f"audit:others:{page}"),
-            InlineKeyboardButton("Owner", callback_data=f"audit:owner:{page}"),
-            InlineKeyboardButton("🧾 全部", callback_data=f"audit:all:{page}"),
+            InlineKeyboardButton("👤 其他用户", callback_data=f"audit:others:{page}:{view}"),
+            InlineKeyboardButton("Owner", callback_data=f"audit:owner:{page}:{view}"),
+            InlineKeyboardButton("🧾 全部", callback_data=f"audit:all:{page}:{view}"),
         ],
+        [InlineKeyboardButton(switch_label, callback_data=f"audit:{mode}:1:{switch_to}")],
         [
-            InlineKeyboardButton("⬅️ 上一页", callback_data=f"audit:{mode}:{prev_page}"),
-            InlineKeyboardButton("下一页 ➡️", callback_data=f"audit:{mode}:{next_page}"),
+            InlineKeyboardButton("⬅️ 上一页", callback_data=f"audit:{mode}:{prev_page}:{view}"),
+            InlineKeyboardButton("下一页 ➡️", callback_data=f"audit:{mode}:{next_page}:{view}"),
         ],
         [InlineKeyboardButton("🏠 返回控制台", callback_data="panel:root")],
     ]

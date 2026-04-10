@@ -230,15 +230,8 @@ class AdminService:
             lines.append("当前没有其他用户的订阅变化。")
         return "\n".join(lines).strip()
 
-    def build_usage_audit_report(self, *, mode: str = "others", page: int = 1, page_size: int = 5) -> tuple[str, dict]:
+    def build_usage_audit_report(self, *, mode: str = "others", page: int = 1, page_size: int = 5, view: str = "time") -> tuple[str, dict]:
         records = self._get_audit_records(limit=self.usage_audit_service.max_read_records)
-        result = self.usage_audit_service.query_records(
-            owner_id=self.owner_id,
-            mode=mode,
-            page=page,
-            page_size=page_size,
-            records=records,
-        )
         counts = {
             "others": self.usage_audit_service.query_records(
                 owner_id=self.owner_id,
@@ -262,29 +255,95 @@ class AdminService:
                 records=records,
             )["total"],
         }
-        if not result["records"]:
-            return f"暂无使用审计记录（模式：{html.escape(mode)}）。", result
-
         title = {"others": "其他用户", "owner": "管理员", "all": "全部用户"}.get(mode, mode)
+        view = "user" if view == "user" else "time"
+
+        if view == "user":
+            filtered = self.usage_audit_service.query_records(
+                owner_id=self.owner_id,
+                mode=mode,
+                page=1,
+                page_size=max(1, len(records)),
+                records=records,
+            )["records"]
+            grouped: dict[int, dict] = {}
+            for row in filtered:
+                uid = int(row.get("user_id", 0) or 0)
+                item = grouped.setdefault(
+                    uid,
+                    {"user_id": uid, "checks": 0, "url_total": 0, "last_ts": "-", "sources": {}},
+                )
+                item["checks"] += 1
+                urls = row.get("urls", []) or []
+                item["url_total"] += len(urls)
+                ts = row.get("ts", "-")
+                if ts > item["last_ts"]:
+                    item["last_ts"] = ts
+                source = str(row.get("source", "-"))
+                item["sources"][source] = item["sources"].get(source, 0) + 1
+            grouped_list = sorted(grouped.values(), key=lambda x: (-x["checks"], x["user_id"]))
+            current, safe_page, total_pages = self._paginate(grouped_list, page=page, page_size=page_size)
+            if not current:
+                paging = {"mode": mode, "view": view, "page": 1, "total_pages": 1, "records": [], "total": 0}
+                return f"暂无使用审计记录（模式：{html.escape(mode)}，视图：按用户）。", paging
+
+            lines = [
+                "<b>📒 使用审计日志</b>",
+                f"筛选: <b>{title}</b> | 视图: <b>按用户</b>",
+                f"页码: {safe_page}/{total_pages} | 用户数: {len(grouped_list)}",
+                f"总览: 其他用户 {counts['others']} | 管理员 {counts['owner']} | 全部 {counts['all']}",
+                "",
+            ]
+            for idx, item in enumerate(current, start=1):
+                source_lines = [f"- {html.escape(k)} × {v}" for k, v in sorted(item["sources"].items(), key=lambda x: (-x[1], x[0]))[:6]]
+                details = "\n".join(source_lines) if source_lines else "- 无"
+                lines.append(
+                    f"{idx}. {self.user_profile_service.format_user_identity(item['user_id'])} | 检测 <b>{item['checks']}</b> 次 | 链接 <b>{item['url_total']}</b> 条 | 最近 {item['last_ts']}"
+                )
+                lines.append(f"<blockquote expandable>来源分布\n{details}</blockquote>")
+            paging = {
+                "mode": mode,
+                "view": view,
+                "page": safe_page,
+                "total_pages": total_pages,
+                "records": current,
+                "total": len(grouped_list),
+            }
+            return "\n".join(lines).strip(), paging
+
+        result = self.usage_audit_service.query_records(
+            owner_id=self.owner_id,
+            mode=mode,
+            page=page,
+            page_size=page_size,
+            records=records,
+        )
+        if not result["records"]:
+            result["view"] = view
+            return f"暂无使用审计记录（模式：{html.escape(mode)}，视图：按时间）。", result
+
         lines = [
-            "<b>使用审计</b>",
-            f"模式: <b>{title}</b>",
-            f"页码: {result['page']} / {result['total_pages']} | 记录数: {result['total']}",
+            "<b>📒 使用审计日志</b>",
+            f"筛选: <b>{title}</b> | 视图: <b>按时间</b>",
+            f"页码: {result['page']}/{result['total_pages']} | 记录数: {result['total']}",
             f"总览: 其他用户 {counts['others']} | 管理员 {counts['owner']} | 全部 {counts['all']}",
             "",
         ]
         for display_index, record in enumerate(result["records"], start=1):
-            urls = record.get("urls", [])
-            first_url = urls[0] if urls else "-"
-            short_url = html.escape(first_url[:80] + ("..." if len(first_url) > 80 else ""))
+            urls = record.get("urls", []) or []
+            source = html.escape(str(record.get("source", "-")))
+            detail_lines = [f"入口: {source}", "链接列表:"]
+            for url in urls[:8]:
+                safe_url = html.escape(str(url))
+                detail_lines.append(f"- <code>{safe_url}</code>")
+            if len(urls) > 8:
+                detail_lines.append(f"- 其余 {len(urls) - 8} 条已折叠")
+            detail_text = "\n".join(detail_lines)
             lines.append(
-                f"{display_index}. 时间: {record.get('ts', '-')}\n"
-                f"用户: {self.user_profile_service.format_user_identity(record.get('user_id', 0))}\n"
-                f"入口: {html.escape(record.get('source', '-'))}\n"
-                f"链接数: {len(urls)}\n"
-                f"首条: <code>{short_url}</code>"
+                f"{display_index}. {record.get('ts', '-')} | {self.user_profile_service.format_user_identity(record.get('user_id', 0))} | 链接 <b>{len(urls)}</b> 条"
             )
-            lines.append("")
+            lines.append(f"<blockquote expandable>{detail_text}</blockquote>")
+        result["view"] = view
         return "\n".join(lines).strip(), result
 
     def build_usage_audit_detail(self, *, mode: str, page: int, page_size: int, detail_index: int) -> str:

@@ -228,7 +228,7 @@ def make_audit_callback_handler(
         return True
 
     async def _panel_audit(query, _context) -> bool:
-        report, paging = admin_service.build_usage_audit_report(mode="others", page=1, page_size=5)
+        report, paging = admin_service.build_usage_audit_report(mode="others", page=1, page_size=5, view="time")
         await query.edit_message_text(
             report,
             parse_mode="HTML",
@@ -238,6 +238,7 @@ def make_audit_callback_handler(
                 page=paging["page"],
                 total_pages=paging["total_pages"],
                 record_count=len(paging["records"]),
+                view=paging.get("view", "time"),
             ),
         )
         return True
@@ -331,11 +332,14 @@ def make_audit_callback_handler(
         if action == "audit":
             await query.answer("加载审计记录...")
             try:
-                mode, page_str = hash_key.split(":", 1)
+                parts = hash_key.split(":")
+                mode = parts[0]
+                page_str = parts[1] if len(parts) >= 2 else "1"
+                view = parts[2] if len(parts) >= 3 else "time"
                 page = int(page_str)
             except ValueError:
-                mode, page = "others", 1
-            report, paging = admin_service.build_usage_audit_report(mode=mode, page=page, page_size=5)
+                mode, page, view = "others", 1, "time"
+            report, paging = admin_service.build_usage_audit_report(mode=mode, page=page, page_size=5, view=view)
             await query.edit_message_text(
                 report,
                 parse_mode="HTML",
@@ -345,6 +349,7 @@ def make_audit_callback_handler(
                     page=paging["page"],
                     total_pages=paging["total_pages"],
                     record_count=len(paging["records"]),
+                    view=paging.get("view", "time"),
                 ),
             )
             return True
@@ -410,24 +415,28 @@ def make_audit_callback_handler(
 
         try:
             await query.answer("读取详情信息...")
-            mode, page_str, index_str = hash_key.split("|", 2)
+            parts = hash_key.split("|")
+            mode = parts[0]
+            page_str = parts[1] if len(parts) >= 2 else "1"
+            index_str = parts[2] if len(parts) >= 3 else "0"
+            view = parts[3] if len(parts) >= 4 else "time"
             page = int(page_str)
             detail_index = int(index_str)
         except ValueError:
             await query.answer("数据异常", show_alert=True)
             return True
         detail_text = admin_service.build_usage_audit_detail(mode=mode, page=page, page_size=5, detail_index=detail_index)
-        _, paging = admin_service.build_usage_audit_report(mode=mode, page=page, page_size=5)
+        _, paging = admin_service.build_usage_audit_report(mode=mode, page=page, page_size=5, view=view)
         await query.edit_message_text(
             detail_text,
             parse_mode="HTML",
             disable_web_page_preview=True,
             reply_markup=inline_keyboard_markup(
                 [
-                    [inline_keyboard_button("返回审计列表", callback_data=f"audit:{mode}:{page}")],
+                    [inline_keyboard_button("返回审计列表", callback_data=f"audit:{mode}:{page}:{view}")],
                     [
-                        inline_keyboard_button("上一页", callback_data=f"audit:{mode}:{max(1, page - 1)}"),
-                        inline_keyboard_button("下一页", callback_data=f"audit:{mode}:{min(paging['total_pages'], page + 1)}"),
+                        inline_keyboard_button("上一页", callback_data=f"audit:{mode}:{max(1, page - 1)}:{view}"),
+                        inline_keyboard_button("下一页", callback_data=f"audit:{mode}:{min(paging['total_pages'], page + 1)}:{view}"),
                     ],
                     [inline_keyboard_button("返回控制台", callback_data="panel:root")],
                 ]
