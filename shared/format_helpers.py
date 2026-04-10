@@ -36,33 +36,86 @@ def create_progress_bar(percent, length=10):
 
 
 def get_country_flag(country_name):
-    flags = {
-        "香港": "🇭🇰",
-        "台湾": "🇹🇼",
-        "日本": "🇯🇵",
-        "美国": "🇺🇸",
-        "新加坡": "🇸🇬",
-        "韩国": "🇰🇷",
-        "英国": "🇬🇧",
-        "德国": "🇩🇪",
-        "法国": "🇫🇷",
-        "加拿大": "🇨🇦",
-        "澳大利亚": "🇦🇺",
-        "俄罗斯": "🇷🇺",
-        "印度": "🇮🇳",
-        "荷兰": "🇳🇱",
-        "土耳其": "🇹🇷",
-        "巴西": "🇧🇷",
-        "越南": "🇻🇳",
-        "泰国": "🇹🇭",
-        "菲律宾": "🇵🇭",
-        "马来西亚": "🇲🇾",
-        "印尼": "🇮🇩",
-        "阿根廷": "🇦🇷",
-        "墨西哥": "🇲🇽",
-        "其他": "🌐",
+    def _code_to_flag(alpha2: str) -> str:
+        if len(alpha2) != 2 or not alpha2.isalpha():
+            return "🏳️"
+        return "".join(chr(ord(ch) + 127397) for ch in alpha2.upper())
+
+    if country_name is None:
+        return "🏳️"
+    text = str(country_name).strip()
+    if not text:
+        return "🏳️"
+
+    # Direct ISO-3166 alpha-2 code (e.g. US/CN/JP).
+    if len(text) == 2 and text.isalpha():
+        return _code_to_flag(text)
+
+    normalized = text.lower().replace(" ", "").replace("-", "").replace("_", "").replace(".", "")
+    aliases = {
+        "香港": "HK",
+        "taiwan": "TW",
+        "台湾": "TW",
+        "japan": "JP",
+        "日本": "JP",
+        "unitedstates": "US",
+        "unitedstatesofamerica": "US",
+        "usa": "US",
+        "us": "US",
+        "america": "US",
+        "美国": "US",
+        "singapore": "SG",
+        "新加坡": "SG",
+        "southkorea": "KR",
+        "republicofkorea": "KR",
+        "korea": "KR",
+        "韩国": "KR",
+        "china": "CN",
+        "中国": "CN",
+        "uk": "GB",
+        "unitedkingdom": "GB",
+        "britain": "GB",
+        "greatbritain": "GB",
+        "england": "GB",
+        "英国": "GB",
+        "germany": "DE",
+        "德国": "DE",
+        "france": "FR",
+        "法国": "FR",
+        "canada": "CA",
+        "加拿大": "CA",
+        "australia": "AU",
+        "澳大利亚": "AU",
+        "russia": "RU",
+        "俄罗斯": "RU",
+        "india": "IN",
+        "印度": "IN",
+        "netherlands": "NL",
+        "荷兰": "NL",
+        "turkey": "TR",
+        "turkiye": "TR",
+        "土耳其": "TR",
+        "brazil": "BR",
+        "巴西": "BR",
+        "vietnam": "VN",
+        "越南": "VN",
+        "thailand": "TH",
+        "泰国": "TH",
+        "philippines": "PH",
+        "菲律宾": "PH",
+        "malaysia": "MY",
+        "马来西亚": "MY",
+        "indonesia": "ID",
+        "印尼": "ID",
+        "argentina": "AR",
+        "阿根廷": "AR",
+        "mexico": "MX",
+        "墨西哥": "MX",
     }
-    return flags.get(country_name, "🏳️")
+    if normalized in {"其他", "其它", "other", "others", "unknown", "未知", "global"}:
+        return "🌐"
+    code = aliases.get(normalized)
+    return _code_to_flag(code) if code else "🏳️"
 
 
 def format_remaining_time(expire_time_str, *, include_seconds: bool = True):

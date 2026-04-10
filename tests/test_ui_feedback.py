@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from handlers.callbacks.cache_actions import make_cache_callback_handler
 from renderers.formatters import format_node_analysis_compact, format_subscription_compact, format_subscription_info
+from shared.format_helpers import get_country_flag
 from renderers.telegram_keyboards import build_subscription_keyboard
 from services.export_cache_service import ERROR_CACHE_MISSING
 
@@ -230,6 +231,13 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("</blockquote>", text)
         self.assertIn("<b>原始订阅链接：</b>", text)
         self.assertGreater(text.index("<b>原始订阅链接：</b>"), text.index("</blockquote>"))
+
+    def test_get_country_flag_supports_english_names_and_iso2(self):
+        self.assertEqual(get_country_flag("China"), "🇨🇳")
+        self.assertEqual(get_country_flag("Japan"), "🇯🇵")
+        self.assertEqual(get_country_flag("United States"), "🇺🇸")
+        self.assertEqual(get_country_flag("KR"), "🇰🇷")
+        self.assertEqual(get_country_flag("other"), "🌐")
 
 
 if __name__ == "__main__":
