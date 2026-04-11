@@ -510,8 +510,14 @@ async def _subscriptions_global(request: web.Request) -> web.Response:
 
 async def _authorized_users(request: web.Request) -> web.Response:
     runtime = request.app[RUNTIME_KEY]
+    page, err = _parse_positive_int(request, "page", 1, 1, 10000)
+    if err is not None:
+        return err
+    limit, err = _parse_limit(request, default=10, minimum=1, maximum=100)
+    if err is not None:
+        return err
     try:
-        data = runtime.admin_service.get_user_list_data()
+        data = runtime.admin_service.get_user_list_data(page=page, limit=limit)
         return web.json_response({"ok": True, "data": data})
     except Exception as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)

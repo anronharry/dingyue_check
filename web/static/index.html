@@ -6,217 +6,236 @@
   <title>Owner 运维控制台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
   :root {
       --primary: #4361ee;
-      --bg: #f8f9fa;
+      --primary-soft: rgba(67, 97, 238, 0.1);
+      --bg: #f5f7fb;
       --card-bg: #ffffff;
-      --text: #212529;
-      --text-muted: #6c757d;
-      --border: #f0f0f0;
-      --danger: #e53e3e;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.1);
       --success: #22c55e;
-      --radius: 8px;
+      --success-soft: rgba(34, 197, 94, 0.1);
+      --radius: 12px;
+      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
   }
   * { box-sizing: border-box; }
   body {
       margin: 0;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background-color: var(--bg);
       color: var(--text);
-      line-height: 1.5;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
   }
   .navbar {
       background-color: var(--primary);
       color: white;
       padding: 0 24px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4px 12px rgba(67, 97, 238, 0.15);
       position: sticky;
       top: 0;
       z-index: 100;
-      height: 64px;
+      height: 70px;
   }
   .navbar-content {
       display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto; height: 100%;
   }
-  .logo { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 12px; }
+  .logo-area { display: flex; align-items: center; gap: 14px; }
+  .logo-img { height: 40px; border-radius: 8px; background: white; padding: 2px; }
+  .brand-name { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
   
   .status {
-      border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; padding: 2px 6px; font-size: 12px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 500;
   }
-  .status.ok { background: rgba(34, 197, 94, 0.2); }
-  .status.warn { background: rgba(229, 62, 62, 0.2); }
+  .status.ok { color: #fff; background: var(--success); }
+  .status.warn { color: #fff; background: var(--danger); }
 
+  .nav-actions { display: flex; gap: 12px; align-items: center; }
   .logout-btn {
-      background-color: rgba(255, 255, 255, 0.15); border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: background-color 0.2s ease; font-size: 14px; margin-left: 8px;
+      background-color: rgba(255, 255, 255, 0.2); border: none; color: white; padding: 10px 18px; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 14px; font-weight: 600;
   }
-  .logout-btn:hover { background-color: rgba(255, 255, 255, 0.25); }
+  .logout-btn:hover { background-color: rgba(255, 255, 255, 0.3); transform: translateY(-1px); }
   
   button {
-      background-color: transparent; border: 1px solid var(--primary); color: var(--primary); padding: 8px 14px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 13px; font-weight: 500;
+      background: var(--card-bg); border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 13px; font-weight: 600;
   }
-  button:hover { background-color: rgba(67, 97, 238, 0.05); }
-  .btn-brand { background-color: var(--primary); color: white; border: none; }
-  .btn-brand:hover { background-color: #3a50d9; }
+  button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  
+  .btn-brand { background: var(--primary); color: white; border: none; box-shadow: 0 2px 4px var(--primary-soft); }
+  .btn-brand:hover:not(:disabled) { background: #3a50d9; color: white; transform: translateY(-1px); box-shadow: 0 4px 8px var(--primary-soft); }
+  
   .btn-danger { color: var(--danger); border-color: var(--danger); }
-  .btn-danger:hover { background-color: rgba(229, 62, 62, 0.05); }
+  .btn-danger:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); }
 
-  .main-container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+  .main-container { max-width: 1400px; margin: 0 auto; padding: 32px; }
   
-  /* Metrics Grid */
-  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  /* Metrics */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 32px; }
   .metric {
-      background: var(--card-bg); border-radius: var(--radius); padding: 20px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+      background: var(--card-bg); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); position: relative; overflow: hidden;
   }
-  .metric .k { margin: 0; font-size: 14px; color: var(--text-muted); }
-  .metric .v { margin: 8px 0 0; font-size: 24px; font-weight: 700; color: var(--primary); }
+  .metric::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--primary); }
+  .metric .k { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .metric .v { margin: 8px 0 0; font-size: 28px; font-weight: 800; color: var(--text); }
 
-  /* Main Layout */
-  .dashboard-layout { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 2fr); gap: 24px; }
-  @media (max-width: 1024px) {
+  /* Layout */
+  .dashboard-layout { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 2fr); gap: 32px; }
+  @media (max-width: 1100px) {
     .dashboard-layout { grid-template-columns: 1fr; }
-    .metrics { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .metrics { grid-template-columns: repeat(2, 1fr); }
   }
   
-  .stack { display: flex; flex-direction: column; gap: 24px; }
+  .stack { display: flex; flex-direction: column; gap: 32px; }
 
   /* Cards */
-  .card {
-      background: var(--card-bg); border-radius: var(--radius); box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05); overflow: hidden;
-  }
+  .card { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border); }
   .head {
-      padding: 16px 20px; background-color: #fdfdfd; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;
+      padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;
   }
-  .head h2 { font-size: 16px; font-weight: 600; margin: 0; color: var(--text); }
-  .body { padding: 20px; }
+  .head h2 { font-size: 16px; font-weight: 700; margin: 0; color: var(--text); }
+  .body { padding: 24px; }
 
-  /* Form & Filters */
-  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; background: #fafafa; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
-  .filters input, .filters select { flex: 1; min-width: 120px; }
-  .filters .actions { margin-left: auto; display: flex; gap: 8px; }
+  /* Filters */
+  .filters { 
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; 
+      margin-bottom: 20px; background: var(--bg); padding: 16px; border-radius: 10px; border: 1px solid var(--border);
+  }
+  .filters .actions { grid-column: 1 / -1; display: flex; gap: 10px; margin-top: 8px; }
 
   input, select {
-      border: 1px solid #ccc; border-radius: 6px; padding: 8px 12px; background: var(--card-bg); color: var(--text); font-size: 13px; font-family: inherit; transition: all 0.2s ease;
+      border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; background: white; color: var(--text); font-size: 14px; width: 100%;
   }
-  input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1); }
+  input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
   
-  .quick { display: flex; flex-direction: column; gap: 12px; }
-  .quick-row { display: flex; gap: 8px; align-items: center; }
-  .quick-row input { flex: 1; }
-
   /* Tables */
-  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
-  th, td { padding: 12px 16px; border-bottom: 1px solid var(--border);  }
-  th { color: var(--text-muted); font-weight: 500; background: #fdfdfd; border-bottom: 2px solid #eaeaea; }
-  tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover { background-color: #f8f9ff; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { background: #f8fafc; color: var(--text-muted); font-weight: 600; padding: 14px 20px; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; text-align: left; }
+  td { padding: 16px 20px; border-top: 1px solid var(--border); vertical-align: middle; }
+  tbody tr:hover { background-color: #f1f5f9; }
 
-  /* JS injected items */
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
-  .url-list { margin: 0; padding-left: 16px; min-width: 280px; gap: 4px; display: grid; color: #555; }
+  /* Pagination */
+  .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 24px; }
+  .page-info { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+  .page-btn { padding: 6px 14px; min-width: 40px; }
 
-  .rows { border-top: none; }
-  .row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-  .row:last-child { border-bottom: none; }
-  .row .label { color: var(--text-muted); }
+  /* Specific Items */
+  .mono { font-family: 'JetBrains Mono', 'SF Mono', monospace; font-size: 12px; }
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .badge-primary { background: var(--primary-soft); color: var(--primary); }
+  .badge-success { background: var(--success-soft); color: var(--success); }
+  .badge-danger { background: var(--danger-soft); color: var(--danger); }
 
-  .list { display: flex; flex-direction: column; }
-  .item { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-  .item:last-child { border-bottom: none; }
-  .item .k { margin: 0; font-size: 12px; color: var(--text-muted); }
-  .item .v { margin: 4px 0 0; font-size: 13px; font-weight: 500; color: var(--text); }
-  .item .muted { color: var(--text-muted); font-size: 12px; }
-
-  .runtime { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .runtime .item { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: #fafafa; border-bottom: 1px solid var(--border); }
-
-  /* Alerts */
-  .alert {
-      background: #fff5f5; color: var(--danger); padding: 12px; border-radius: 6px; border: 1px solid #fed7d7; margin-bottom: 8px; font-size: 13px;
+  .op-card { border-top: 4px solid var(--primary); }
+  .op-grid { display: grid; gap: 14px; }
+  .op-item { 
+      padding: 16px; border-radius: 10px; border: 1px solid var(--border); display: flex; 
+      justify-content: space-between; align-items: center; background: #fafafa;
   }
-  .alert:last-child { margin-bottom: 0; }
-  .alert.info { background: #e9f5ff; color: var(--primary); border-color: #cce5ff; }
-  .alert strong { font-weight: 600; display: block; margin-bottom: 4px; color: #000; }
-  .alert .muted { color: var(--text-muted); font-size: 12px; }
+  .op-info { display: flex; flex-direction: column; gap: 2px; }
+  .op-title { font-weight: 700; font-size: 14px; }
+  .op-desc { font-size: 12px; color: var(--text-muted); }
 
-  /* Dialog */
-  dialog {
-      border: none; border-radius: 8px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); width: 600px; max-width: 90vw; padding: 0; 
+  .runtime-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .runtime-item { padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: #fdfdfd; }
+  .runtime-item .k { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+  .runtime-item .v { font-size: 14px; font-weight: 700; color: var(--text); margin-top: 4px; }
+
+  .alert { 
+      padding: 16px; border-radius: 10px; margin-bottom: 12px; border-left: 4px solid var(--border); 
+      display: flex; gap: 12px; align-items: flex-start; background: #fff; box-shadow: var(--shadow);
   }
-  dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
-  .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; background: #fdfdfd; }
-  .modal-head strong { font-size: 16px; }
-  .modal-body { padding: 20px; max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+  .alert.high { border-left-color: var(--danger); background: #fff5f5; }
+  .alert.medium { border-left-color: #f59e0b; background: #fffbeb; }
+  .alert.low { border-left-color: var(--primary); background: #f0f7ff; }
+  .alert-content { flex: 1; }
+  .alert-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  .alert-desc { font-size: 12px; color: var(--text-muted); }
+
+  dialog { border: none; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); width: 700px; max-width: 95vw; padding: 0; }
+  dialog::backdrop { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); }
+  .modal-head { padding: 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-body { padding: 24px; max-height: 80vh; overflow-y: auto; }
   </style>
 </head>
 <body>
   <nav class="navbar">
       <div class="navbar-content">
-          <div class="logo">Owner 运维控制台 <span class="status" id="statusText">正在加载...</span></div>
-          <div class="user-menu">
-              <button id="refreshBtn" type="button" style="color: white; border-color: rgba(255,255,255,0.3);">刷新全部</button>
+          <div class="logo-area">
+              <img src="/admin/static/logo.png" class="logo-img" alt="Logo" onerror="this.style.display='none'">
+              <span class="brand-name">Owner 运维控制台</span>
+              <span class="status" id="statusText">系统初始化...</span>
+          </div>
+          <div class="nav-actions">
+              <button id="refreshBtn" type="button" class="logout-btn" style="background: rgba(255,255,255,0.15)">全量刷新</button>
               <button class="logout-btn" id="logoutBtn" type="button">退出登录</button>
           </div>
       </div>
   </nav>
 
   <main class="main-container">
+    <!-- Metrics Row -->
     <section class="metrics">
-      <article class="metric"><p class="k">总订阅</p><p class="v" id="mTotalSubs">-</p></article>
+      <article class="metric"><p class="k">总订阅量</p><p class="v" id="mTotalSubs">-</p></article>
       <article class="metric"><p class="k">授权用户</p><p class="v" id="mUsers">-</p></article>
       <article class="metric"><p class="k">24h 活跃</p><p class="v" id="mActive">-</p></article>
       <article class="metric"><p class="k">24h 导出</p><p class="v" id="mExports">-</p></article>
     </section>
 
     <div class="dashboard-layout">
-      <!-- Main Content (Left Column) -->
+      <!-- Left Column: Tables -->
       <div class="stack">
-        <!-- Authorized Users -->
+        <!-- Authorized Users Table -->
         <article class="card">
           <div class="head">
-            <h2>授权用户列表</h2>
-            <button id="loadUsersTableBtn" type="button">刷新</button>
+            <h2>授权用户管理</h2>
+            <button id="loadUsersTableBtn" type="button">手动刷新</button>
           </div>
           <div class="body">
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>用户</th>
-                    <th>Owner</th>
-                    <th>授权</th>
+                    <th>用户信息</th>
+                    <th>身份状态</th>
                     <th>最近活跃</th>
-                    <th>来源</th>
-                    <th>操作</th>
+                    <th>访问来源</th>
+                    <th>管理操作</th>
                   </tr>
                 </thead>
                 <tbody id="authorizedUsersBody"></tbody>
               </table>
             </div>
+            <div id="usersPagination" class="pagination"></div>
           </div>
         </article>
 
-        <!-- Checks Audit -->
+        <!-- Audit Table -->
         <article class="card">
           <div class="head">
-            <h2>检测审计（可筛选/导出）</h2>
+            <h2>检测审计记录</h2>
           </div>
           <div class="body">
             <div class="filters">
               <select id="auditMode">
-                <option value="others">others</option>
-                <option value="owner">owner</option>
-                <option value="all">all</option>
+                <option value="others" selected>过滤管理员 (Others)</option>
+                <option value="owner">仅查看管理员 (Owner)</option>
+                <option value="all">查看全部 (All)</option>
               </select>
-              <input id="filterUserId" type="text" placeholder="user_id">
-              <input id="filterSource" type="text" placeholder="source contains">
-              <input id="filterQ" type="text" placeholder="关键词：用户/链接/来源">
-              <input id="filterFrom" type="text" placeholder="起始时间 YYYY-MM-DD">
-              <input id="filterTo" type="text" placeholder="结束时间 YYYY-MM-DD">
+              <input id="filterUserId" type="text" placeholder="UID: 123456">
+              <input id="filterSource" type="text" placeholder="来源关键词">
+              <input id="filterQ" type="text" placeholder="搜 URL / 内容">
+              <input id="filterFrom" type="date" placeholder="起始日期">
+              <input id="filterTo" type="date" placeholder="结束日期">
               <div class="actions">
-                <button class="btn-brand" id="loadChecksBtn" type="button">查询</button>
+                <button class="btn-brand" id="loadChecksBtn" type="button">执行多重筛选</button>
                 <button id="exportCsvBtn" type="button">导出 CSV</button>
                 <button id="exportJsonBtn" type="button">导出 JSON</button>
               </div>
@@ -228,84 +247,95 @@
                     <th>用户</th>
                     <th>时间</th>
                     <th>来源</th>
-                    <th>URL</th>
+                    <th>URL 详情</th>
                   </tr>
                 </thead>
                 <tbody id="recentChecksBody"></tbody>
               </table>
             </div>
+            <div id="auditPagination" class="pagination"></div>
           </div>
         </article>
       </div>
 
-      <!-- Side Content (Right Column) -->
+      <!-- Right Column: Stats & Operations -->
       <div class="stack">
-        <!-- Runtime Status -->
-        <article class="card">
+        <!-- System Operations -->
+        <article class="card op-card">
           <div class="head">
-            <h2>运行状态</h2>
-            <button id="loadRuntimeBtn" type="button">刷新</button>
+            <h2>系统权限与运维</h2>
           </div>
-          <div class="body">
-            <div class="runtime" id="runtimeBody"></div>
-          </div>
-        </article>
-
-        <!-- Quick Actions -->
-        <article class="card">
-          <div class="head">
-            <h2>快捷操作</h2>
-          </div>
-          <div class="body">
-            <div class="quick">
-              <div class="quick-row">
-                <input id="quickUidInput" type="text" placeholder="输入用户 ID，例如 12345678">
+          <div class="body op-grid">
+            <div class="op-item">
+              <div class="op-info">
+                <span class="op-title">全员公开访问</span>
+                <span class="op-desc" id="publicAccessDesc">当前：正在查询...</span>
               </div>
-              <div class="quick-row">
-                <button class="btn-brand" style="flex:1;" id="quickGrantBtn" type="button">授权</button>
-                <button class="btn-danger" style="flex:1;" id="quickRevokeBtn" type="button">取消</button>
-                <button style="flex:1;" id="quickDetailBtn" type="button">详情</button>
+              <button id="togglePublicBtn" class="btn-brand">切换状态</button>
+            </div>
+            <div class="op-item">
+              <div class="op-info">
+                <span class="op-title">会话安全管理</span>
+                <span class="op-desc">强制所有已登录管理端下线</span>
               </div>
-              <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0; width: 100%;">
-              <div class="quick-row">
-                <button style="flex:1;" id="togglePublicBtn" type="button">切换公开访问</button>
+              <button id="revokeSessionsBtn" class="btn-danger">强制登出</button>
+            </div>
+            <div class="op-item">
+              <div class="op-info">
+                <span class="op-title">快速授权/吊销</span>
               </div>
-              <div class="quick-row">
-                <button class="btn-danger" style="flex:1;" id="revokeSessionsBtn" type="button">强制下线全部会话</button>
-              </div>
+            </div>
+            <div class="quick-row" style="display:flex; gap:8px;">
+                <input id="quickUidInput" type="text" placeholder="输入 UID">
+                <button id="quickGrantBtn" class="btn-brand" title="授权用户">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
+                </button>
+                <button id="quickRevokeBtn" class="btn-danger" title="吊销用户">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+                <button id="quickDetailBtn" title="查看详情">详情</button>
             </div>
           </div>
         </article>
 
-        <!-- Audit Summary -->
+        <!-- Runtime -->
         <article class="card">
           <div class="head">
-            <h2>审计摘要</h2>
-            <button id="loadAuditBtn" type="button">刷新</button>
+            <h2>运行环境状态</h2>
+            <button id="loadRuntimeBtn" type="button">刷新</button>
           </div>
           <div class="body">
-            <div class="rows" id="auditSummaryBody"></div>
-          </div>
-        </article>
-
-        <!-- Recent Exports -->
-        <article class="card">
-          <div class="head">
-            <h2>近期导出记录</h2>
-            <button id="loadExportsBtn" type="button">刷新</button>
-          </div>
-          <div class="body">
-            <div class="list" id="recentExportsBody"></div>
+            <div class="runtime-grid" id="runtimeBody"></div>
           </div>
         </article>
 
         <!-- Alerts -->
         <article class="card">
           <div class="head">
-            <h2>异常告警</h2>
+            <h2>实时异常告警</h2>
             <button id="loadAlertsBtn" type="button">刷新</button>
           </div>
           <div class="body" id="alertsBody"></div>
+        </article>
+
+        <!-- Audit Summary -->
+        <article class="card">
+          <div class="head">
+            <h2>审计统计摘要</h2>
+            <button id="loadAuditBtn" type="button">刷新</button>
+          </div>
+          <div class="body">
+            <div id="auditSummaryBody" style="display:flex; flex-direction:column; gap:12px;"></div>
+          </div>
+        </article>
+
+        <!-- Recent Exports -->
+        <article class="card">
+          <div class="head">
+            <h2>近期文件导出</h2>
+            <button id="loadExportsBtn" type="button">刷新</button>
+          </div>
+          <div class="body list" id="recentExportsBody"></div>
         </article>
       </div>
     </div>
@@ -313,8 +343,8 @@
 
   <dialog id="userDetailModal">
     <div class="modal-head">
-      <strong id="userDetailTitle">用户详情</strong>
-      <button id="closeUserDetailBtn" type="button">关闭</button>
+      <strong id="userDetailTitle">用户资源画像</strong>
+      <button id="closeUserDetailBtn" type="button">关闭窗口</button>
     </div>
     <div class="modal-body" id="userDetailBody"></div>
   </dialog>
@@ -323,31 +353,29 @@
     const qs = (id) => document.getElementById(id);
     const statusText = qs("statusText");
 
-    async function apiGet(path) {
-      const resp = await fetch(path, { credentials: "include" });
-      if (resp.status === 401) {
-        window.location.href = "/admin/login";
-        return null;
-      }
-      const data = await resp.json();
-      if (!resp.ok || !data.ok) throw new Error(data.error || "request_failed");
-      return data.data;
-    }
+    let state = {
+        usersPage: 1,
+        auditPage: 1,
+        limit: 10
+    };
 
-    async function apiPost(path, payload) {
-      const resp = await fetch(path, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload || {})
-      });
-      if (resp.status === 401) {
-        window.location.href = "/admin/login";
-        return null;
+    async function apiRequest(path, options = {}) {
+      try {
+        const resp = await fetch(path, {
+            credentials: "include",
+            ...options
+        });
+        if (resp.status === 401) {
+            window.location.href = "/admin/login";
+            return null;
+        }
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) throw new Error(data.error || "请求失败");
+        return data.data;
+      } catch (e) {
+        setStatus(e.message, "warn");
+        throw e;
       }
-      const data = await resp.json();
-      if (!resp.ok || !data.ok) throw new Error(data.error || "request_failed");
-      return data.data;
     }
 
     function setStatus(text, cls) {
@@ -355,8 +383,231 @@
       statusText.textContent = text;
     }
 
-    function kvRow(label, value) {
-      return `<div class="row"><div class="label">${label}</div><div class="mono">${value ?? "-"}</div></div>`;
+    function renderPagination(containerId, current, total, onPageChange) {
+        const container = qs(containerId);
+        if (total <= 1) {
+            container.innerHTML = "";
+            return;
+        }
+        
+        let html = `<button class="page-btn" ${current === 1 ? 'disabled' : ''} onclick="${onPageChange}(${current - 1})">←</button>`;
+        html += `<span class="page-info">第 ${current} / ${total} 页</span>`;
+        html += `<button class="page-btn" ${current === total ? 'disabled' : ''} onclick="${onPageChange}(${current + 1})">→</button>`;
+        
+        container.innerHTML = html;
+    }
+
+    async function loadOverview() {
+      const data = await apiRequest("/api/v1/system/overview");
+      if (!data) return;
+      qs("mTotalSubs").textContent = data.total_subs;
+      qs("mUsers").textContent = data.authorized_users;
+      qs("mActive").textContent = data.active_24h;
+      qs("mExports").textContent = data.exports_24h;
+    }
+
+    async function loadAuthorizedUsers(page = 1) {
+      const data = await apiRequest(`/api/v1/users/authorized?page=${page}&limit=${state.limit}`);
+      if (!data) return;
+      state.usersPage = data.page;
+      
+      const body = qs("authorizedUsersBody");
+      if (!data.users.length) {
+        body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:40px;">暂无满足条件的授权用户</td></tr>`;
+      } else {
+        body.innerHTML = data.users.map(r => `
+          <tr>
+            <td>
+                <div style="font-weight:700;">${r.identity}</div>
+                <div class="mono" style="color:var(--text-muted)">ID: ${r.uid}</div>
+            </td>
+            <td>
+                ${r.is_owner ? '<span class="badge badge-primary">OWNER</span>' : '<span class="badge">USER</span>'}
+                ${r.is_authorized ? '<span class="badge badge-success">已授权</span>' : '<span class="badge badge-danger">未授权</span>'}
+            </td>
+            <td class="mono">${r.last_seen}</td>
+            <td class="mono">${r.source}</td>
+            <td>
+                <div style="display:flex; gap:6px;">
+                    <button onclick="openUserDetail('${r.uid}')" style="padding:4px 10px; font-size:12px;">详情</button>
+                    ${!r.is_owner ? `<button class="btn-danger" onclick="setUserAccess('${r.uid}', false)" style="padding:4px 10px; font-size:12px;">撤销</button>` : ''}
+                </div>
+            </td>
+          </tr>
+        `).join("");
+      }
+      renderPagination("usersPagination", data.page, data.total_pages, "window._goUsersPage");
+      
+      // Update Public Access Desc
+      qs("publicAccessDesc").innerHTML = `当前：${data.allow_all_users ? '<span style="color:var(--success); font-weight:700;">🟢 全员开放</span>' : '<span style="color:var(--danger); font-weight:700;">🔴 限制访问</span>'}`;
+      window.__allowAllUsers = data.allow_all_users;
+    }
+
+    // Global page handlers for onclick
+    window._goUsersPage = (p) => loadAuthorizedUsers(p);
+    window._goAuditPage = (p) => loadRecentChecks(p);
+
+    async function loadRecentChecks(page = 1) {
+      const q = currentAuditQuery();
+      const data = await apiRequest(`/api/v1/audit/recent-checks?page=${page}&limit=${state.limit}&${q}`);
+      if (!data) return;
+      state.auditPage = page;
+
+      const body = qs("recentChecksBody");
+      if (!data.rows.length) {
+        body.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:40px;">找不到相关的检测记录</td></tr>`;
+      } else {
+        body.innerHTML = data.rows.map(r => {
+          const urls = (r.urls || []).map(u => `<li><a href="${u}" target="_blank" class="mono" style="color:var(--primary); text-decoration:none;">${u}</a></li>`).join("");
+          return `
+            <tr>
+              <td><div style="font-weight:700;">${r.identity}</div></td>
+              <td class="mono">${r.ts}</td>
+              <td><span class="badge badge-primary">${r.source}</span></td>
+              <td><ul style="margin:0; padding-left:16px; font-size:12px;">${urls || "-"}</ul></td>
+            </tr>
+          `;
+        }).join("");
+      }
+      // Calculate total pages for audit
+      const totalPages = Math.ceil(data.total / state.limit) || 1;
+      renderPagination("auditPagination", page, totalPages, "window._goAuditPage");
+    }
+
+    async function loadRuntime() {
+      const data = await apiRequest("/api/v1/system/runtime");
+      if (!data) return;
+      window.__runtimeState = data;
+      qs("runtimeBody").innerHTML = [
+        {k: '运行模式', v: data.run_mode},
+        {k: '运行时长', v: fmtUptime(data.uptime_seconds)},
+        {k: '认证后端', v: data.auth_backend},
+        {k: '全员模式', v: data.allow_all_users ? '已开启' : '已关闭'},
+        {k: '解析引擎', v: data.parser_ready ? '就绪' : '异常'},
+        {k: '存储引擎', v: data.storage_ready ? '就绪' : '异常'}
+      ].map(i => `<div class="runtime-item"><div class="k">${i.k}</div><div class="v">${i.v}</div></div>`).join("");
+    }
+
+    async function loadAlerts() {
+      const data = await apiRequest("/api/v1/audit/alerts");
+      if (!data) return;
+      const el = qs("alertsBody");
+      if (!data.alerts.length) {
+        el.innerHTML = `<div style="text-align:center; color:var(--text-muted); font-size:13px; padding:20px;">系统运行平稳，无异常告警</div>`;
+        return;
+      }
+      el.innerHTML = data.alerts.map(a => `
+        <div class="alert ${a.severity}">
+          <div class="alert-content">
+            <div class="alert-title">[${a.severity.toUpperCase()}] ${a.title}</div>
+            <div class="alert-desc">${a.detail}</div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function loadAuditSummary() {
+      const mode = qs("auditMode").value;
+      const data = await apiRequest(`/api/v1/audit/summary?mode=${encodeURIComponent(mode)}`);
+      if (!data) return;
+      qs("auditSummaryBody").innerHTML = [
+          {l: '当前模式', v: data.title},
+          {l: '24h 检测量', v: data.check_count},
+          {l: '24h 用户数', v: data.user_count},
+          {l: '24h URL 总数', v: data.url_count}
+      ].map(i => `<div style="display:flex; justify-content:space-between; font-size:14px; border-bottom:1px solid var(--border); padding-bottom:8px;">
+        <span style="color:var(--text-muted)">${i.l}</span><span style="font-weight:700;">${i.v}</span></div>`).join("");
+    }
+
+    async function loadRecentExports() {
+      const data = await apiRequest("/api/v1/exports/recent?scope=others&limit=10");
+      if (!data) return;
+      const el = qs("recentExportsBody");
+      if (!data.rows.length) {
+        el.innerHTML = `<div style="padding:10px; color:var(--text-muted); font-size:12px;">无导出记录</div>`;
+        return;
+      }
+      el.innerHTML = data.rows.map(r => `
+        <div style="padding:12px 0; border-bottom:1px solid var(--border);">
+            <div style="font-weight:700; font-size:13px;">${r.identity}</div>
+            <div style="display:flex; justify-content:space-between; margin-top:4px;">
+                <span class="badge badge-primary">${r.fmt}</span>
+                <span class="mono" style="font-size:11px; color:var(--text-muted)">${r.ts}</span>
+            </div>
+            <div class="mono" style="margin-top:4px; font-size:11px; word-break:break-all;">${r.target}</div>
+        </div>
+      `).join("");
+    }
+
+    async function togglePublicAccess() {
+      const current = window.__allowAllUsers;
+      const data = await apiRequest("/api/v1/system/public-access", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ enabled: !current })
+      });
+      setStatus(`成功：${data.enabled ? "开启" : "关闭"}全员访问`, "ok");
+      loadAuthorizedUsers(state.usersPage);
+    }
+
+    async function revokeAllSessions() {
+      if (!confirm("确定要强制注销所有管理员在线会话吗？您自己也会被踢出。")) return;
+      const data = await apiRequest("/api/v1/system/sessions/revoke-all", { method: "POST" });
+      setStatus(`已撤消 ${data.revoked} 个活跃会话`, "ok");
+      setTimeout(() => window.location.href = "/admin/login", 1500);
+    }
+
+    async function setUserAccess(uid, enabled) {
+      await apiRequest("/api/v1/users/access", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ uid, enabled })
+      });
+      setStatus(enabled ? "已授权" : "已撤销授权", "ok");
+      loadAuthorizedUsers(state.usersPage);
+      loadOverview();
+    }
+
+    async function openUserDetail(uid) {
+      const data = await apiRequest(`/api/v1/users/detail?uid=${encodeURIComponent(uid)}`);
+      if (!data) return;
+      qs("userDetailTitle").textContent = `资源画像：${data.identity}`;
+      
+      const subs = (data.subscriptions || []).map(s => `
+        <div style="padding:10px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;">
+            <div style="font-weight:700; font-size:13px;">${s.name}</div>
+            <div class="mono" style="font-size:11px; color:var(--text-muted); margin:4px 0;">${s.url}</div>
+            <div style="font-size:11px;">更新: ${s.updated_at} | 到期: ${s.expire_time}</div>
+        </div>
+      `).join("") || "暂无订阅库数据";
+
+      qs("userDetailBody").innerHTML = `
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px;">
+            <div class="runtime-item"><div class="k">UID</div><div class="v">${data.uid}</div></div>
+            <div class="runtime-item"><div class="k">身份状态</div><div class="v">${data.is_owner ? '管理员' : '普通用户'}</div></div>
+            <div class="runtime-item"><div class="k">订阅总数</div><div class="v">${data.subscription_count}</div></div>
+            <div class="runtime-item"><div class="k">最近活跃</div><div class="v">${data.last_seen}</div></div>
+        </div>
+        <h4>订阅库列表</h4>
+        ${subs}
+      `;
+      qs("userDetailModal").showModal();
+    }
+
+    function currentAuditQuery() {
+      const q = new URLSearchParams();
+      q.set("mode", qs("auditMode").value);
+      const uid = qs("filterUserId").value.trim();
+      const src = qs("filterSource").value.trim();
+      const kw = qs("filterQ").value.trim();
+      const f = qs("filterFrom").value;
+      const t = qs("filterTo").value;
+      if (uid) q.set("user_id", uid);
+      if (src) q.set("source", src);
+      if (kw) q.set("q", kw);
+      if (f) q.set("from", f);
+      if (t) q.set("to", t);
+      return q.toString();
     }
 
     function fmtUptime(seconds) {
@@ -364,258 +615,40 @@
       const d = Math.floor(s / 86400);
       const h = Math.floor((s % 86400) / 3600);
       const m = Math.floor((s % 3600) / 60);
-      return d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m`;
-    }
-
-    function currentAuditQuery() {
-      const q = new URLSearchParams();
-      q.set("mode", qs("auditMode").value);
-      q.set("limit", "100");
-      const userId = qs("filterUserId").value.trim();
-      const source = qs("filterSource").value.trim();
-      const keyword = qs("filterQ").value.trim();
-      const from = qs("filterFrom").value.trim();
-      const to = qs("filterTo").value.trim();
-      if (userId) q.set("user_id", userId);
-      if (source) q.set("source", source);
-      if (keyword) q.set("q", keyword);
-      if (from) q.set("from", from);
-      if (to) q.set("to", to);
-      return q.toString();
-    }
-
-    async function loadOverview() {
-      const data = await apiGet("/api/v1/system/overview");
-      if (!data) return;
-      qs("mTotalSubs").textContent = data.total_subs ?? "-";
-      qs("mUsers").textContent = data.authorized_users ?? "-";
-      qs("mActive").textContent = data.active_24h ?? "-";
-      qs("mExports").textContent = data.exports_24h ?? "-";
-    }
-
-    async function loadRuntime() {
-      const data = await apiGet("/api/v1/system/runtime");
-      if (!data) return;
-      window.__runtimeState = data;
-      qs("runtimeBody").innerHTML = [
-        `<div class="item"><p class="k">运行模式</p><p class="v">${data.run_mode || "-"}</p></div>`,
-        `<div class="item"><p class="k">运行时长</p><p class="v">${fmtUptime(data.uptime_seconds)}</p></div>`,
-        `<div class="item"><p class="k">认证后端</p><p class="v">${data.auth_backend || "-"}</p></div>`,
-        `<div class="item"><p class="k">公开访问</p><p class="v">${data.allow_all_users ? "开启" : "关闭"}</p></div>`,
-        `<div class="item"><p class="k">解析器</p><p class="v">${data.parser_ready ? "已就绪" : "未初始化"}</p></div>`,
-        `<div class="item"><p class="k">存储</p><p class="v">${data.storage_ready ? "已就绪" : "未初始化"}</p></div>`,
-      ].join("");
-    }
-
-    async function loadAuthorizedUsers() {
-      const data = await apiGet("/api/v1/users/authorized");
-      if (!data) return;
-      const rows = data.users || [];
-      const body = qs("authorizedUsersBody");
-      if (!rows.length) {
-        body.innerHTML = `<tr><td colspan="6" class="muted">暂无授权用户</td></tr>`;
-        return;
-      }
-      body.innerHTML = rows.map((r) => `
-        <tr>
-          <td>${r.identity || "-"}</td>
-          <td>${r.is_owner ? "是" : "否"}</td>
-          <td>${r.is_authorized ? "是" : "否"}</td>
-          <td>${r.last_seen || "-"}</td>
-          <td class="mono">${r.source || "-"}</td>
-          <td>
-            <button data-action="detail" data-uid="${r.uid}">详情</button>
-            ${r.is_owner ? "" : `<button data-action="revoke" data-uid="${r.uid}">取消授权</button>`}
-          </td>
-        </tr>
-      `).join("");
-    }
-
-    async function loadRecentChecks() {
-      const data = await apiGet(`/api/v1/audit/recent-checks?${currentAuditQuery()}`);
-      if (!data) return;
-      const rows = data.rows || [];
-      const body = qs("recentChecksBody");
-      if (!rows.length) {
-        body.innerHTML = `<tr><td colspan="4" class="muted">无匹配记录</td></tr>`;
-        return;
-      }
-      body.innerHTML = rows.map((r) => {
-        const urls = (r.urls || []).map((u) => `<li class="mono">${u}</li>`).join("");
-        return `
-          <tr>
-            <td>${r.identity || "-"}</td>
-            <td>${r.ts || "-"}</td>
-            <td class="mono">${r.source || "-"}</td>
-            <td><ul class="url-list">${urls || "<li class='muted'>-</li>"}</ul></td>
-          </tr>
-        `;
-      }).join("");
-    }
-
-    async function loadAlerts() {
-      const data = await apiGet("/api/v1/audit/alerts");
-      if (!data) return;
-      const alerts = data.alerts || [];
-      const el = qs("alertsBody");
-      if (!alerts.length) {
-        el.innerHTML = `<div class="muted">暂无异常告警</div>`;
-        return;
-      }
-      el.innerHTML = alerts.map((a) => `
-        <div class="alert">
-          <div><strong>[${a.severity || "info"}]</strong> ${a.title || "-"}</div>
-          <div class="muted">${a.detail || "-"}</div>
-        </div>
-      `).join("");
-    }
-
-    async function loadAuditSummary() {
-      const mode = qs("auditMode").value;
-      const data = await apiGet(`/api/v1/audit/summary?mode=${encodeURIComponent(mode)}`);
-      if (!data) return;
-      qs("auditSummaryBody").innerHTML =
-        kvRow("模式", data.mode) +
-        kvRow("24h 检测次数", data.check_count) +
-        kvRow("24h 用户数", data.user_count) +
-        kvRow("24h URL 数", data.url_count);
-    }
-
-    async function loadRecentExports() {
-      const data = await apiGet("/api/v1/exports/recent?scope=others&limit=10");
-      if (!data) return;
-      const rows = data.rows || [];
-      const el = qs("recentExportsBody");
-      if (!rows.length) {
-        el.innerHTML = `<div class="muted">暂无导出记录</div>`;
-        return;
-      }
-      el.innerHTML = rows.map((r) =>
-        `<div class="item"><div>${r.identity || "-"}</div><div class="muted">${r.ts || "-"} · ${r.fmt || "-"}</div><div class="mono">${r.target || "-"}</div></div>`
-      ).join("");
-    }
-
-    async function setUserAccess(uid, enabled) {
-      const id = String(uid || "").trim();
-      if (!id) throw new Error("uid_required");
-      await apiPost("/api/v1/users/access", { uid: id, enabled: !!enabled });
-      await Promise.all([loadAuthorizedUsers(), loadOverview()]);
-    }
-
-    async function openUserDetail(uid) {
-      const data = await apiGet(`/api/v1/users/detail?uid=${encodeURIComponent(uid)}`);
-      if (!data) return;
-      qs("userDetailTitle").innerHTML = `用户详情 · ${data.identity || data.uid}`;
-      const checks = (data.recent_checks || []).map((r) => {
-        const urls = (r.urls || []).map((u) => `<li class="mono">${u}</li>`).join("");
-        return `<div class="item"><div>${r.ts || "-"}</div><div class="mono">${r.source || "-"}</div><ul class="url-list">${urls || "<li>-</li>"}</ul></div>`;
-      }).join("") || "<div class='muted'>暂无检测记录</div>";
-      const subs = (data.subscriptions || []).map((s) =>
-        `<div class="item"><div>${s.name || "-"}</div><div class="mono">${s.url || "-"}</div><div class="muted">${s.updated_at || "-"} · 到期: ${s.expire_time || "-"}</div></div>`
-      ).join("") || "<div class='muted'>暂无订阅</div>";
-      qs("userDetailBody").innerHTML =
-        `<div class="card"><div class="body">` +
-        kvRow("UID", data.uid) +
-        kvRow("身份", data.identity || "-") +
-        kvRow("授权", data.is_authorized ? "是" : "否") +
-        kvRow("Owner", data.is_owner ? "是" : "否") +
-        kvRow("最近活跃", data.last_seen || "-") +
-        kvRow("最近来源", data.last_source || "-") +
-        `</div></div>` +
-        `<div class="card"><div class="head"><h2>最近检测</h2></div><div class="body list">${checks}</div></div>` +
-        `<div class="card"><div class="head"><h2>订阅列表</h2></div><div class="body list">${subs}</div></div>`;
-      qs("userDetailModal").showModal();
-    }
-
-    async function togglePublicAccess() {
-      const enabledNow = !!(window.__runtimeState && window.__runtimeState.allow_all_users);
-      const data = await apiPost("/api/v1/system/public-access", { enabled: !enabledNow });
-      setStatus(`公开访问已${data.enabled ? "开启" : "关闭"}`, "ok");
-      await loadRuntime();
-    }
-
-    async function revokeAllSessions() {
-      const data = await apiPost("/api/v1/system/sessions/revoke-all", {});
-      setStatus(`已强制下线会话数: ${data.revoked || 0}`, "ok");
-    }
-
-    function downloadAudit(format) {
-      const q = currentAuditQuery();
-      window.location.href = `/api/v1/audit/export?format=${encodeURIComponent(format)}&${q}`;
+      return d > 0 ? `${d}天 ${h}时 ${m}分` : `${h}时 ${m}分`;
     }
 
     async function refreshAll() {
+      setStatus("数据刷新中...");
       try {
-        setStatus("正在刷新数据...");
         await Promise.all([
           loadOverview(),
           loadRuntime(),
-          loadAuthorizedUsers(),
-          loadRecentChecks(),
+          loadAuthorizedUsers(1),
+          loadRecentChecks(1),
           loadAlerts(),
           loadAuditSummary(),
           loadRecentExports()
         ]);
-        setStatus("数据已更新", "ok");
-      } catch (err) {
-        setStatus("加载失败: " + String(err), "warn");
-      }
+        setStatus("实时数据已同步", "ok");
+      } catch (e) {}
     }
 
-    async function logout() {
-      try {
-        await fetch("/admin/logout", { method: "POST", credentials: "include" });
-      } finally {
-        window.location.href = "/admin/login";
-      }
-    }
-
-    qs("refreshBtn").addEventListener("click", refreshAll);
-    qs("logoutBtn").addEventListener("click", logout);
-    qs("loadRuntimeBtn").addEventListener("click", loadRuntime);
-    qs("loadUsersTableBtn").addEventListener("click", loadAuthorizedUsers);
-    qs("loadChecksBtn").addEventListener("click", async () => {
-      await Promise.all([loadRecentChecks(), loadAuditSummary()]);
-    });
-    qs("loadAlertsBtn").addEventListener("click", loadAlerts);
-    qs("loadAuditBtn").addEventListener("click", loadAuditSummary);
-    qs("loadExportsBtn").addEventListener("click", loadRecentExports);
-    qs("quickGrantBtn").addEventListener("click", async () => {
-      try { await setUserAccess(qs("quickUidInput").value, true); setStatus("授权成功", "ok"); }
-      catch (err) { setStatus("授权失败: " + String(err), "warn"); }
-    });
-    qs("quickRevokeBtn").addEventListener("click", async () => {
-      try { await setUserAccess(qs("quickUidInput").value, false); setStatus("取消授权成功", "ok"); }
-      catch (err) { setStatus("取消授权失败: " + String(err), "warn"); }
-    });
-    qs("quickDetailBtn").addEventListener("click", async () => {
-      try { await openUserDetail(qs("quickUidInput").value); }
-      catch (err) { setStatus("打开详情失败: " + String(err), "warn"); }
-    });
-    qs("togglePublicBtn").addEventListener("click", async () => {
-      try { await togglePublicAccess(); }
-      catch (err) { setStatus("切换公开访问失败: " + String(err), "warn"); }
-    });
-    qs("revokeSessionsBtn").addEventListener("click", async () => {
-      try { await revokeAllSessions(); }
-      catch (err) { setStatus("强制下线失败: " + String(err), "warn"); }
-    });
-    qs("exportCsvBtn").addEventListener("click", () => downloadAudit("csv"));
-    qs("exportJsonBtn").addEventListener("click", () => downloadAudit("json"));
-    qs("closeUserDetailBtn").addEventListener("click", () => qs("userDetailModal").close());
-    qs("authorizedUsersBody").addEventListener("click", async (e) => {
-      const btn = e.target.closest("button[data-action]");
-      if (!btn) return;
-      const uid = btn.getAttribute("data-uid");
-      const action = btn.getAttribute("data-action");
-      if (action === "detail") {
-        await openUserDetail(uid);
-      } else if (action === "revoke") {
-        await setUserAccess(uid, false);
-        setStatus("已取消授权", "ok");
-      }
-    });
-
+    // Events
+    qs("refreshBtn").onclick = refreshAll;
+    qs("logoutBtn").onclick = () => apiRequest("/admin/logout", {method:"POST"}).then(()=>window.location.href="/admin/login");
+    qs("loadUsersTableBtn").onclick = () => loadAuthorizedUsers(state.usersPage);
+    qs("loadChecksBtn").onclick = () => loadRecentChecks(1);
+    qs("exportCsvBtn").onclick = () => window.location.href = `/api/v1/audit/export?format=csv&${currentAuditQuery()}`;
+    qs("exportJsonBtn").onclick = () => window.location.href = `/api/v1/audit/export?format=json&${currentAuditQuery()}`;
+    qs("togglePublicBtn").onclick = togglePublicAccess;
+    qs("revokeSessionsBtn").onclick = revokeAllSessions;
+    qs("quickGrantBtn").onclick = () => setUserAccess(qs("quickUidInput").value, true);
+    qs("quickRevokeBtn").onclick = () => setUserAccess(qs("quickUidInput").value, false);
+    qs("quickDetailBtn").onclick = () => openUserDetail(qs("quickUidInput").value);
+    qs("closeUserDetailBtn").onclick = () => qs("userDetailModal").close();
+    
+    // Auto Refresh
     refreshAll();
   </script>
 </body>

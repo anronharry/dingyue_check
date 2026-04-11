@@ -179,22 +179,32 @@ class AdminService:
             "hidden_users": hidden_users,
         }
 
-    def get_user_list_data(self) -> dict:
+    def get_user_list_data(self, *, page: int = 1, limit: int = 10) -> dict:
         users = self.user_manager.get_all()
-        rows = []
+        all_rows = []
         for uid in sorted(users):
             profile = self.user_profile_service.get_profile(uid) or {}
-            rows.append(
+            all_rows.append(
                 {
                     "uid": uid,
                     "identity": self.user_profile_service.format_user_identity(uid),
                     "is_owner": self.user_manager.is_owner(uid),
+                    "is_authorized": self.access_service.is_authorized_uid(uid),
                     "last_seen": profile.get("last_seen_at", "未知"),
                     "source": str(profile.get("last_source", "-")),
                 }
             )
+        total = len(all_rows)
+        total_pages = max(1, (total + limit - 1) // limit)
+        safe_page = max(1, min(page, total_pages))
+        start = (safe_page - 1) * limit
+        rows = all_rows[start: start + limit]
         return {
             "public_mode": "开启" if self.access_service.is_allow_all_users_enabled() else "关闭",
+            "allow_all_users": self.access_service.is_allow_all_users_enabled(),
+            "total": total,
+            "page": safe_page,
+            "total_pages": total_pages,
             "users": rows,
         }
 
