@@ -5,6 +5,15 @@ import asyncio
 import os
 
 from handlers.commands.admin import create_backup_file, deliver_broadcast, export_subscriptions_file
+from renderers.messages.admin_reports import (
+    render_global_list,
+    render_owner_panel_section_text,
+    render_owner_panel_text,
+    render_recent_exports_summary,
+    render_recent_users_summary,
+    render_usage_audit_summary,
+    render_user_list,
+)
 
 
 def make_audit_callback_handler(
@@ -23,6 +32,37 @@ def make_audit_callback_handler(
     inline_keyboard_button,
     inline_keyboard_markup,
 ):
+    def _owner_panel_data():
+        return admin_service.get_owner_panel_data()
+
+    def _owner_panel_section_data(section: str):
+        return admin_service.get_owner_panel_section_data(section)
+
+    def _owner_panel_text() -> str:
+        total_users, daily_users = admin_service.get_usage_user_counts(include_owner=False)
+        data = admin_service.get_owner_panel_data()
+        return render_owner_panel_text(data, total_users=total_users, daily_users=daily_users)
+
+    def _owner_panel_section_text(section: str) -> str:
+        return render_owner_panel_section_text(section, _owner_panel_section_data(section))
+
+    def _usage_audit_report(mode: str):
+        data = admin_service.get_usage_audit_summary(mode=mode)
+        return render_usage_audit_summary(data), {"mode": data["mode"]}
+
+    def _recent_report(category: str, include_owner: bool):
+        if category == "exports":
+            data = admin_service.get_recent_exports_summary(include_owner=include_owner, limit=10)
+            return render_recent_exports_summary(data), {"scope": data["scope"]}
+        data = admin_service.get_recent_users_summary(include_owner=include_owner, limit=10)
+        return render_recent_users_summary(data), {"scope": data["scope"]}
+
+    def _globallist_report() -> str:
+        return render_global_list(admin_service.get_globallist_data())
+
+    def _user_list_report() -> str:
+        return render_user_list(admin_service.get_user_list_data())
+
     def _panel_keyboard_section(target: str) -> str:
         if target == "maint_ops":
             return "maint_ops"
@@ -33,13 +73,11 @@ def make_audit_callback_handler(
         return target
 
     def _build_panel_text() -> str:
-        total_users, daily_users = admin_service.get_usage_user_counts(include_owner=False)
-        panel_text = admin_service.build_owner_panel_text()
-        return f"{panel_text}\n👤 使用用户: <b>{total_users}</b> | 🕒 24 小时内: <b>{daily_users}</b>"
+        return _owner_panel_text()
 
     async def _render_panel_section(query, section: str) -> None:
         await query.edit_message_text(
-            admin_service.build_owner_panel_section_text(section),
+            _owner_panel_section_text(section),
             parse_mode="HTML",
             reply_markup=build_owner_panel_keyboard(section=_panel_keyboard_section(section)),
         )
@@ -65,8 +103,9 @@ def make_audit_callback_handler(
         else:
             tip = "已关闭公开访问模式。" if changed else "公开访问模式已是关闭状态。"
         await query.answer("已更新")
+        panel = _owner_panel_section_text("maint_access")
         await query.edit_message_text(
-            f"{admin_service.build_owner_panel_section_text('maint_access')}\n\n{tip}",
+            f"{panel}\n\n{tip}",
             parse_mode="HTML",
             reply_markup=build_owner_panel_keyboard(section="maintenance"),
         )
@@ -82,8 +121,9 @@ def make_audit_callback_handler(
             tip = "命令菜单刷新完成。"
         except Exception:
             tip = "命令菜单刷新失败。"
+        panel = _owner_panel_section_text("maint_ops")
         await query.edit_message_text(
-            f"{admin_service.build_owner_panel_section_text('maint_ops')}\n\n{tip}",
+            f"{panel}\n\n{tip}",
             parse_mode="HTML",
             reply_markup=build_owner_panel_keyboard(section="maint_ops"),
         )
@@ -97,8 +137,9 @@ def make_audit_callback_handler(
         store = get_storage()
         ok, export_file, export_name, total = await export_subscriptions_file(store=store, admin_service=admin_service)
         if not ok:
+            panel = _owner_panel_section_text("maint_backup")
             await query.edit_message_text(
-                f"{admin_service.build_owner_panel_section_text('maint_backup')}\n\n导出失败，请稍后重试。",
+                f"{panel}\n\n导出失败，请稍后重试。",
                 parse_mode="HTML",
                 reply_markup=build_owner_panel_keyboard(section="maint_backup"),
             )
@@ -115,8 +156,9 @@ def make_audit_callback_handler(
                 await asyncio.get_event_loop().run_in_executor(None, os.remove, export_file)
             except OSError:
                 pass
+        panel = _owner_panel_section_text("maint_backup")
         await query.edit_message_text(
-            f"{admin_service.build_owner_panel_section_text('maint_backup')}\n\n导出完成，文件已发送。",
+            f"{panel}\n\n导出完成，文件已发送。",
             parse_mode="HTML",
             reply_markup=build_owner_panel_keyboard(section="maint_backup"),
         )
@@ -131,8 +173,9 @@ def make_audit_callback_handler(
         with open(zip_path, "rb") as handle:
             caption = admin_service.build_backup_caption(zip_name=zip_name)
             await query.message.reply_document(document=handle, filename=zip_name, caption=caption, parse_mode="HTML")
+        panel = _owner_panel_section_text("maint_backup")
         await query.edit_message_text(
-            f"{admin_service.build_owner_panel_section_text('maint_backup')}\n\n全量备份已生成并发送。",
+            f"{panel}\n\n全量备份已生成并发送。",
             parse_mode="HTML",
             reply_markup=build_owner_panel_keyboard(section="maint_backup"),
         )
@@ -210,15 +253,16 @@ def make_audit_callback_handler(
         context.user_data.pop("pending_owner_broadcast_text", None)
         context.user_data.pop("awaiting_owner_broadcast", None)
         await query.answer("广播完成")
+        panel = _owner_panel_section_text("maint_ops")
         await query.edit_message_text(
-            f"{admin_service.build_owner_panel_section_text('maint_ops')}\n\n广播完成。\n成功: {success}\n失败: {failed}",
+            f"{panel}\n\n广播完成。\n成功: {success}\n失败: {failed}",
             parse_mode="HTML",
             reply_markup=build_owner_panel_keyboard(section="maint_ops"),
         )
         return True
 
     async def _panel_listusers(query, _context) -> bool:
-        report = admin_service.build_user_list_message() or "当前暂无授权用户"
+        report = _user_list_report_compat()
         await query.edit_message_text(
             report,
             parse_mode="HTML",
@@ -228,55 +272,43 @@ def make_audit_callback_handler(
         return True
 
     async def _panel_audit(query, _context) -> bool:
-        report, paging = admin_service.build_usage_audit_report(mode="others", page=1, page_size=5, view="time")
+        report, payload = _usage_audit_report("others")
         await query.edit_message_text(
             report,
             parse_mode="HTML",
             disable_web_page_preview=True,
-            reply_markup=build_usage_audit_keyboard(
-                mode=paging["mode"],
-                page=paging["page"],
-                total_pages=paging["total_pages"],
-                record_count=len(paging["records"]),
-                view=paging.get("view", "time"),
-            ),
+            reply_markup=build_usage_audit_keyboard(mode=payload["mode"]),
         )
         return True
 
     async def _panel_recentusers(query, _context) -> bool:
-        report, paging = admin_service.build_recent_users_page(include_owner=False, page=1, page_size=5)
+        report, payload = _recent_report("users", include_owner=False)
         await query.edit_message_text(
             report,
             parse_mode="HTML",
             disable_web_page_preview=True,
             reply_markup=build_recent_activity_keyboard(
                 category="users",
-                scope=paging["scope"],
-                page=paging["page"],
-                total_pages=paging["total_pages"],
-                record_count=len(paging["records"]),
+                scope=payload["scope"],
             ),
         )
         return True
 
     async def _panel_recentexports(query, _context) -> bool:
-        report, paging = admin_service.build_recent_exports_page(include_owner=False, page=1, page_size=5)
+        report, payload = _recent_report("exports", include_owner=False)
         await query.edit_message_text(
             report,
             parse_mode="HTML",
             disable_web_page_preview=True,
             reply_markup=build_recent_activity_keyboard(
                 category="exports",
-                scope=paging["scope"],
-                page=paging["page"],
-                total_pages=paging["total_pages"],
-                record_count=len(paging["records"]),
+                scope=payload["scope"],
             ),
         )
         return True
 
     async def _panel_globallist(query, _context) -> bool:
-        report = admin_service.build_globallist_report() or "当前除了管理员外暂无其他用户订阅"
+        report = _globallist_report_compat()
         await query.edit_message_text(
             report,
             parse_mode="HTML",
@@ -330,118 +362,40 @@ def make_audit_callback_handler(
             return True
 
         if action == "audit":
-            await query.answer("加载审计记录...")
-            try:
-                parts = hash_key.split(":")
-                mode = parts[0]
-                page_str = parts[1] if len(parts) >= 2 else "1"
-                view = parts[2] if len(parts) >= 3 else "time"
-                page = int(page_str)
-            except ValueError:
-                mode, page, view = "others", 1, "time"
-            report, paging = admin_service.build_usage_audit_report(mode=mode, page=page, page_size=5, view=view)
+            await query.answer("加载审计汇总...")
+            mode = hash_key.split(":", 1)[0] if hash_key else "others"
+            if mode not in {"others", "owner", "all"}:
+                mode = "others"
+            report, payload = _usage_audit_report(mode)
             await query.edit_message_text(
                 report,
                 parse_mode="HTML",
                 disable_web_page_preview=True,
-                reply_markup=build_usage_audit_keyboard(
-                    mode=paging["mode"],
-                    page=paging["page"],
-                    total_pages=paging["total_pages"],
-                    record_count=len(paging["records"]),
-                    view=paging.get("view", "time"),
-                ),
+                reply_markup=build_usage_audit_keyboard(mode=payload["mode"]),
             )
             return True
 
         if action == "recent":
-            await query.answer("加载最近记录...")
+            await query.answer("加载最近记录汇总...")
             try:
-                category, scope, page_str = hash_key.split(":", 2)
-                page = int(page_str)
+                category, scope = hash_key.split(":", 1)
             except ValueError:
-                category, scope, page = "users", "others", 1
+                category, scope = "users", "others"
             include_owner = scope == "all"
-            if category == "exports":
-                report, paging = admin_service.build_recent_exports_page(include_owner=include_owner, page=page, page_size=5)
-            else:
-                report, paging = admin_service.build_recent_users_page(include_owner=include_owner, page=page, page_size=5)
+            report, payload = _recent_report(category, include_owner=include_owner)
             await query.edit_message_text(
                 report,
                 parse_mode="HTML",
                 disable_web_page_preview=True,
                 reply_markup=build_recent_activity_keyboard(
                     category=category,
-                    scope=paging["scope"],
-                    page=paging["page"],
-                    total_pages=paging["total_pages"],
-                    record_count=len(paging["records"]),
+                    scope=payload["scope"],
                 ),
             )
             return True
 
-        if action == "recent_detail":
-            await query.answer("读取详情信息...")
-            try:
-                category, scope, page_str, index_str = hash_key.split("|", 3)
-                page = int(page_str)
-                detail_index = int(index_str)
-            except ValueError:
-                await query.answer("数据异常", show_alert=True)
-                return True
-            include_owner = scope == "all"
-            if category == "exports":
-                detail_text = admin_service.build_recent_exports_detail(include_owner=include_owner, page=page, page_size=5, detail_index=detail_index)
-                _, paging = admin_service.build_recent_exports_page(include_owner=include_owner, page=page, page_size=5)
-            else:
-                detail_text = admin_service.build_recent_users_detail(include_owner=include_owner, page=page, page_size=5, detail_index=detail_index)
-                _, paging = admin_service.build_recent_users_page(include_owner=include_owner, page=page, page_size=5)
-            await query.edit_message_text(
-                detail_text,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-                reply_markup=inline_keyboard_markup(
-                    [
-                        [inline_keyboard_button("返回列表", callback_data=f"recent:{category}:{scope}:{page}")],
-                        [
-                            inline_keyboard_button("上一页", callback_data=f"recent:{category}:{scope}:{max(1, page - 1)}"),
-                            inline_keyboard_button("下一页", callback_data=f"recent:{category}:{scope}:{min(paging['total_pages'], page + 1)}"),
-                        ],
-                        [inline_keyboard_button("返回控制台", callback_data="panel:root")],
-                    ]
-                ),
-            )
-            return True
 
-        try:
-            await query.answer("读取详情信息...")
-            parts = hash_key.split("|")
-            mode = parts[0]
-            page_str = parts[1] if len(parts) >= 2 else "1"
-            index_str = parts[2] if len(parts) >= 3 else "0"
-            view = parts[3] if len(parts) >= 4 else "time"
-            page = int(page_str)
-            detail_index = int(index_str)
-        except ValueError:
-            await query.answer("数据异常", show_alert=True)
-            return True
-        detail_text = admin_service.build_usage_audit_detail(mode=mode, page=page, page_size=5, detail_index=detail_index)
-        _, paging = admin_service.build_usage_audit_report(mode=mode, page=page, page_size=5, view=view)
-        await query.edit_message_text(
-            detail_text,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-            reply_markup=inline_keyboard_markup(
-                [
-                    [inline_keyboard_button("返回审计列表", callback_data=f"audit:{mode}:{page}:{view}")],
-                    [
-                        inline_keyboard_button("上一页", callback_data=f"audit:{mode}:{max(1, page - 1)}:{view}"),
-                        inline_keyboard_button("下一页", callback_data=f"audit:{mode}:{min(paging['total_pages'], page + 1)}:{view}"),
-                    ],
-                    [inline_keyboard_button("返回控制台", callback_data="panel:root")],
-                ]
-            ),
-        )
+        await query.answer("明细页已下线，请使用汇总视图。", show_alert=True)
         return True
 
     return handle_callback

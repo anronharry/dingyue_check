@@ -4,7 +4,9 @@ from __future__ import annotations
 import asyncio
 import html
 import time
-from datetime import datetime
+
+from core.models import BatchCheckResult, SubscriptionEntity
+from renderers.messages.admin_reports import render_subscription_check_report
 
 
 def make_check_command(
@@ -20,6 +22,8 @@ def make_check_command(
     logger,
     subscription_check_service=None,
 ):
+    del is_owner, make_sub_keyboard
+
     async def check_command(update, context):
         if not is_authorized(update):
             await send_no_permission_msg(update)
@@ -72,22 +76,20 @@ def make_check_command(
                     remaining = result.get("remaining")
                     if remaining is not None and remaining <= 0:
                         raise Exception("当前订阅流量已完全耗尽（剩余 0 B）")
-                    res = {
-                        "url": url,
-                        "name": result.get("name", "未知"),
-                        "remaining": remaining if remaining is not None else 0,
-                        "expire_time": result.get("expire_time"),
-                        "status": "success",
-                    }
+                    res = SubscriptionEntity.from_parse_result(
+                        url=url,
+                        result=result,
+                        owner_uid=data.get("owner_uid", uid),
+                    )
                 except Exception as exc:
                     logger.error("检测失败 %s: %s", url, exc)
                     store.mark_check_failed(url, str(exc), operator_uid=uid, require_owner=True)
-                    res = {
-                        "url": url,
-                        "name": data.get("name", "未知"),
-                        "status": "failed",
-                        "error": str(exc),
-                    }
+                    res = SubscriptionEntity.from_failure(
+                        url=url,
+                        name=data.get("name", "未知"),
+                        error=str(exc),
+                        owner_uid=data.get("owner_uid", uid),
+                    )
 
                 completed_count += 1
                 current_time = time.time()
@@ -103,78 +105,12 @@ def make_check_command(
         results = await asyncio.gather(*[check_one(url, data) for url, data in subscriptions.items()])
         store.end_batch(save=True)
 
+        batch = BatchCheckResult(entries=results)
+        final_report = render_subscription_check_report(batch=batch, format_traffic=format_traffic)
         try:
-            await progress_msg.delete()
+            await progress_msg.edit_text(final_report, parse_mode="HTML")
         except Exception:
-            pass
-
-        success_results = [r for r in results if r["status"] == "success"]
-        failed_results = [r for r in results if r["status"] == "failed"]
-        warning_results = []
-        normal_results = []
-
-        for item in success_results:
-            remaining = item.get("remaining", 0)
-            expire_time = item.get("expire_time") or ""
-            is_low_traffic = remaining is not None and remaining > 0 and remaining < 5 * 1024 * 1024 * 1024
-            is_expiring = False
-            if expire_time:
-                try:
-                    expire_dt = datetime.strptime(expire_time, "%Y-%m-%d %H:%M:%S")
-                    is_expiring = (expire_dt - datetime.now()).total_seconds() <= 3 * 24 * 3600
-                except Exception:
-                    is_expiring = False
-            if is_low_traffic or is_expiring:
-                warning_results.append(item)
-            else:
-                normal_results.append(item)
-
-        report = (
-            f"<b>📊 订阅检测结果</b>\n\n"
-            f"总计: {len(results)}\n"
-            f"✅ 正常: {len(normal_results)}\n"
-            f"⚠️ 需关注: {len(warning_results)}\n"
-            f"❌ 失效: {len(failed_results)}\n"
-            + "—" * 20
-            + "\n"
-        )
-
-        if warning_results:
-            report += "\n<b>⚠️ 需关注的订阅</b>\n"
-            for item in warning_results:
-                line = f"\n<b>{html.escape(item['name'])}</b>"
-                if item.get("remaining") is not None:
-                    line += f"\n剩余: {format_traffic(item['remaining'])}"
-                if item.get("expire_time"):
-                    line += f" | 到期: {item['expire_time']}"
-                line += f"\n<code>{item['url']}</code>\n"
-                report += line
-
-        if failed_results:
-            report += "\n<b>❌ 已失效并自动清理</b>\n"
-            for item in failed_results:
-                report += (
-                    f"\n<b>{html.escape(item['name'])}</b>\n"
-                    f"<code>{item['url']}</code>\n"
-                    f"原因：{html.escape(str(item.get('error', '未知'))[:100])}\n"
-                )
-
-        await update.message.reply_text(report, parse_mode="HTML")
-
-        for item in success_results:
-            remaining = format_traffic(item["remaining"])
-            url = item["url"]
-            safe_name = html.escape(item["name"])
-            prefix = "⚠️" if item in warning_results else "✅"
-            msg = f"<b>{prefix} {safe_name}</b>\n剩余: {remaining}"
-            if item.get("expire_time"):
-                msg += f" | 到期: {item['expire_time']}"
-            msg += f"\n<code>{url}</code>"
-            await update.message.reply_text(
-                msg,
-                parse_mode="HTML",
-                reply_markup=make_sub_keyboard(url, owner_mode=is_owner(update)),
-            )
+            await update.message.reply_text(final_report, parse_mode="HTML")
 
     return check_command
 
@@ -210,7 +146,7 @@ def make_list_command(
 
         async def send_sub_item(url, data, tag_label=""):
             label = f"{tag_label}" if tag_label else "📦 未分组"
-            msg = f"{label} — <b>{data['name']}</b>\n<code>{url}</code>"
+            msg = f"{label} — <b>{html.escape(data.get('name', '未命名'))}</b>\n<code>{html.escape(url)}</code>"
             keyboard = [[
                 telegram_inline_button(button_labels["recheck"], callback_data=get_short_callback_data("recheck", url)),
                 telegram_inline_button(button_labels["tag"], callback_data=get_short_callback_data("tag", url)),
