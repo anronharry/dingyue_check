@@ -3,232 +3,246 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>运维控制台</title>
+  <title>Owner 运维控制台</title>
   <style>
     :root {
-      --bg: #f1f1f1;
-      --surface: #ffffff;
-      --surface-2: #f7f7f7;
-      --line: #dadada;
-      --ink: #121212;
-      --muted: #666666;
-      --ok: #0d7a40;
-      --warn: #b42323;
-      --shadow: 0 18px 40px rgba(0, 0, 0, 0.08);
+      --bg: #f2f2f2;
+      --surface: #fff;
+      --line: #d9d9d9;
+      --ink: #101010;
+      --muted: #666;
+      --ok: #0c7b3d;
+      --warn: #b42424;
     }
     * { box-sizing: border-box; }
-    html, body { height: 100%; }
     body {
       margin: 0;
       color: var(--ink);
       font-family: "IBM Plex Sans", "Noto Sans SC", "Segoe UI", sans-serif;
-      background:
-        radial-gradient(circle at 8% 12%, #ffffff 0, #ececec 32%, transparent 60%),
-        radial-gradient(circle at 92% 88%, #ffffff 0, #ececec 38%, transparent 66%),
-        linear-gradient(130deg, #f8f8f8, #ececec);
+      background: linear-gradient(135deg, #f8f8f8, #ececec);
     }
     .app {
-      max-width: 1240px;
+      max-width: 1380px;
       margin: 0 auto;
-      padding: 16px;
-      animation: fadeIn .35s ease;
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .topbar {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      align-items: center;
-      gap: 10px;
       padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.84);
-      backdrop-filter: blur(8px);
-      box-shadow: var(--shadow);
-      margin-bottom: 12px;
+      display: grid;
+      gap: 10px;
     }
-    h1 {
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .head {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .head h2 {
       margin: 0;
-      font-size: clamp(24px, 3vw, 32px);
-      letter-spacing: -0.3px;
+      font-size: 15px;
+    }
+    .body { padding: 10px 12px; }
+    .top h1 {
+      margin: 0;
+      font-size: clamp(22px, 3vw, 30px);
+      letter-spacing: -0.2px;
     }
     .sub {
       margin-top: 4px;
-      color: var(--muted);
       font-size: 12px;
+      color: var(--muted);
     }
-    .actions {
-      display: inline-flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-    button, select {
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    button, select, input {
       border: 1px solid var(--line);
-      border-radius: 11px;
-      padding: 9px 12px;
-      font-size: 13px;
+      border-radius: 10px;
+      padding: 8px 10px;
       background: #fff;
       color: var(--ink);
+      font-size: 13px;
     }
     button { cursor: pointer; }
     .btn-main {
       border-color: #000;
-      background: #0f0f0f;
+      background: #111;
       color: #fff;
       font-weight: 600;
     }
-    .btn-main:hover { background: #232323; }
     .status {
-      margin: 8px 0 12px;
-      padding: 10px 12px;
       border: 1px dashed var(--line);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.65);
-      color: var(--muted);
+      border-radius: 11px;
+      padding: 10px 12px;
+      background: #fff;
       font-size: 13px;
+      color: var(--muted);
     }
     .ok { color: var(--ok); }
     .warn { color: var(--warn); }
-
     .metrics {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-      margin-bottom: 12px;
+      gap: 8px;
     }
     .metric {
-      position: relative;
       border: 1px solid var(--line);
-      border-radius: 14px;
-      background: linear-gradient(180deg, #ffffff, #f8f8f8);
-      padding: 12px;
-      min-height: 102px;
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
-      overflow: hidden;
+      border-radius: 11px;
+      padding: 10px;
+      background: #fff;
     }
-    .metric::after {
-      content: "";
-      position: absolute;
-      width: 90px;
-      height: 90px;
-      right: -26px;
-      bottom: -36px;
-      border-radius: 50%;
-      border: 1px solid #e8e8e8;
-      background: radial-gradient(circle, #ffffff, #f2f2f2);
-    }
-    .metric .k {
-      margin: 0;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .metric .v {
-      margin: 10px 0 0;
-      font-size: clamp(24px, 3vw, 30px);
-      font-weight: 700;
-      letter-spacing: -0.4px;
-    }
-
-    .grid {
+    .metric .k { margin: 0; font-size: 12px; color: var(--muted); }
+    .metric .v { margin: 8px 0 0; font-size: 28px; font-weight: 700; }
+    .layout {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1.35fr 1fr;
       gap: 10px;
     }
-    .panel {
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      background: var(--surface);
-      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
-      min-height: 230px;
-      overflow: hidden;
-    }
-    .panel-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    .stack { display: grid; gap: 10px; }
+    .runtime {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
-      padding: 12px;
-      background: linear-gradient(180deg, #ffffff, #f5f5f5);
+    }
+    .runtime .item {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px;
+      background: #fafafa;
+    }
+    .runtime .k { margin: 0; font-size: 12px; color: var(--muted); }
+    .runtime .v { margin: 6px 0 0; font-size: 13px; font-weight: 600; }
+    .quick {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .quick .grow { width: 100%; }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
       border-bottom: 1px solid var(--line);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
     }
-    .panel h2 {
+    th { background: #f8f8f8; color: var(--muted); }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      word-break: break-all;
+      white-space: normal;
+    }
+    .url-list {
       margin: 0;
-      font-size: 15px;
-      letter-spacing: 0.1px;
+      padding-left: 16px;
+      min-width: 380px;
+      display: grid;
+      gap: 4px;
     }
-    .panel-body { padding: 0 12px 10px; }
+    .filters {
+      display: grid;
+      grid-template-columns: 110px 120px 120px 1fr 180px 180px auto;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
     .rows { border-top: 1px solid var(--line); }
     .row {
       display: grid;
-      grid-template-columns: 130px 1fr;
+      grid-template-columns: 120px 1fr;
       gap: 8px;
-      border-bottom: 1px solid var(--line);
       padding: 8px 0;
+      border-bottom: 1px solid var(--line);
       font-size: 13px;
     }
     .label { color: var(--muted); }
     .list .item {
       border-bottom: 1px solid var(--line);
-      padding: 9px 0;
-      font-size: 13px;
+      padding: 8px 0;
       display: grid;
       gap: 3px;
-    }
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      word-break: break-all;
-    }
-    .muted { color: var(--muted); }
-    .empty {
-      color: var(--muted);
       font-size: 13px;
-      padding: 10px 0;
     }
-    @media (max-width: 980px) {
+    .alert {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px;
+      background: #fafafa;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .alert high { color: var(--warn); }
+    .muted { color: var(--muted); }
+    dialog {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0;
+      width: min(980px, calc(100vw - 20px));
+      max-height: 86vh;
+      overflow: hidden;
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, 0.34); }
+    .modal-head {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-body {
+      padding: 10px 12px;
+      overflow: auto;
+      max-height: calc(86vh - 52px);
+      display: grid;
+      gap: 10px;
+    }
+    @media (max-width: 1180px) {
+      .layout { grid-template-columns: 1fr; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .grid { grid-template-columns: 1fr; }
+      .runtime { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
-    @media (max-width: 700px) {
-      .topbar {
-        grid-template-columns: 1fr;
-      }
-      .actions {
-        justify-content: stretch;
-      }
-      .actions button {
-        flex: 1;
-      }
+    @media (max-width: 720px) {
       .metrics { grid-template-columns: 1fr; }
-      .row {
-        grid-template-columns: 1fr;
-        gap: 2px;
-      }
-      .panel { min-height: 0; }
-      .panel-head {
-        flex-direction: column;
-        align-items: stretch;
-      }
+      .runtime { grid-template-columns: 1fr; }
+      .quick { grid-template-columns: 1fr 1fr; }
+      .quick .grow { grid-column: 1 / -1; }
+      .url-list { min-width: 220px; }
+      .row { grid-template-columns: 1fr; gap: 3px; }
     }
   </style>
 </head>
 <body>
   <main class="app">
-    <section class="topbar">
-      <div>
-        <h1>运维控制台</h1>
-        <div class="sub">黑白简洁风格 · 自适应布局 · 核心功能完整保留</div>
+    <section class="card top">
+      <div class="head">
+        <div>
+          <h1>Owner 运维控制台</h1>
+          <div class="sub">用户详情 · 快速操作 · 审计筛选 · 异常告警 · 导出</div>
+        </div>
+        <div class="actions">
+          <button id="refreshBtn" type="button">刷新全部</button>
+          <button class="btn-main" id="logoutBtn" type="button">退出</button>
+        </div>
       </div>
-      <div class="actions">
-        <button id="refreshBtn" type="button">刷新数据</button>
-        <button class="btn-main" id="logoutBtn" type="button">退出登录</button>
+      <div class="body">
+        <div class="status" id="statusText">正在加载...</div>
       </div>
     </section>
-
-    <div class="status" id="statusText">正在加载...</div>
 
     <section class="metrics">
       <article class="metric"><p class="k">总订阅</p><p class="v" id="mTotalSubs">-</p></article>
@@ -237,61 +251,131 @@
       <article class="metric"><p class="k">24h 导出</p><p class="v" id="mExports">-</p></article>
     </section>
 
-    <section class="grid">
-      <article class="panel">
-        <div class="panel-head">
-          <h2>审计摘要</h2>
-          <div>
-            <select id="auditMode">
-              <option value="others">others</option>
-              <option value="owner">owner</option>
-              <option value="all">all</option>
-            </select>
-            <button id="loadAuditBtn" type="button">加载</button>
+    <section class="layout">
+      <section class="stack">
+        <article class="card">
+          <div class="head">
+            <h2>运行状态</h2>
+            <button id="loadRuntimeBtn" type="button">刷新</button>
           </div>
-        </div>
-        <div class="panel-body">
-          <div class="rows" id="auditSummaryBody"></div>
-        </div>
-      </article>
-
-      <article class="panel">
-        <div class="panel-head">
-          <h2>近期活跃用户</h2>
-          <div>
-            <select id="scopeMode">
-              <option value="others">others</option>
-              <option value="all">all</option>
-            </select>
-            <button id="loadUsersBtn" type="button">加载</button>
+          <div class="body">
+            <div class="runtime" id="runtimeBody"></div>
           </div>
-        </div>
-        <div class="panel-body">
-          <div class="list" id="recentUsersBody"></div>
-        </div>
-      </article>
+        </article>
 
-      <article class="panel">
-        <div class="panel-head">
-          <h2>近期导出记录</h2>
-          <button id="loadExportsBtn" type="button">加载</button>
-        </div>
-        <div class="panel-body">
-          <div class="list" id="recentExportsBody"></div>
-        </div>
-      </article>
+        <article class="card">
+          <div class="head"><h2>快捷操作</h2></div>
+          <div class="body">
+            <div class="quick">
+              <input class="grow" id="quickUidInput" type="text" placeholder="输入用户 ID，例如 12345678">
+              <button id="quickGrantBtn" type="button">授权</button>
+              <button id="quickRevokeBtn" type="button">取消授权</button>
+              <button id="quickDetailBtn" type="button">用户详情</button>
+            </div>
+            <div style="margin-top:8px" class="actions">
+              <button id="togglePublicBtn" type="button">切换公开访问</button>
+              <button id="revokeSessionsBtn" type="button">强制下线全部会话</button>
+            </div>
+          </div>
+        </article>
 
-      <article class="panel">
-        <div class="panel-head">
-          <h2>全局订阅分布</h2>
-          <button id="loadGlobalBtn" type="button">加载</button>
-        </div>
-        <div class="panel-body">
-          <div class="list" id="globalSubsBody"></div>
-        </div>
-      </article>
+        <article class="card">
+          <div class="head">
+            <h2>授权用户列表</h2>
+            <button id="loadUsersTableBtn" type="button">刷新</button>
+          </div>
+          <div class="body">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>Owner</th>
+                    <th>授权</th>
+                    <th>最近活跃</th>
+                    <th>来源</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="authorizedUsersBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="head"><h2>异常告警</h2><button id="loadAlertsBtn" type="button">刷新</button></div>
+          <div class="body" id="alertsBody"></div>
+        </article>
+      </section>
+
+      <section class="stack">
+        <article class="card">
+          <div class="head"><h2>检测审计（可筛选/导出）</h2></div>
+          <div class="body">
+            <div class="filters">
+              <select id="auditMode">
+                <option value="others">others</option>
+                <option value="owner">owner</option>
+                <option value="all">all</option>
+              </select>
+              <input id="filterUserId" type="text" placeholder="user_id">
+              <input id="filterSource" type="text" placeholder="source contains">
+              <input id="filterQ" type="text" placeholder="关键词：用户/链接/来源">
+              <input id="filterFrom" type="text" placeholder="起始时间 YYYY-MM-DD">
+              <input id="filterTo" type="text" placeholder="结束时间 YYYY-MM-DD">
+              <div class="actions">
+                <button id="loadChecksBtn" type="button">查询</button>
+                <button id="exportCsvBtn" type="button">导出 CSV</button>
+                <button id="exportJsonBtn" type="button">导出 JSON</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户</th>
+                    <th>时间</th>
+                    <th>来源</th>
+                    <th>URL</th>
+                  </tr>
+                </thead>
+                <tbody id="recentChecksBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="head">
+            <h2>审计摘要</h2>
+            <button id="loadAuditBtn" type="button">刷新</button>
+          </div>
+          <div class="body">
+            <div class="rows" id="auditSummaryBody"></div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="head">
+            <h2>近期导出记录</h2>
+            <button id="loadExportsBtn" type="button">刷新</button>
+          </div>
+          <div class="body">
+            <div class="list" id="recentExportsBody"></div>
+          </div>
+        </article>
+      </section>
     </section>
   </main>
+
+  <dialog id="userDetailModal">
+    <div class="modal-head">
+      <strong id="userDetailTitle">用户详情</strong>
+      <button id="closeUserDetailBtn" type="button">关闭</button>
+    </div>
+    <div class="modal-body" id="userDetailBody"></div>
+  </dialog>
 
   <script>
     const qs = (id) => document.getElementById(id);
@@ -308,17 +392,54 @@
       return data.data;
     }
 
+    async function apiPost(path, payload) {
+      const resp = await fetch(path, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {})
+      });
+      if (resp.status === 401) {
+        window.location.href = "/admin/login";
+        return null;
+      }
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || "request_failed");
+      return data.data;
+    }
+
     function setStatus(text, cls) {
       statusText.className = "status " + (cls || "");
       statusText.textContent = text;
     }
 
-    function setEmpty(el, text = "暂无数据") {
-      el.innerHTML = `<div class="empty">${text}</div>`;
-    }
-
     function kvRow(label, value) {
       return `<div class="row"><div class="label">${label}</div><div class="mono">${value ?? "-"}</div></div>`;
+    }
+
+    function fmtUptime(seconds) {
+      const s = Math.max(0, Number(seconds || 0));
+      const d = Math.floor(s / 86400);
+      const h = Math.floor((s % 86400) / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      return d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m`;
+    }
+
+    function currentAuditQuery() {
+      const q = new URLSearchParams();
+      q.set("mode", qs("auditMode").value);
+      q.set("limit", "100");
+      const userId = qs("filterUserId").value.trim();
+      const source = qs("filterSource").value.trim();
+      const keyword = qs("filterQ").value.trim();
+      const from = qs("filterFrom").value.trim();
+      const to = qs("filterTo").value.trim();
+      if (userId) q.set("user_id", userId);
+      if (source) q.set("source", source);
+      if (keyword) q.set("q", keyword);
+      if (from) q.set("from", from);
+      if (to) q.set("to", to);
+      return q.toString();
     }
 
     async function loadOverview() {
@@ -330,59 +451,169 @@
       qs("mExports").textContent = data.exports_24h ?? "-";
     }
 
-    async function loadAudit() {
+    async function loadRuntime() {
+      const data = await apiGet("/api/v1/system/runtime");
+      if (!data) return;
+      window.__runtimeState = data;
+      qs("runtimeBody").innerHTML = [
+        `<div class="item"><p class="k">运行模式</p><p class="v">${data.run_mode || "-"}</p></div>`,
+        `<div class="item"><p class="k">运行时长</p><p class="v">${fmtUptime(data.uptime_seconds)}</p></div>`,
+        `<div class="item"><p class="k">认证后端</p><p class="v">${data.auth_backend || "-"}</p></div>`,
+        `<div class="item"><p class="k">公开访问</p><p class="v">${data.allow_all_users ? "开启" : "关闭"}</p></div>`,
+        `<div class="item"><p class="k">解析器</p><p class="v">${data.parser_ready ? "已就绪" : "未初始化"}</p></div>`,
+        `<div class="item"><p class="k">存储</p><p class="v">${data.storage_ready ? "已就绪" : "未初始化"}</p></div>`,
+      ].join("");
+    }
+
+    async function loadAuthorizedUsers() {
+      const data = await apiGet("/api/v1/users/authorized");
+      if (!data) return;
+      const rows = data.users || [];
+      const body = qs("authorizedUsersBody");
+      if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="6" class="muted">暂无授权用户</td></tr>`;
+        return;
+      }
+      body.innerHTML = rows.map((r) => `
+        <tr>
+          <td>${r.identity || "-"}</td>
+          <td>${r.is_owner ? "是" : "否"}</td>
+          <td>${r.is_authorized ? "是" : "否"}</td>
+          <td>${r.last_seen || "-"}</td>
+          <td class="mono">${r.source || "-"}</td>
+          <td>
+            <button data-action="detail" data-uid="${r.uid}">详情</button>
+            ${r.is_owner ? "" : `<button data-action="revoke" data-uid="${r.uid}">取消授权</button>`}
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadRecentChecks() {
+      const data = await apiGet(`/api/v1/audit/recent-checks?${currentAuditQuery()}`);
+      if (!data) return;
+      const rows = data.rows || [];
+      const body = qs("recentChecksBody");
+      if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="4" class="muted">无匹配记录</td></tr>`;
+        return;
+      }
+      body.innerHTML = rows.map((r) => {
+        const urls = (r.urls || []).map((u) => `<li class="mono">${u}</li>`).join("");
+        return `
+          <tr>
+            <td>${r.identity || "-"}</td>
+            <td>${r.ts || "-"}</td>
+            <td class="mono">${r.source || "-"}</td>
+            <td><ul class="url-list">${urls || "<li class='muted'>-</li>"}</ul></td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    async function loadAlerts() {
+      const data = await apiGet("/api/v1/audit/alerts");
+      if (!data) return;
+      const alerts = data.alerts || [];
+      const el = qs("alertsBody");
+      if (!alerts.length) {
+        el.innerHTML = `<div class="muted">暂无异常告警</div>`;
+        return;
+      }
+      el.innerHTML = alerts.map((a) => `
+        <div class="alert">
+          <div><strong>[${a.severity || "info"}]</strong> ${a.title || "-"}</div>
+          <div class="muted">${a.detail || "-"}</div>
+        </div>
+      `).join("");
+    }
+
+    async function loadAuditSummary() {
       const mode = qs("auditMode").value;
       const data = await apiGet(`/api/v1/audit/summary?mode=${encodeURIComponent(mode)}`);
       if (!data) return;
-      const el = qs("auditSummaryBody");
-      el.innerHTML =
+      qs("auditSummaryBody").innerHTML =
         kvRow("模式", data.mode) +
         kvRow("24h 检测次数", data.check_count) +
         kvRow("24h 用户数", data.user_count) +
         kvRow("24h URL 数", data.url_count);
     }
 
-    async function loadRecentUsers() {
-      const scope = qs("scopeMode").value;
-      const data = await apiGet(`/api/v1/users/recent?scope=${encodeURIComponent(scope)}&limit=10`);
-      if (!data) return;
-      const el = qs("recentUsersBody");
-      const rows = data.rows || [];
-      if (!rows.length) return setEmpty(el);
-      el.innerHTML = rows.map((r) =>
-        `<div class="item"><div>${r.identity || "-"}</div><div class="muted">${r.last_seen || "-"}</div><div class="mono">${r.source || "-"}</div></div>`
-      ).join("");
-    }
-
     async function loadRecentExports() {
-      const scope = qs("scopeMode").value;
-      const data = await apiGet(`/api/v1/exports/recent?scope=${encodeURIComponent(scope)}&limit=10`);
+      const data = await apiGet("/api/v1/exports/recent?scope=others&limit=10");
       if (!data) return;
-      const el = qs("recentExportsBody");
       const rows = data.rows || [];
-      if (!rows.length) return setEmpty(el);
+      const el = qs("recentExportsBody");
+      if (!rows.length) {
+        el.innerHTML = `<div class="muted">暂无导出记录</div>`;
+        return;
+      }
       el.innerHTML = rows.map((r) =>
         `<div class="item"><div>${r.identity || "-"}</div><div class="muted">${r.ts || "-"} · ${r.fmt || "-"}</div><div class="mono">${r.target || "-"}</div></div>`
       ).join("");
     }
 
-    async function loadGlobal() {
-      const data = await apiGet("/api/v1/subscriptions/global?max_users=10&max_subs_per_user=2");
+    async function setUserAccess(uid, enabled) {
+      const id = String(uid || "").trim();
+      if (!id) throw new Error("uid_required");
+      await apiPost("/api/v1/users/access", { uid: id, enabled: !!enabled });
+      await Promise.all([loadAuthorizedUsers(), loadOverview()]);
+    }
+
+    async function openUserDetail(uid) {
+      const data = await apiGet(`/api/v1/users/detail?uid=${encodeURIComponent(uid)}`);
       if (!data) return;
-      const el = qs("globalSubsBody");
-      const rows = data.rows || [];
-      if (!rows.length) return setEmpty(el);
-      el.innerHTML = rows.map((r) => {
-        const subs = (r.subs || []).map((s) => s.name).join(", ");
-        return `<div class="item"><div>${r.user_text || r.uid || "-"}</div><div class="muted">订阅数: ${r.count || 0}</div><div class="mono">${subs || "-"}</div></div>`;
-      }).join("");
+      qs("userDetailTitle").innerHTML = `用户详情 · ${data.identity || data.uid}`;
+      const checks = (data.recent_checks || []).map((r) => {
+        const urls = (r.urls || []).map((u) => `<li class="mono">${u}</li>`).join("");
+        return `<div class="item"><div>${r.ts || "-"}</div><div class="mono">${r.source || "-"}</div><ul class="url-list">${urls || "<li>-</li>"}</ul></div>`;
+      }).join("") || "<div class='muted'>暂无检测记录</div>";
+      const subs = (data.subscriptions || []).map((s) =>
+        `<div class="item"><div>${s.name || "-"}</div><div class="mono">${s.url || "-"}</div><div class="muted">${s.updated_at || "-"} · 到期: ${s.expire_time || "-"}</div></div>`
+      ).join("") || "<div class='muted'>暂无订阅</div>";
+      qs("userDetailBody").innerHTML =
+        `<div class="card"><div class="body">` +
+        kvRow("UID", data.uid) +
+        kvRow("身份", data.identity || "-") +
+        kvRow("授权", data.is_authorized ? "是" : "否") +
+        kvRow("Owner", data.is_owner ? "是" : "否") +
+        kvRow("最近活跃", data.last_seen || "-") +
+        kvRow("最近来源", data.last_source || "-") +
+        `</div></div>` +
+        `<div class="card"><div class="head"><h2>最近检测</h2></div><div class="body list">${checks}</div></div>` +
+        `<div class="card"><div class="head"><h2>订阅列表</h2></div><div class="body list">${subs}</div></div>`;
+      qs("userDetailModal").showModal();
+    }
+
+    async function togglePublicAccess() {
+      const enabledNow = !!(window.__runtimeState && window.__runtimeState.allow_all_users);
+      const data = await apiPost("/api/v1/system/public-access", { enabled: !enabledNow });
+      setStatus(`公开访问已${data.enabled ? "开启" : "关闭"}`, "ok");
+      await loadRuntime();
+    }
+
+    async function revokeAllSessions() {
+      const data = await apiPost("/api/v1/system/sessions/revoke-all", {});
+      setStatus(`已强制下线会话数: ${data.revoked || 0}`, "ok");
+    }
+
+    function downloadAudit(format) {
+      const q = currentAuditQuery();
+      window.location.href = `/api/v1/audit/export?format=${encodeURIComponent(format)}&${q}`;
     }
 
     async function refreshAll() {
       try {
         setStatus("正在刷新数据...");
-        await loadOverview();
-        await Promise.all([loadAudit(), loadRecentUsers(), loadRecentExports(), loadGlobal()]);
+        await Promise.all([
+          loadOverview(),
+          loadRuntime(),
+          loadAuthorizedUsers(),
+          loadRecentChecks(),
+          loadAlerts(),
+          loadAuditSummary(),
+          loadRecentExports()
+        ]);
         setStatus("数据已更新", "ok");
       } catch (err) {
         setStatus("加载失败: " + String(err), "warn");
@@ -399,10 +630,49 @@
 
     qs("refreshBtn").addEventListener("click", refreshAll);
     qs("logoutBtn").addEventListener("click", logout);
-    qs("loadAuditBtn").addEventListener("click", loadAudit);
-    qs("loadUsersBtn").addEventListener("click", loadRecentUsers);
+    qs("loadRuntimeBtn").addEventListener("click", loadRuntime);
+    qs("loadUsersTableBtn").addEventListener("click", loadAuthorizedUsers);
+    qs("loadChecksBtn").addEventListener("click", async () => {
+      await Promise.all([loadRecentChecks(), loadAuditSummary()]);
+    });
+    qs("loadAlertsBtn").addEventListener("click", loadAlerts);
+    qs("loadAuditBtn").addEventListener("click", loadAuditSummary);
     qs("loadExportsBtn").addEventListener("click", loadRecentExports);
-    qs("loadGlobalBtn").addEventListener("click", loadGlobal);
+    qs("quickGrantBtn").addEventListener("click", async () => {
+      try { await setUserAccess(qs("quickUidInput").value, true); setStatus("授权成功", "ok"); }
+      catch (err) { setStatus("授权失败: " + String(err), "warn"); }
+    });
+    qs("quickRevokeBtn").addEventListener("click", async () => {
+      try { await setUserAccess(qs("quickUidInput").value, false); setStatus("取消授权成功", "ok"); }
+      catch (err) { setStatus("取消授权失败: " + String(err), "warn"); }
+    });
+    qs("quickDetailBtn").addEventListener("click", async () => {
+      try { await openUserDetail(qs("quickUidInput").value); }
+      catch (err) { setStatus("打开详情失败: " + String(err), "warn"); }
+    });
+    qs("togglePublicBtn").addEventListener("click", async () => {
+      try { await togglePublicAccess(); }
+      catch (err) { setStatus("切换公开访问失败: " + String(err), "warn"); }
+    });
+    qs("revokeSessionsBtn").addEventListener("click", async () => {
+      try { await revokeAllSessions(); }
+      catch (err) { setStatus("强制下线失败: " + String(err), "warn"); }
+    });
+    qs("exportCsvBtn").addEventListener("click", () => downloadAudit("csv"));
+    qs("exportJsonBtn").addEventListener("click", () => downloadAudit("json"));
+    qs("closeUserDetailBtn").addEventListener("click", () => qs("userDetailModal").close());
+    qs("authorizedUsersBody").addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-action]");
+      if (!btn) return;
+      const uid = btn.getAttribute("data-uid");
+      const action = btn.getAttribute("data-action");
+      if (action === "detail") {
+        await openUserDetail(uid);
+      } else if (action === "revoke") {
+        await setUserAccess(uid, false);
+        setStatus("已取消授权", "ok");
+      }
+    });
 
     refreshAll();
   </script>

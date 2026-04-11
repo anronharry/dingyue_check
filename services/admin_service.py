@@ -365,6 +365,35 @@ class AdminService:
             public_mode = "开启" if self.access_service.is_allow_all_users_enabled() else "关闭"
             return {"section": "maint_access", "public_mode": public_mode}
         return {"section": section}
+    def get_recent_checks_summary(self, *, mode: str = "others", limit: int = 20) -> dict:
+        safe_limit = max(1, min(limit, 100))
+        audit_records = self._get_audit_records(limit=self.usage_audit_service.max_read_records)
+        result = self.usage_audit_service.query_records(
+            owner_id=self.owner_id,
+            mode=mode if mode in {"others", "owner", "all"} else "others",
+            page=1,
+            page_size=safe_limit,
+            records=audit_records,
+        )
+        rows: list[dict] = []
+        for row in result.get("records", []):
+            uid = int(row.get("user_id", 0) or 0)
+            urls = [str(u) for u in (row.get("urls") or []) if str(u).strip()]
+            rows.append(
+                {
+                    "identity": self.user_profile_service.format_user_identity(uid),
+                    "ts": row.get("ts", "-"),
+                    "source": str(row.get("source", "-")),
+                    "url_count": len(urls),
+                    "urls": urls,
+                }
+            )
+        return {
+            "mode": result.get("mode", mode),
+            "total": result.get("total", len(rows)),
+            "rows": rows,
+        }
+
 
 
 
