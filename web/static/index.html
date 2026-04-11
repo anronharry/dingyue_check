@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>运维控制台</title>
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --surface: #ffffff;
+      --line: #d8d8d8;
+      --ink: #141414;
+      --muted: #666666;
+      --ok: #1f7a1f;
+      --warn: #b10000;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    }
+    .app {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 16px 12px 28px;
+    }
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.2px;
+    }
+    .sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+    }
+    button, select {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 11px;
+      font-size: 13px;
+      background: #fff;
+      color: var(--ink);
+    }
+    button {
+      cursor: pointer;
+    }
+    .btn-main {
+      border-color: #000;
+      background: #000;
+      color: #fff;
+      font-weight: 600;
+    }
+    .btn-main:hover { background: #1c1c1c; }
+    .status {
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .metric {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+    }
+    .metric .k {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .metric .v {
+      margin: 6px 0 0;
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      min-height: 220px;
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .panel h2 {
+      margin: 0;
+      font-size: 15px;
+    }
+    .rows {
+      border-top: 1px solid var(--line);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 6px;
+      border-bottom: 1px solid var(--line);
+      padding: 7px 0;
+      font-size: 13px;
+    }
+    .row .label {
+      color: var(--muted);
+    }
+    .list .item {
+      border-bottom: 1px solid var(--line);
+      padding: 8px 0;
+      font-size: 13px;
+      display: grid;
+      gap: 3px;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 8px 0;
+    }
+    @media (max-width: 980px) {
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .topbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .actions {
+        width: 100%;
+      }
+      .actions button {
+        flex: 1;
+      }
+      .metrics { grid-template-columns: 1fr; }
+      .row {
+        grid-template-columns: 1fr;
+        gap: 2px;
+      }
+      .panel {
+        min-height: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="topbar">
+      <div>
+        <h1>运维控制台</h1>
+        <div class="sub">响应式展示：桌面双列，移动端单列高可读布局</div>
+      </div>
+      <div class="actions">
+        <button id="refreshBtn" type="button">刷新</button>
+        <button class="btn-main" id="logoutBtn" type="button">退出</button>
+      </div>
+    </section>
+
+    <div class="status" id="statusText">正在加载...</div>
+
+    <section class="metrics">
+      <article class="metric"><p class="k">总订阅</p><p class="v" id="mTotalSubs">-</p></article>
+      <article class="metric"><p class="k">授权用户</p><p class="v" id="mUsers">-</p></article>
+      <article class="metric"><p class="k">24h 活跃</p><p class="v" id="mActive">-</p></article>
+      <article class="metric"><p class="k">24h 导出</p><p class="v" id="mExports">-</p></article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <div class="panel-head">
+          <h2>审计摘要</h2>
+          <div>
+            <select id="auditMode">
+              <option value="others">others</option>
+              <option value="owner">owner</option>
+              <option value="all">all</option>
+            </select>
+            <button id="loadAuditBtn" type="button">加载</button>
+          </div>
+        </div>
+        <div class="rows" id="auditSummaryBody"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>近期活跃用户</h2>
+          <div>
+            <select id="scopeMode">
+              <option value="others">others</option>
+              <option value="all">all</option>
+            </select>
+            <button id="loadUsersBtn" type="button">加载</button>
+          </div>
+        </div>
+        <div class="list" id="recentUsersBody"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>近期导出记录</h2>
+          <button id="loadExportsBtn" type="button">加载</button>
+        </div>
+        <div class="list" id="recentExportsBody"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>全局订阅分布</h2>
+          <button id="loadGlobalBtn" type="button">加载</button>
+        </div>
+        <div class="list" id="globalSubsBody"></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const qs = (id) => document.getElementById(id);
+    const statusText = qs("statusText");
+
+    async function apiGet(path) {
+      const resp = await fetch(path, { credentials: "include" });
+      if (resp.status === 401) {
+        window.location.href = "/admin/login";
+        return null;
+      }
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || "request_failed");
+      return data.data;
+    }
+
+    function setStatus(text, cls) {
+      statusText.className = "status " + (cls || "");
+      statusText.textContent = text;
+    }
+
+    function setEmpty(el, text = "暂无数据") {
+      el.innerHTML = `<div class="empty">${text}</div>`;
+    }
+
+    function kvRow(label, value) {
+      return `<div class="row"><div class="label">${label}</div><div class="mono">${value ?? "-"}</div></div>`;
+    }
+
+    async function loadOverview() {
+      const data = await apiGet("/api/v1/system/overview");
+      if (!data) return;
+      qs("mTotalSubs").textContent = data.total_subs ?? "-";
+      qs("mUsers").textContent = data.authorized_users ?? "-";
+      qs("mActive").textContent = data.active_24h ?? "-";
+      qs("mExports").textContent = data.exports_24h ?? "-";
+    }
+
+    async function loadAudit() {
+      const mode = qs("auditMode").value;
+      const data = await apiGet(`/api/v1/audit/summary?mode=${encodeURIComponent(mode)}`);
+      if (!data) return;
+      const el = qs("auditSummaryBody");
+      el.innerHTML =
+        kvRow("模式", data.mode) +
+        kvRow("24h 检测次数", data.check_count) +
+        kvRow("24h 用户数", data.user_count) +
+        kvRow("24h URL 数", data.url_count);
+    }
+
+    async function loadRecentUsers() {
+      const scope = qs("scopeMode").value;
+      const data = await apiGet(`/api/v1/users/recent?scope=${encodeURIComponent(scope)}&limit=10`);
+      if (!data) return;
+      const el = qs("recentUsersBody");
+      const rows = data.rows || [];
+      if (!rows.length) return setEmpty(el);
+      el.innerHTML = rows.map((r) =>
+        `<div class="item"><div>${r.identity || "-"}</div><div class="muted">${r.last_seen || "-"}</div><div class="mono">${r.source || "-"}</div></div>`
+      ).join("");
+    }
+
+    async function loadRecentExports() {
+      const scope = qs("scopeMode").value;
+      const data = await apiGet(`/api/v1/exports/recent?scope=${encodeURIComponent(scope)}&limit=10`);
+      if (!data) return;
+      const el = qs("recentExportsBody");
+      const rows = data.rows || [];
+      if (!rows.length) return setEmpty(el);
+      el.innerHTML = rows.map((r) =>
+        `<div class="item"><div>${r.identity || "-"}</div><div class="muted">${r.ts || "-"} · ${r.fmt || "-"}</div><div class="mono">${r.target || "-"}</div></div>`
+      ).join("");
+    }
+
+    async function loadGlobal() {
+      const data = await apiGet("/api/v1/subscriptions/global?max_users=10&max_subs_per_user=2");
+      if (!data) return;
+      const el = qs("globalSubsBody");
+      const rows = data.rows || [];
+      if (!rows.length) return setEmpty(el);
+      el.innerHTML = rows.map((r) => {
+        const subs = (r.subs || []).map((s) => s.name).join(", ");
+        return `<div class="item"><div>${r.user_text || r.uid || "-"}</div><div class="muted">订阅数: ${r.count || 0}</div><div class="mono">${subs || "-"}</div></div>`;
+      }).join("");
+    }
+
+    async function refreshAll() {
+      try {
+        setStatus("正在刷新数据...");
+        await loadOverview();
+        await Promise.all([loadAudit(), loadRecentUsers(), loadRecentExports(), loadGlobal()]);
+        setStatus("数据已更新", "ok");
+      } catch (err) {
+        setStatus("加载失败: " + String(err), "warn");
+      }
+    }
+
+    async function logout() {
+      try {
+        await fetch("/admin/logout", { method: "POST", credentials: "include" });
+      } finally {
+        window.location.href = "/admin/login";
+      }
+    }
+
+    qs("refreshBtn").addEventListener("click", refreshAll);
+    qs("logoutBtn").addEventListener("click", logout);
+    qs("loadAuditBtn").addEventListener("click", loadAudit);
+    qs("loadUsersBtn").addEventListener("click", loadRecentUsers);
+    qs("loadExportsBtn").addEventListener("click", loadRecentExports);
+    qs("loadGlobalBtn").addEventListener("click", loadGlobal);
+
+    refreshAll();
+  </script>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>控制台登录</title>
+  <style>
+    :root {
+      --bg: #f6f6f6;
+      --surface: #ffffff;
+      --line: #d9d9d9;
+      --ink: #121212;
+      --muted: #666666;
+      --danger: #c40000;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    }
+    .card {
+      width: min(420px, calc(100vw - 28px));
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 22px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.2px;
+    }
+    p {
+      margin: 8px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    form {
+      margin-top: 16px;
+      display: grid;
+      gap: 10px;
+    }
+    label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 11px 12px;
+      font-size: 14px;
+      background: #fff;
+      color: var(--ink);
+    }
+    input:focus {
+      outline: 2px solid #000;
+      outline-offset: 0;
+    }
+    button {
+      border: 1px solid #000;
+      border-radius: 10px;
+      padding: 11px 12px;
+      font-size: 14px;
+      background: #000;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #222; }
+    .error {
+      min-height: 18px;
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--danger);
+    }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <h1>管理控制台登录</h1>
+    <p>请输入管理员账号和口令，登录成功后进入运维控制台。</p>
+    <form id="loginForm">
+      <div>
+        <label for="username">账号</label>
+        <input id="username" name="username" type="text" autocomplete="username" required>
+      </div>
+      <div>
+        <label for="password">口令</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit">登录</button>
+    </form>
+    <div class="error" id="errorText"></div>
+  </section>
+
+  <script>
+    const form = document.getElementById("loginForm");
+    const errorText = document.getElementById("errorText");
+    const username = document.getElementById("username");
+    const password = document.getElementById("password");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorText.textContent = "";
+      try {
+        const resp = await fetch("/admin/login", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: username.value.trim(),
+            password: password.value
+          })
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) {
+          errorText.textContent = "登录失败: " + (data.error || "unknown");
+          return;
+        }
+        window.location.href = data.redirect || "/admin";
+      } catch (err) {
+        errorText.textContent = "登录失败: " + String(err);
+      }
+    });
+  </script>
+</body>
+</html>

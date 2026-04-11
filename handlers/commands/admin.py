@@ -6,6 +6,31 @@ import html
 import os
 import time
 
+from core.models import SubscriptionEntity
+from renderers.messages.admin_reports import (
+    render_checkall_report,
+    render_global_list,
+    render_owner_panel_text,
+    render_recent_exports_summary,
+    render_recent_users_summary,
+    render_usage_audit_summary,
+    render_user_list,
+)
+
+WEB_MIGRATION_NOTICE = (
+    "控制台已迁移到 Web 后台。\n"
+    "请在浏览器中打开：{url}\n\n"
+    "如未配置访问地址，请设置环境变量 WEB_ADMIN_PUBLIC_URL。"
+)
+
+
+def _web_admin_public_url() -> str:
+    return os.getenv("WEB_ADMIN_PUBLIC_URL", "").strip() or "（未配置 WEB_ADMIN_PUBLIC_URL）"
+
+
+def _build_web_migration_notice() -> str:
+    return WEB_MIGRATION_NOTICE.format(url=_web_admin_public_url())
+
 
 async def deliver_broadcast(*, bot, user_ids, content: str, logger, title: str = "系统广播（管理员）") -> tuple[int, int]:
     """Send broadcast and return (success, failed)."""
@@ -84,93 +109,57 @@ def make_set_public_access_command(*, is_owner, owner_only_msg, access_service, 
 
 
 def make_usage_audit_command(*, is_owner, owner_only_msg, admin_service, schedule_auto_delete):
+    del admin_service
+
     async def usage_audit_command(update, context):
         if not is_owner(update):
             reply_msg = await update.message.reply_text(owner_only_msg)
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
-        report, paging = admin_service.build_usage_audit_report(mode="others", page=1, page_size=5)
-        reply_msg = await update.message.reply_text(
-            report,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-            reply_markup=context.application.bot_data["build_usage_audit_keyboard"](
-                mode=paging["mode"],
-                page=paging["page"],
-                total_pages=paging["total_pages"],
-                record_count=len(paging["records"]),
-            ),
-        )
-        schedule_auto_delete(context, update.message, reply_msg, delay=90)
+        reply_msg = await update.message.reply_text(_build_web_migration_notice())
+        schedule_auto_delete(context, update.message, reply_msg, delay=60)
 
     return usage_audit_command
 
 
 def make_recent_users_command(*, is_owner, owner_only_msg, admin_service, schedule_auto_delete):
+    del admin_service
+
     async def recent_users_command(update, context):
         if not is_owner(update):
             reply_msg = await update.message.reply_text(owner_only_msg)
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
-        include_owner = bool(context.args and context.args[0].lower() == "all")
-        report, paging = admin_service.build_recent_users_page(include_owner=include_owner, page=1, page_size=5)
-        reply_msg = await update.message.reply_text(
-            report,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-            reply_markup=context.application.bot_data["build_recent_activity_keyboard"](
-                category="users",
-                scope=paging["scope"],
-                page=paging["page"],
-                total_pages=paging["total_pages"],
-                record_count=len(paging["records"]),
-            ),
-        )
-        schedule_auto_delete(context, update.message, reply_msg, delay=90)
+        reply_msg = await update.message.reply_text(_build_web_migration_notice())
+        schedule_auto_delete(context, update.message, reply_msg, delay=60)
 
     return recent_users_command
 
 
 def make_recent_exports_command(*, is_owner, owner_only_msg, admin_service, schedule_auto_delete):
+    del admin_service
+
     async def recent_exports_command(update, context):
         if not is_owner(update):
             reply_msg = await update.message.reply_text(owner_only_msg)
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
-        include_owner = bool(context.args and context.args[0].lower() == "all")
-        report, paging = admin_service.build_recent_exports_page(include_owner=include_owner, page=1, page_size=5)
-        reply_msg = await update.message.reply_text(
-            report,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-            reply_markup=context.application.bot_data["build_recent_activity_keyboard"](
-                category="exports",
-                scope=paging["scope"],
-                page=paging["page"],
-                total_pages=paging["total_pages"],
-                record_count=len(paging["records"]),
-            ),
-        )
-        schedule_auto_delete(context, update.message, reply_msg, delay=90)
+        reply_msg = await update.message.reply_text(_build_web_migration_notice())
+        schedule_auto_delete(context, update.message, reply_msg, delay=60)
 
     return recent_exports_command
 
 
 def make_owner_panel_command(*, is_owner, owner_only_msg, admin_service, schedule_auto_delete):
+    del admin_service
+
     async def owner_panel_command(update, context):
         if not is_owner(update):
             reply_msg = await update.message.reply_text(owner_only_msg)
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
-        total_users, daily_users = admin_service.get_usage_user_counts(include_owner=False)
-        panel_text = admin_service.build_owner_panel_text()
-        panel_text = f"{panel_text}\n👤 使用用户: <b>{total_users}</b> | 🕒 24 小时内: <b>{daily_users}</b>"
-        reply_msg = await update.message.reply_text(
-            panel_text,
-            parse_mode="HTML",
-            reply_markup=context.application.bot_data["build_owner_panel_keyboard"](),
-        )
-        schedule_auto_delete(context, update.message, reply_msg, delay=120)
+        reply_msg = await update.message.reply_text(_build_web_migration_notice())
+        schedule_auto_delete(context, update.message, reply_msg, delay=60)
 
     return owner_panel_command
 
@@ -218,8 +207,8 @@ def make_delete_command(
         reply_msg = await update.message.reply_text(
             f"<b>确认删除</b>\n\n"
             f"确定要删除这条订阅吗？\n"
-            f"名称：<b>{sub_data['name']}</b>\n"
-            f"链接：<code>{url}</code>",
+            f"名称：<b>{html.escape(sub_data.get('name', '未命名'))}</b>\n"
+            f"链接：<code>{html.escape(url)}</code>",
             parse_mode="HTML",
             reply_markup=inline_keyboard_markup(keyboard),
         )
@@ -362,11 +351,8 @@ def make_list_users_command(*, is_owner, owner_only_msg, admin_service, schedule
             reply_msg = await update.message.reply_text(owner_only_msg)
             schedule_auto_delete(context, update.message, reply_msg, delay=10)
             return
-        message = admin_service.build_user_list_message()
-        reply_msg = await update.message.reply_text(
-            message or "当前没有授权用户。",
-            parse_mode="HTML" if message else None,
-        )
+        message = render_user_list(admin_service.get_user_list_data())
+        reply_msg = await update.message.reply_text(message, parse_mode="HTML")
         schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
     return list_users_command
@@ -387,17 +373,14 @@ def make_refresh_menu_command(*, is_owner, post_init):
 
 
 def make_globallist_command(*, is_owner, owner_only_msg, admin_service, schedule_auto_delete):
+    del admin_service
+
     async def globallist_command(update, context):
         if not is_owner(update):
             await update.message.reply_text(owner_only_msg)
             return
-        report = admin_service.build_globallist_report()
-        if not report:
-            reply_msg = await update.message.reply_text("没有其他用户的订阅数据（当前仅管理员数据）。")
-            schedule_auto_delete(context, update.message, reply_msg, delay=30)
-            return
-        reply_msg = await update.message.reply_text(report, parse_mode="HTML")
-        schedule_auto_delete(context, update.message, reply_msg, delay=30)
+        reply_msg = await update.message.reply_text(_build_web_migration_notice())
+        schedule_auto_delete(context, update.message, reply_msg, delay=60)
 
     return globallist_command
 
@@ -414,6 +397,8 @@ def make_checkall_command(
     schedule_auto_delete,
     subscription_check_service=None,
 ):
+    del make_sub_keyboard
+
     async def checkall_command(update, context):
         if not is_owner(update):
             reply_msg = await update.message.reply_text(owner_only_msg)
@@ -430,7 +415,7 @@ def make_checkall_command(
             "<b>正在检查全部用户订阅...</b>\n请稍候...",
             parse_mode="HTML",
         )
-        schedule_auto_delete(context, update.message, progress_msg, delay=30)
+        schedule_auto_delete(context, update.message, progress_msg, delay=60)
         semaphore = asyncio.Semaphore(20)
         total_count = len(subscriptions)
         completed_count = 0
@@ -452,21 +437,19 @@ def make_checkall_command(
                         store.add_or_update(url, result, user_id=original_owner)
                     if result.get("remaining", 1) <= 0:
                         raise Exception("流量已耗尽")
-                    res = {
-                        "url": url,
-                        "name": result.get("name", "未知"),
-                        "owner_uid": original_owner,
-                        "status": "success",
-                    }
+                    res = SubscriptionEntity.from_parse_result(
+                        url=url,
+                        result=result,
+                        owner_uid=original_owner,
+                    )
                 except Exception as exc:
                     store.mark_check_failed(url, str(exc))
-                    res = {
-                        "url": url,
-                        "name": data.get("name", "未知"),
-                        "owner_uid": data.get("owner_uid", 0),
-                        "status": "failed",
-                        "error": str(exc),
-                    }
+                    res = SubscriptionEntity.from_failure(
+                        url=url,
+                        name=data.get("name", "未知"),
+                        error=str(exc),
+                        owner_uid=data.get("owner_uid", 0),
+                    )
                 completed_count += 1
                 current_time = time.time()
                 if current_time - last_update_time > 2.0 or completed_count == total_count:
@@ -480,14 +463,17 @@ def make_checkall_command(
         store.begin_batch()
         results = await asyncio.gather(*[check_one_global(url, data) for url, data in subscriptions.items()])
         store.end_batch(save=True)
-        try:
-            await progress_msg.delete()
-        except Exception:
-            pass
-        report_msg = await update.message.reply_text(
-            admin_service.build_checkall_report(results=results, viewer_uid=update.effective_user.id),
-            parse_mode="HTML",
+
+        batch = admin_service.to_batch_result(results)
+        report = render_checkall_report(
+            batch=batch,
+            viewer_uid=update.effective_user.id,
+            format_user_identity=admin_service.user_profile_service.format_user_identity,
         )
-        schedule_auto_delete(context, update.message, report_msg, delay=60)
+        try:
+            await progress_msg.edit_text(report, parse_mode="HTML")
+        except Exception:
+            report_msg = await update.message.reply_text(report, parse_mode="HTML")
+            schedule_auto_delete(context, update.message, report_msg, delay=60)
 
     return checkall_command

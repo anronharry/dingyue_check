@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import logging
 import os
+import asyncio
+import signal
 
+from aiohttp import web
 from dotenv import load_dotenv
-from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
+from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeDefault, Update
 from telegram.ext import Application
 
 import config
@@ -18,6 +21,7 @@ from app.bootstrap import build_application, log_startup_banner, register_handle
 from app.runtime import build_handlers, create_runtime
 from app.settings import AppSettings
 from renderers.telegram_keyboards import build_owner_panel_keyboard, build_recent_activity_keyboard, build_usage_audit_keyboard
+from web.server import build_web_app
 
 load_dotenv()
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -136,13 +140,7 @@ periodic_cache_cleanup = runtime.periodic_cache_cleanup
 schedule_result_collapse = runtime.schedule_result_collapse
 
 
-def main():
-    if not BOT_TOKEN:
-        logger.error("缺少 TELEGRAM_BOT_TOKEN。")
-        return
-    log_startup_banner()
-    restored, restore_note = runtime.backup_service.auto_restore_if_needed()
-    logger.info("启动恢复结果：%s", restore_note if not restored else f"已恢复到 {restore_note}")
+def _build_application_instance() -> Application:
     application = build_application(BOT_TOKEN, post_init, _on_shutdown)
     application.bot_data["build_usage_audit_keyboard"] = build_usage_audit_keyboard
     application.bot_data["build_recent_activity_keyboard"] = build_recent_activity_keyboard
@@ -151,6 +149,97 @@ def main():
     register_handlers(application, _handlers)
     if application.job_queue:
         application.job_queue.run_repeating(periodic_cache_cleanup, interval=600, first=600)
+    return application
+
+
+def _log_web_security_posture() -> None:
+    public_url = os.getenv("WEB_ADMIN_PUBLIC_URL", "").strip()
+    if settings.web_admin_cookie_secure and public_url.startswith("http://"):
+        logger.warning(
+            "WEB_ADMIN_COOKIE_SECURE=true but WEB_ADMIN_PUBLIC_URL uses http:// . "
+            "Use HTTPS URL or set WEB_ADMIN_COOKIE_SECURE=false only for temporary local testing."
+        )
+    if not settings.web_admin_cookie_secure:
+        logger.warning(
+            "WEB_ADMIN_COOKIE_SECURE=false. Cookies may be exposed on plain HTTP; "
+            "enable HTTPS and set WEB_ADMIN_COOKIE_SECURE=true in production."
+        )
+    if settings.web_admin_allow_header_token:
+        logger.warning(
+            "WEB_ADMIN_ALLOW_HEADER_TOKEN=true. This is less strict than session-only auth; "
+            "set to false unless script access is required."
+        )
+    if settings.web_admin_trust_proxy:
+        logger.info(
+            "WEB_ADMIN_TRUST_PROXY=true. Ensure service is only reachable through a trusted reverse proxy."
+        )
+
+
+async def _run_unified_async(application: Application) -> None:
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop_event.set)
+        except (NotImplementedError, RuntimeError):
+            pass
+
+    runner = None
+    try:
+        await application.initialize()
+        await post_init(application)
+        await application.start()
+        if application.updater is None:
+            raise RuntimeError("PTB updater unavailable; cannot start polling in unified mode.")
+        await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        logger.info("Bot polling started in unified_async mode.")
+
+        if settings.enable_web_admin:
+            _log_web_security_posture()
+            web_app = build_web_app(
+                runtime=runtime,
+                web_admin_token=settings.web_admin_token,
+                web_admin_username=settings.web_admin_username,
+                web_admin_session_ttl_seconds=settings.web_admin_session_ttl_seconds,
+                web_admin_allow_header_token=settings.web_admin_allow_header_token,
+                web_admin_cookie_secure=settings.web_admin_cookie_secure,
+                web_admin_trust_proxy=settings.web_admin_trust_proxy,
+                web_admin_login_window_seconds=settings.web_admin_login_window_seconds,
+                web_admin_login_max_attempts=settings.web_admin_login_max_attempts,
+                web_admin_redis_url=settings.web_admin_redis_url,
+            )
+            runner = web.AppRunner(web_app)
+            await runner.setup()
+            site = web.TCPSite(runner, settings.web_admin_host, settings.web_admin_port)
+            await site.start()
+            logger.info(
+                "Web admin started at http://%s:%s/admin",
+                settings.web_admin_host,
+                settings.web_admin_port,
+            )
+        else:
+            logger.info("Web admin disabled (ENABLE_WEB_ADMIN=false).")
+
+        await stop_event.wait()
+    finally:
+        if application.updater and application.updater.running:
+            await application.updater.stop()
+        if application.running:
+            await application.stop()
+        await application.shutdown()
+        await _on_shutdown(application)
+        if runner is not None:
+            await runner.cleanup()
+
+
+def main():
+    if not BOT_TOKEN:
+        logger.error("缺少 TELEGRAM_BOT_TOKEN。")
+        return
+    log_startup_banner()
+    restored, restore_note = runtime.backup_service.auto_restore_if_needed()
+    logger.info("启动恢复结果：%s", restore_note if not restored else f"已恢复到 {restore_note}")
+    application = _build_application_instance()
     config.print_config_summary()
     if config.OWNER_ID > 0:
         migrated = runtime.get_storage().migrate_subscriptions(config.OWNER_ID)
@@ -162,6 +251,10 @@ def main():
             )
     if not config.ENABLE_MONITOR:
         logger.info("定时监控已关闭（ENABLE_MONITOR=False）。")
+    run_mode = os.getenv("APP_RUN_MODE", "legacy_polling").strip().lower()
+    if run_mode == "unified_async":
+        asyncio.run(_run_unified_async(application))
+        return
     run_polling(application)
 
 

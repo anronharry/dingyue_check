@@ -41,7 +41,32 @@ cp .env.example .env
 ```env
 TELEGRAM_BOT_TOKEN=你的Token
 OWNER_ID=你的Telegram数字ID
+APP_RUN_MODE=legacy_polling
+ENABLE_WEB_ADMIN=false
+WEB_ADMIN_HOST=127.0.0.1
+WEB_ADMIN_PORT=8080
+WEB_ADMIN_TOKEN=请设置一个高强度随机字符串
+WEB_ADMIN_PUBLIC_URL=http://127.0.0.1:8080/admin
+WEB_ADMIN_USERNAME=admin
+WEB_ADMIN_SESSION_TTL_SECONDS=28800
+WEB_ADMIN_ALLOW_HEADER_TOKEN=false
+WEB_ADMIN_COOKIE_SECURE=true
+WEB_ADMIN_TRUST_PROXY=false
+WEB_ADMIN_LOGIN_WINDOW_SECONDS=600
+WEB_ADMIN_LOGIN_MAX_ATTEMPTS=10
+WEB_ADMIN_REDIS_URL=
 ```
+
+说明：
+- `WEB_ADMIN_TOKEN` 作为登录口令使用，不要设置弱口令。
+- `WEB_ADMIN_USERNAME` 默认为 `admin`，建议在生产环境改名。
+- `WEB_ADMIN_ALLOW_HEADER_TOKEN=false` 为默认更安全配置（仅网页登录）；若有脚本访问需求再设为 `true`。
+- `WEB_ADMIN_COOKIE_SECURE=true` 为默认更安全配置（仅 HTTPS 发送 Cookie）；仅在纯 HTTP 临时环境下再手动设为 `false`。
+- `WEB_ADMIN_TRUST_PROXY=true` 时会使用 `X-Forwarded-For` 作为限流来源 IP（仅在可信反向代理后开启）。
+- `WEB_ADMIN_LOGIN_WINDOW_SECONDS` + `WEB_ADMIN_LOGIN_MAX_ATTEMPTS` 控制登录限流窗口与次数。
+- `WEB_ADMIN_REDIS_URL` 配置后将使用 Redis 保存会话与登录限流状态（多实例/重启更稳）；留空则使用内存后端。
+- 启动时会输出 Web 安全姿态告警（例如 `cookie_secure` 与 `http://` 地址冲突）。
+- `GET /healthz` 会返回当前 Web 安全关键配置，便于巡检。
 
 ### 3.3 启动（推荐用脚本）
 
@@ -70,13 +95,17 @@ bash update_bot.sh
 
 1. 进入项目目录
 2. 激活 `venv` 或 `.venv`（如果存在）
-3. 停止旧进程（匹配 `python3 main.py`）
-4. `git pull --ff-only` 拉最新代码
-5. 安装依赖：`pip install -r requirements.txt`
-6. 编译检查：`python3 -m compileall .`
-7. 跑测试：`python3 -m unittest discover -s tests`
-8. 后台重启：`nohup python3 main.py > bot.log 2>&1 &`
-9. 输出最近日志并做关键词告警扫描
+3. 检查 `.env` 是否存在，并读取 Web 相关关键配置
+4. 停止旧进程（匹配 `python3 main.py`）
+5. `git pull --ff-only` 拉最新代码
+6. 安装依赖：`pip install -r requirements.txt`（失败会中断，不再吞错误）
+7. 编译检查：`python3 -m compileall app core handlers renderers services shared tests web bot_async.py main.py`
+8. 跑测试：优先 `pytest -q`，若环境未安装 pytest 则自动回退 `unittest discover`
+9. Web 配置预检查与告警：
+   - `ENABLE_WEB_ADMIN=true` 但 `APP_RUN_MODE!=unified_async` 会告警
+   - 配置 `WEB_ADMIN_REDIS_URL` 但缺少 `redis.asyncio` 依赖会告警（运行时回退内存后端）
+10. 后台重启：`nohup python3 main.py > bot.log 2>&1 &`
+11. 输出最近日志并做关键词告警扫描
 
 ### 4.3 更新后如何确认成功
 
@@ -92,6 +121,8 @@ tail -n 100 bot.log
 - `Permission denied`：先执行 `chmod +x update_bot.sh`
 - `fatal: could not read Username`：服务器未配置 GitHub 凭据（PAT 或 SSH Key）
 - 测试失败导致中断：先本地修复后再部署
+- `ENABLE_WEB_ADMIN=true` 但 Web 没启动：检查 `.env` 是否设置 `APP_RUN_MODE=unified_async`
+- 配置了 `WEB_ADMIN_REDIS_URL` 但 healthz 显示 `auth_backend=memory`：确认已安装 `redis` 包且 Redis 地址可达
 - 启动失败：查看 `bot.log` 最后一百行
 
 ## 5. 推荐生产部署方式（systemd）
@@ -135,6 +166,30 @@ sudo journalctl -u dingyue-bot -f
 
 > 如果你采用 `systemd`，建议把 `update_bot.sh` 调整为“只更新代码与依赖，不再 `nohup` 启动”，然后改为 `systemctl restart dingyue-bot`。
 
+### 5.1 Web 控制台与端口开放（手机访问）
+
+1. 启用统一事件循环模式并开启 Web：
+```env
+APP_RUN_MODE=unified_async
+ENABLE_WEB_ADMIN=true
+WEB_ADMIN_HOST=0.0.0.0
+WEB_ADMIN_PORT=8080
+WEB_ADMIN_PUBLIC_URL=http://<你的服务器公网IP>:8080/admin
+```
+2. 云服务器安全组放行 `WEB_ADMIN_PORT`（例如 8080/TCP），来源建议限制为你的管理 IP 段。
+3. 服务器防火墙放行端口（Ubuntu `ufw` 示例）：
+```bash
+sudo ufw allow 8080/tcp
+sudo ufw status
+```
+4. 手机浏览器访问 `WEB_ADMIN_PUBLIC_URL`，输入 `WEB_ADMIN_USERNAME + WEB_ADMIN_TOKEN` 登录。
+5. 生产建议：
+   - 优先走 Nginx/Caddy 反代并启用 HTTPS。
+   - 将后台入口再加一层 IP 白名单。
+   - HTTPS 部署时设置 `WEB_ADMIN_COOKIE_SECURE=true`。
+   - 使用反代（Nginx/Caddy）时再设置 `WEB_ADMIN_TRUST_PROXY=true`。
+   - 若不需要脚本访问 API，设置 `WEB_ADMIN_ALLOW_HEADER_TOKEN=false`。
+
 ## 6. 常用命令
 
 ### 普通用户
@@ -155,11 +210,11 @@ sudo journalctl -u dingyue-bot -f
 - `/deluser <id>`：取消授权
 - `/listusers`：授权列表
 - `/allowall` / `/denyall`：全员模式开关
-- `/ownerpanel`：Owner 控制面板
-- `/usageaudit`：使用审计
-- `/recentusers`：近期活跃用户
-- `/recentexports`：近期导出记录
-- `/globallist`：全局订阅概览
+- `/ownerpanel`：已迁移到 Web（返回迁移提示）
+- `/usageaudit`：已迁移到 Web（返回迁移提示）
+- `/recentusers`：已迁移到 Web（返回迁移提示）
+- `/recentexports`：已迁移到 Web（返回迁移提示）
+- `/globallist`：已迁移到 Web（返回迁移提示）
 - `/checkall`：全局巡检
 - `/broadcast <content>`：广播通知
 - `/export` / `/import`：导入导出订阅数据
@@ -199,14 +254,20 @@ scripts/     辅助脚本
 
 ## 11. Recent UX & Admin Updates
 
-- Owner management is now panel-first: use `/ownerpanel` as the main entry.
-- Owner command menu is intentionally minimized (default: `/ownerpanel`, `/refresh_menu`).
-- Legacy owner read commands can be toggled by `ENABLE_OWNER_LEGACY_READ_COMMANDS`.
-- Normal users now use compact subscription action buttons by default:
-  - Primary actions: `重新检测`, `节点测速` (if enabled), `更多操作`
-  - Secondary actions (expand on demand): `导出 YAML`, `导出 TXT`
-  - Dangerous actions such as `删除缓存` are hidden from normal users.
-- Compact button mode can be toggled by `ENABLE_USER_COMPACT_SUB_BUTTONS`.
+- Web admin is now available with a lightweight `aiohttp` server and native static page.
+- Web admin now includes a dedicated login page (`/admin/login`) and cookie session auth.
+- New startup mode switch:
+  - `APP_RUN_MODE=legacy_polling` (default, old behavior)
+  - `APP_RUN_MODE=unified_async` (Bot + Web in one event loop)
+- Web admin API supports cookie session, and can optionally accept `X-Admin-Token` when `WEB_ADMIN_ALLOW_HEADER_TOKEN=true`:
+  - `/api/v1/system/overview`
+  - `/api/v1/users/recent`
+  - `/api/v1/exports/recent`
+  - `/api/v1/audit/summary`
+  - `/api/v1/subscriptions/global`
+- Owner read-style commands are soft-deprecated in Telegram and now return a Web migration notice:
+  - `/ownerpanel`, `/usageaudit`, `/recentusers`, `/recentexports`, `/globallist`
+- Migration notice URL is controlled by `WEB_ADMIN_PUBLIC_URL`.
 
 ## 12. License
 
