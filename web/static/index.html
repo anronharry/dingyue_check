@@ -1,249 +1,168 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Owner 运维控制台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root {
-      --bg: #f2f2f2;
-      --surface: #fff;
-      --line: #d9d9d9;
-      --ink: #101010;
-      --muted: #666;
-      --ok: #0c7b3d;
-      --warn: #b42424;
-    }
-    * { box-sizing: border-box; }
-    body {
+  :root {
+      --primary: #4361ee;
+      --bg: #f8f9fa;
+      --card-bg: #ffffff;
+      --text: #212529;
+      --text-muted: #6c757d;
+      --border: #f0f0f0;
+      --danger: #e53e3e;
+      --success: #22c55e;
+      --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
       margin: 0;
-      color: var(--ink);
-      font-family: "IBM Plex Sans", "Noto Sans SC", "Segoe UI", sans-serif;
-      background: linear-gradient(135deg, #f8f8f8, #ececec);
-    }
-    .app {
-      max-width: 1380px;
-      margin: 0 auto;
-      padding: 14px;
-      display: grid;
-      gap: 10px;
-    }
-    .card {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--surface);
-      overflow: hidden;
-    }
-    .head {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--line);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .head h2 {
-      margin: 0;
-      font-size: 15px;
-    }
-    .body { padding: 10px 12px; }
-    .top h1 {
-      margin: 0;
-      font-size: clamp(22px, 3vw, 30px);
-      letter-spacing: -0.2px;
-    }
-    .sub {
-      margin-top: 4px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    button, select, input {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 8px 10px;
-      background: #fff;
-      color: var(--ink);
-      font-size: 13px;
-    }
-    button { cursor: pointer; }
-    .btn-main {
-      border-color: #000;
-      background: #111;
-      color: #fff;
-      font-weight: 600;
-    }
-    .status {
-      border: 1px dashed var(--line);
-      border-radius: 11px;
-      padding: 10px 12px;
-      background: #fff;
-      font-size: 13px;
-      color: var(--muted);
-    }
-    .ok { color: var(--ok); }
-    .warn { color: var(--warn); }
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
-    }
-    .metric {
-      border: 1px solid var(--line);
-      border-radius: 11px;
-      padding: 10px;
-      background: #fff;
-    }
-    .metric .k { margin: 0; font-size: 12px; color: var(--muted); }
-    .metric .v { margin: 8px 0 0; font-size: 28px; font-weight: 700; }
-    .layout {
-      display: grid;
-      grid-template-columns: 1.35fr 1fr;
-      gap: 10px;
-    }
-    .stack { display: grid; gap: 10px; }
-    .runtime {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-    }
-    .runtime .item {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 8px;
-      background: #fafafa;
-    }
-    .runtime .k { margin: 0; font-size: 12px; color: var(--muted); }
-    .runtime .v { margin: 6px 0 0; font-size: 13px; font-weight: 600; }
-    .quick {
-      display: grid;
-      grid-template-columns: 1fr auto auto auto;
-      gap: 8px;
-      align-items: center;
-    }
-    .quick .grow { width: 100%; }
-    .table-wrap {
-      overflow: auto;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-    th, td {
-      border-bottom: 1px solid var(--line);
-      padding: 8px;
-      text-align: left;
-      vertical-align: top;
-      white-space: nowrap;
-    }
-    th { background: #f8f8f8; color: var(--muted); }
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      word-break: break-all;
-      white-space: normal;
-    }
-    .url-list {
-      margin: 0;
-      padding-left: 16px;
-      min-width: 380px;
-      display: grid;
-      gap: 4px;
-    }
-    .filters {
-      display: grid;
-      grid-template-columns: 110px 120px 120px 1fr 180px 180px auto;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-    .rows { border-top: 1px solid var(--line); }
-    .row {
-      display: grid;
-      grid-template-columns: 120px 1fr;
-      gap: 8px;
-      padding: 8px 0;
-      border-bottom: 1px solid var(--line);
-      font-size: 13px;
-    }
-    .label { color: var(--muted); }
-    .list .item {
-      border-bottom: 1px solid var(--line);
-      padding: 8px 0;
-      display: grid;
-      gap: 3px;
-      font-size: 13px;
-    }
-    .alert {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 8px;
-      background: #fafafa;
-      margin-bottom: 8px;
-      font-size: 13px;
-    }
-    .alert high { color: var(--warn); }
-    .muted { color: var(--muted); }
-    dialog {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 0;
-      width: min(980px, calc(100vw - 20px));
-      max-height: 86vh;
-      overflow: hidden;
-    }
-    dialog::backdrop { background: rgba(0, 0, 0, 0.34); }
-    .modal-head {
-      border-bottom: 1px solid var(--line);
-      padding: 10px 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .modal-body {
-      padding: 10px 12px;
-      overflow: auto;
-      max-height: calc(86vh - 52px);
-      display: grid;
-      gap: 10px;
-    }
-    @media (max-width: 1180px) {
-      .layout { grid-template-columns: 1fr; }
-      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .runtime { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    @media (max-width: 720px) {
-      .metrics { grid-template-columns: 1fr; }
-      .runtime { grid-template-columns: 1fr; }
-      .quick { grid-template-columns: 1fr 1fr; }
-      .quick .grow { grid-column: 1 / -1; }
-      .url-list { min-width: 220px; }
-      .row { grid-template-columns: 1fr; gap: 3px; }
-    }
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+  }
+  .navbar {
+      background-color: var(--primary);
+      color: white;
+      padding: 0 24px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      height: 64px;
+  }
+  .navbar-content {
+      display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto; height: 100%;
+  }
+  .logo { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 12px; }
+  
+  .status {
+      border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; padding: 2px 6px; font-size: 12px;
+  }
+  .status.ok { background: rgba(34, 197, 94, 0.2); }
+  .status.warn { background: rgba(229, 62, 62, 0.2); }
+
+  .logout-btn {
+      background-color: rgba(255, 255, 255, 0.15); border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: background-color 0.2s ease; font-size: 14px; margin-left: 8px;
+  }
+  .logout-btn:hover { background-color: rgba(255, 255, 255, 0.25); }
+  
+  button {
+      background-color: transparent; border: 1px solid var(--primary); color: var(--primary); padding: 8px 14px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 13px; font-weight: 500;
+  }
+  button:hover { background-color: rgba(67, 97, 238, 0.05); }
+  .btn-brand { background-color: var(--primary); color: white; border: none; }
+  .btn-brand:hover { background-color: #3a50d9; }
+  .btn-danger { color: var(--danger); border-color: var(--danger); }
+  .btn-danger:hover { background-color: rgba(229, 62, 62, 0.05); }
+
+  .main-container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+  
+  /* Metrics Grid */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .metric {
+      background: var(--card-bg); border-radius: var(--radius); padding: 20px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  }
+  .metric .k { margin: 0; font-size: 14px; color: var(--text-muted); }
+  .metric .v { margin: 8px 0 0; font-size: 24px; font-weight: 700; color: var(--primary); }
+
+  /* Main Layout */
+  .dashboard-layout { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 2fr); gap: 24px; }
+  @media (max-width: 1024px) {
+    .dashboard-layout { grid-template-columns: 1fr; }
+    .metrics { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  }
+  
+  .stack { display: flex; flex-direction: column; gap: 24px; }
+
+  /* Cards */
+  .card {
+      background: var(--card-bg); border-radius: var(--radius); box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05); overflow: hidden;
+  }
+  .head {
+      padding: 16px 20px; background-color: #fdfdfd; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;
+  }
+  .head h2 { font-size: 16px; font-weight: 600; margin: 0; color: var(--text); }
+  .body { padding: 20px; }
+
+  /* Form & Filters */
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; background: #fafafa; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+  .filters input, .filters select { flex: 1; min-width: 120px; }
+  .filters .actions { margin-left: auto; display: flex; gap: 8px; }
+
+  input, select {
+      border: 1px solid #ccc; border-radius: 6px; padding: 8px 12px; background: var(--card-bg); color: var(--text); font-size: 13px; font-family: inherit; transition: all 0.2s ease;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1); }
+  
+  .quick { display: flex; flex-direction: column; gap: 12px; }
+  .quick-row { display: flex; gap: 8px; align-items: center; }
+  .quick-row input { flex: 1; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+  th, td { padding: 12px 16px; border-bottom: 1px solid var(--border);  }
+  th { color: var(--text-muted); font-weight: 500; background: #fdfdfd; border-bottom: 2px solid #eaeaea; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background-color: #f8f9ff; }
+
+  /* JS injected items */
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+  .url-list { margin: 0; padding-left: 16px; min-width: 280px; gap: 4px; display: grid; color: #555; }
+
+  .rows { border-top: none; }
+  .row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .row:last-child { border-bottom: none; }
+  .row .label { color: var(--text-muted); }
+
+  .list { display: flex; flex-direction: column; }
+  .item { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .item:last-child { border-bottom: none; }
+  .item .k { margin: 0; font-size: 12px; color: var(--text-muted); }
+  .item .v { margin: 4px 0 0; font-size: 13px; font-weight: 500; color: var(--text); }
+  .item .muted { color: var(--text-muted); font-size: 12px; }
+
+  .runtime { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .runtime .item { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: #fafafa; border-bottom: 1px solid var(--border); }
+
+  /* Alerts */
+  .alert {
+      background: #fff5f5; color: var(--danger); padding: 12px; border-radius: 6px; border: 1px solid #fed7d7; margin-bottom: 8px; font-size: 13px;
+  }
+  .alert:last-child { margin-bottom: 0; }
+  .alert.info { background: #e9f5ff; color: var(--primary); border-color: #cce5ff; }
+  .alert strong { font-weight: 600; display: block; margin-bottom: 4px; color: #000; }
+  .alert .muted { color: var(--text-muted); font-size: 12px; }
+
+  /* Dialog */
+  dialog {
+      border: none; border-radius: 8px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); width: 600px; max-width: 90vw; padding: 0; 
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+  .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; background: #fdfdfd; }
+  .modal-head strong { font-size: 16px; }
+  .modal-body { padding: 20px; max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
   </style>
 </head>
 <body>
-  <main class="app">
-    <section class="card top">
-      <div class="head">
-        <div>
-          <h1>Owner 运维控制台</h1>
-          <div class="sub">用户详情 · 快速操作 · 审计筛选 · 异常告警 · 导出</div>
-        </div>
-        <div class="actions">
-          <button id="refreshBtn" type="button">刷新全部</button>
-          <button class="btn-main" id="logoutBtn" type="button">退出</button>
-        </div>
+  <nav class="navbar">
+      <div class="navbar-content">
+          <div class="logo">Owner 运维控制台 <span class="status" id="statusText">正在加载...</span></div>
+          <div class="user-menu">
+              <button id="refreshBtn" type="button" style="color: white; border-color: rgba(255,255,255,0.3);">刷新全部</button>
+              <button class="logout-btn" id="logoutBtn" type="button">退出登录</button>
+          </div>
       </div>
-      <div class="body">
-        <div class="status" id="statusText">正在加载...</div>
-      </div>
-    </section>
+  </nav>
 
+  <main class="main-container">
     <section class="metrics">
       <article class="metric"><p class="k">总订阅</p><p class="v" id="mTotalSubs">-</p></article>
       <article class="metric"><p class="k">授权用户</p><p class="v" id="mUsers">-</p></article>
@@ -251,34 +170,10 @@
       <article class="metric"><p class="k">24h 导出</p><p class="v" id="mExports">-</p></article>
     </section>
 
-    <section class="layout">
-      <section class="stack">
-        <article class="card">
-          <div class="head">
-            <h2>运行状态</h2>
-            <button id="loadRuntimeBtn" type="button">刷新</button>
-          </div>
-          <div class="body">
-            <div class="runtime" id="runtimeBody"></div>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="head"><h2>快捷操作</h2></div>
-          <div class="body">
-            <div class="quick">
-              <input class="grow" id="quickUidInput" type="text" placeholder="输入用户 ID，例如 12345678">
-              <button id="quickGrantBtn" type="button">授权</button>
-              <button id="quickRevokeBtn" type="button">取消授权</button>
-              <button id="quickDetailBtn" type="button">用户详情</button>
-            </div>
-            <div style="margin-top:8px" class="actions">
-              <button id="togglePublicBtn" type="button">切换公开访问</button>
-              <button id="revokeSessionsBtn" type="button">强制下线全部会话</button>
-            </div>
-          </div>
-        </article>
-
+    <div class="dashboard-layout">
+      <!-- Main Content (Left Column) -->
+      <div class="stack">
+        <!-- Authorized Users -->
         <article class="card">
           <div class="head">
             <h2>授权用户列表</h2>
@@ -303,15 +198,11 @@
           </div>
         </article>
 
+        <!-- Checks Audit -->
         <article class="card">
-          <div class="head"><h2>异常告警</h2><button id="loadAlertsBtn" type="button">刷新</button></div>
-          <div class="body" id="alertsBody"></div>
-        </article>
-      </section>
-
-      <section class="stack">
-        <article class="card">
-          <div class="head"><h2>检测审计（可筛选/导出）</h2></div>
+          <div class="head">
+            <h2>检测审计（可筛选/导出）</h2>
+          </div>
           <div class="body">
             <div class="filters">
               <select id="auditMode">
@@ -325,7 +216,7 @@
               <input id="filterFrom" type="text" placeholder="起始时间 YYYY-MM-DD">
               <input id="filterTo" type="text" placeholder="结束时间 YYYY-MM-DD">
               <div class="actions">
-                <button id="loadChecksBtn" type="button">查询</button>
+                <button class="btn-brand" id="loadChecksBtn" type="button">查询</button>
                 <button id="exportCsvBtn" type="button">导出 CSV</button>
                 <button id="exportJsonBtn" type="button">导出 JSON</button>
               </div>
@@ -345,7 +236,48 @@
             </div>
           </div>
         </article>
+      </div>
 
+      <!-- Side Content (Right Column) -->
+      <div class="stack">
+        <!-- Runtime Status -->
+        <article class="card">
+          <div class="head">
+            <h2>运行状态</h2>
+            <button id="loadRuntimeBtn" type="button">刷新</button>
+          </div>
+          <div class="body">
+            <div class="runtime" id="runtimeBody"></div>
+          </div>
+        </article>
+
+        <!-- Quick Actions -->
+        <article class="card">
+          <div class="head">
+            <h2>快捷操作</h2>
+          </div>
+          <div class="body">
+            <div class="quick">
+              <div class="quick-row">
+                <input id="quickUidInput" type="text" placeholder="输入用户 ID，例如 12345678">
+              </div>
+              <div class="quick-row">
+                <button class="btn-brand" style="flex:1;" id="quickGrantBtn" type="button">授权</button>
+                <button class="btn-danger" style="flex:1;" id="quickRevokeBtn" type="button">取消</button>
+                <button style="flex:1;" id="quickDetailBtn" type="button">详情</button>
+              </div>
+              <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0; width: 100%;">
+              <div class="quick-row">
+                <button style="flex:1;" id="togglePublicBtn" type="button">切换公开访问</button>
+              </div>
+              <div class="quick-row">
+                <button class="btn-danger" style="flex:1;" id="revokeSessionsBtn" type="button">强制下线全部会话</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Audit Summary -->
         <article class="card">
           <div class="head">
             <h2>审计摘要</h2>
@@ -356,6 +288,7 @@
           </div>
         </article>
 
+        <!-- Recent Exports -->
         <article class="card">
           <div class="head">
             <h2>近期导出记录</h2>
@@ -365,8 +298,17 @@
             <div class="list" id="recentExportsBody"></div>
           </div>
         </article>
-      </section>
-    </section>
+
+        <!-- Alerts -->
+        <article class="card">
+          <div class="head">
+            <h2>异常告警</h2>
+            <button id="loadAlertsBtn" type="button">刷新</button>
+          </div>
+          <div class="body" id="alertsBody"></div>
+        </article>
+      </div>
+    </div>
   </main>
 
   <dialog id="userDetailModal">
