@@ -3,104 +3,226 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>控制台登录</title>
+  <title>管理控制台登录</title>
   <style>
     :root {
-      --bg: #f6f6f6;
-      --surface: #ffffff;
-      --line: #d9d9d9;
-      --ink: #121212;
-      --muted: #666666;
-      --danger: #c40000;
+      --bg: #f2f2f2;
+      --ink: #111111;
+      --muted: #616161;
+      --line: #d7d7d7;
+      --card: #ffffff;
+      --danger: #ba1a1a;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
+      color: var(--ink);
+      font-family: "IBM Plex Sans", "Noto Sans SC", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 15% 20%, #ffffff 0%, #ededed 35%, transparent 60%),
+        radial-gradient(circle at 85% 80%, #ffffff 0%, #ebebeb 40%, transparent 65%),
+        linear-gradient(135deg, #f7f7f7, #e9e9e9);
       display: grid;
       place-items: center;
-      background: var(--bg);
-      color: var(--ink);
-      font-family: "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+      padding: 18px;
     }
-    .card {
-      width: min(420px, calc(100vw - 28px));
-      background: var(--surface);
+    .shell {
+      width: min(980px, 100%);
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
       border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 22px;
-      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 30px 70px rgba(0, 0, 0, 0.11);
+      overflow: hidden;
+    }
+    .intro {
+      padding: 34px;
+      border-right: 1px solid var(--line);
+      background:
+        linear-gradient(160deg, rgba(255, 255, 255, 0.9), rgba(240, 240, 240, 0.8));
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #bdbdbd;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 12px;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      background: #fafafa;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #101010;
     }
     h1 {
-      margin: 0;
-      font-size: 22px;
-      letter-spacing: 0.2px;
+      margin: 18px 0 10px;
+      font-size: clamp(28px, 4vw, 40px);
+      letter-spacing: -0.4px;
+      line-height: 1.05;
     }
-    p {
-      margin: 8px 0 0;
-      font-size: 13px;
+    .desc {
+      margin: 0;
       color: var(--muted);
-      line-height: 1.5;
+      line-height: 1.6;
+      max-width: 36ch;
+      font-size: 14px;
+    }
+    .cards {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .mini {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      background: #fbfbfb;
+      min-height: 82px;
+    }
+    .mini .k {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .mini .v {
+      margin: 10px 0 0;
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .auth {
+      padding: 30px 24px;
+      display: grid;
+      align-content: center;
+      gap: 16px;
+    }
+    .auth h2 {
+      margin: 0;
+      font-size: 21px;
+      letter-spacing: -0.2px;
+    }
+    .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
     }
     form {
-      margin-top: 16px;
       display: grid;
-      gap: 10px;
+      gap: 12px;
     }
     label {
       display: block;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
       font-size: 12px;
       color: var(--muted);
     }
     input {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 11px 12px;
-      font-size: 14px;
+      border-radius: 12px;
+      padding: 12px 13px;
       background: #fff;
       color: var(--ink);
+      font-size: 14px;
+      transition: border-color .15s ease, box-shadow .15s ease;
     }
     input:focus {
-      outline: 2px solid #000;
-      outline-offset: 0;
+      outline: none;
+      border-color: #101010;
+      box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.1);
     }
     button {
       border: 1px solid #000;
-      border-radius: 10px;
-      padding: 11px 12px;
-      font-size: 14px;
-      background: #000;
+      border-radius: 12px;
+      padding: 12px 13px;
+      background: #111;
       color: #fff;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
+      transition: transform .12s ease, background .12s ease;
     }
-    button:hover { background: #222; }
+    button:hover { background: #242424; }
+    button:active { transform: translateY(1px); }
     .error {
       min-height: 18px;
-      margin-top: 8px;
-      font-size: 13px;
+      margin: 0;
       color: var(--danger);
+      font-size: 13px;
+    }
+    @media (max-width: 900px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+      .intro {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        padding: 24px;
+      }
+      .auth {
+        padding: 22px;
+      }
+    }
+    @media (max-width: 520px) {
+      .cards { grid-template-columns: 1fr; }
+      h1 { font-size: 30px; }
     }
   </style>
 </head>
 <body>
-  <section class="card">
-    <h1>管理控制台登录</h1>
-    <p>请输入管理员账号和口令，登录成功后进入运维控制台。</p>
-    <form id="loginForm">
-      <div>
-        <label for="username">账号</label>
-        <input id="username" name="username" type="text" autocomplete="username" required>
+  <section class="shell">
+    <aside class="intro">
+      <div class="badge"><span class="dot"></span> WEB ADMIN</div>
+      <h1>管理控制台</h1>
+      <p class="desc">
+        简洁的黑白运维入口，保留所有核心功能和安全机制。登录后即可访问用户、审计、导出与订阅分布信息。
+      </p>
+      <div class="cards">
+        <article class="mini">
+          <p class="k">登录方式</p>
+          <p class="v">账号 + 口令</p>
+        </article>
+        <article class="mini">
+          <p class="k">会话机制</p>
+          <p class="v">Cookie Session</p>
+        </article>
+        <article class="mini">
+          <p class="k">访问控制</p>
+          <p class="v">管理员级别</p>
+        </article>
+        <article class="mini">
+          <p class="k">安全策略</p>
+          <p class="v">限流 + 过期</p>
+        </article>
       </div>
+    </aside>
+
+    <main class="auth">
       <div>
-        <label for="password">口令</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <h2>登录控制台</h2>
+        <p class="hint">请输入管理员账号和口令。</p>
       </div>
-      <button type="submit">登录</button>
-    </form>
-    <div class="error" id="errorText"></div>
+      <form id="loginForm">
+        <div>
+          <label for="username">账号</label>
+          <input id="username" name="username" type="text" autocomplete="username" required>
+        </div>
+        <div>
+          <label for="password">口令</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit">进入控制台</button>
+      </form>
+      <p class="error" id="errorText"></p>
+    </main>
   </section>
 
   <script>

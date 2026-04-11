@@ -6,37 +6,54 @@
   <title>运维控制台</title>
   <style>
     :root {
-      --bg: #f5f5f5;
+      --bg: #f1f1f1;
       --surface: #ffffff;
-      --line: #d8d8d8;
-      --ink: #141414;
+      --surface-2: #f7f7f7;
+      --line: #dadada;
+      --ink: #121212;
       --muted: #666666;
-      --ok: #1f7a1f;
-      --warn: #b10000;
+      --ok: #0d7a40;
+      --warn: #b42323;
+      --shadow: 0 18px 40px rgba(0, 0, 0, 0.08);
     }
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
       margin: 0;
-      background: var(--bg);
       color: var(--ink);
-      font-family: "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+      font-family: "IBM Plex Sans", "Noto Sans SC", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 8% 12%, #ffffff 0, #ececec 32%, transparent 60%),
+        radial-gradient(circle at 92% 88%, #ffffff 0, #ececec 38%, transparent 66%),
+        linear-gradient(130deg, #f8f8f8, #ececec);
     }
     .app {
-      max-width: 1180px;
+      max-width: 1240px;
       margin: 0 auto;
-      padding: 16px 12px 28px;
+      padding: 16px;
+      animation: fadeIn .35s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     .topbar {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
       gap: 10px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.84);
+      backdrop-filter: blur(8px);
+      box-shadow: var(--shadow);
       margin-bottom: 12px;
     }
     h1 {
       margin: 0;
-      font-size: 24px;
-      letter-spacing: 0.2px;
+      font-size: clamp(24px, 3vw, 32px);
+      letter-spacing: -0.3px;
     }
     .sub {
       margin-top: 4px;
@@ -44,31 +61,35 @@
       font-size: 12px;
     }
     .actions {
-      display: flex;
+      display: inline-flex;
       gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
     button, select {
       border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 9px 11px;
+      border-radius: 11px;
+      padding: 9px 12px;
       font-size: 13px;
       background: #fff;
       color: var(--ink);
     }
-    button {
-      cursor: pointer;
-    }
+    button { cursor: pointer; }
     .btn-main {
       border-color: #000;
-      background: #000;
+      background: #0f0f0f;
       color: #fff;
       font-weight: 600;
     }
-    .btn-main:hover { background: #1c1c1c; }
+    .btn-main:hover { background: #232323; }
     .status {
-      margin-bottom: 12px;
-      font-size: 13px;
+      margin: 8px 0 12px;
+      padding: 10px 12px;
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.65);
       color: var(--muted);
+      font-size: 13px;
     }
     .ok { color: var(--ok); }
     .warn { color: var(--warn); }
@@ -76,14 +97,29 @@
     .metrics {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
+      gap: 10px;
       margin-bottom: 12px;
     }
     .metric {
-      background: var(--surface);
+      position: relative;
       border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #ffffff, #f8f8f8);
+      padding: 12px;
+      min-height: 102px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+      overflow: hidden;
+    }
+    .metric::after {
+      content: "";
+      position: absolute;
+      width: 90px;
+      height: 90px;
+      right: -26px;
+      bottom: -36px;
+      border-radius: 50%;
+      border: 1px solid #e8e8e8;
+      background: radial-gradient(circle, #ffffff, #f2f2f2);
     }
     .metric .k {
       margin: 0;
@@ -91,10 +127,10 @@
       color: var(--muted);
     }
     .metric .v {
-      margin: 6px 0 0;
-      font-size: 24px;
+      margin: 10px 0 0;
+      font-size: clamp(24px, 3vw, 30px);
       font-weight: 700;
-      line-height: 1.1;
+      letter-spacing: -0.4px;
     }
 
     .grid {
@@ -103,63 +139,65 @@
       gap: 10px;
     }
     .panel {
-      background: var(--surface);
       border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px;
-      min-height: 220px;
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+      min-height: 230px;
+      overflow: hidden;
     }
     .panel-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      margin-bottom: 8px;
+      padding: 12px;
+      background: linear-gradient(180deg, #ffffff, #f5f5f5);
+      border-bottom: 1px solid var(--line);
     }
     .panel h2 {
       margin: 0;
       font-size: 15px;
+      letter-spacing: 0.1px;
     }
-    .rows {
-      border-top: 1px solid var(--line);
-    }
+    .panel-body { padding: 0 12px 10px; }
+    .rows { border-top: 1px solid var(--line); }
     .row {
       display: grid;
-      grid-template-columns: 120px 1fr;
-      gap: 6px;
-      border-bottom: 1px solid var(--line);
-      padding: 7px 0;
-      font-size: 13px;
-    }
-    .row .label {
-      color: var(--muted);
-    }
-    .list .item {
+      grid-template-columns: 130px 1fr;
+      gap: 8px;
       border-bottom: 1px solid var(--line);
       padding: 8px 0;
+      font-size: 13px;
+    }
+    .label { color: var(--muted); }
+    .list .item {
+      border-bottom: 1px solid var(--line);
+      padding: 9px 0;
       font-size: 13px;
       display: grid;
       gap: 3px;
     }
     .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      word-break: break-all;
     }
+    .muted { color: var(--muted); }
     .empty {
       color: var(--muted);
       font-size: 13px;
-      padding: 8px 0;
+      padding: 10px 0;
     }
     @media (max-width: 980px) {
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .grid { grid-template-columns: 1fr; }
     }
-    @media (max-width: 620px) {
+    @media (max-width: 700px) {
       .topbar {
-        flex-direction: column;
-        align-items: stretch;
+        grid-template-columns: 1fr;
       }
       .actions {
-        width: 100%;
+        justify-content: stretch;
       }
       .actions button {
         flex: 1;
@@ -169,8 +207,10 @@
         grid-template-columns: 1fr;
         gap: 2px;
       }
-      .panel {
-        min-height: 0;
+      .panel { min-height: 0; }
+      .panel-head {
+        flex-direction: column;
+        align-items: stretch;
       }
     }
   </style>
@@ -180,11 +220,11 @@
     <section class="topbar">
       <div>
         <h1>运维控制台</h1>
-        <div class="sub">响应式展示：桌面双列，移动端单列高可读布局</div>
+        <div class="sub">黑白简洁风格 · 自适应布局 · 核心功能完整保留</div>
       </div>
       <div class="actions">
-        <button id="refreshBtn" type="button">刷新</button>
-        <button class="btn-main" id="logoutBtn" type="button">退出</button>
+        <button id="refreshBtn" type="button">刷新数据</button>
+        <button class="btn-main" id="logoutBtn" type="button">退出登录</button>
       </div>
     </section>
 
@@ -210,7 +250,9 @@
             <button id="loadAuditBtn" type="button">加载</button>
           </div>
         </div>
-        <div class="rows" id="auditSummaryBody"></div>
+        <div class="panel-body">
+          <div class="rows" id="auditSummaryBody"></div>
+        </div>
       </article>
 
       <article class="panel">
@@ -224,7 +266,9 @@
             <button id="loadUsersBtn" type="button">加载</button>
           </div>
         </div>
-        <div class="list" id="recentUsersBody"></div>
+        <div class="panel-body">
+          <div class="list" id="recentUsersBody"></div>
+        </div>
       </article>
 
       <article class="panel">
@@ -232,7 +276,9 @@
           <h2>近期导出记录</h2>
           <button id="loadExportsBtn" type="button">加载</button>
         </div>
-        <div class="list" id="recentExportsBody"></div>
+        <div class="panel-body">
+          <div class="list" id="recentExportsBody"></div>
+        </div>
       </article>
 
       <article class="panel">
@@ -240,7 +286,9 @@
           <h2>全局订阅分布</h2>
           <button id="loadGlobalBtn" type="button">加载</button>
         </div>
-        <div class="list" id="globalSubsBody"></div>
+        <div class="panel-body">
+          <div class="list" id="globalSubsBody"></div>
+        </div>
       </article>
     </section>
   </main>
