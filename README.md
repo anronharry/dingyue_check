@@ -125,6 +125,13 @@ tail -n 100 bot.log
 - 配置了 `WEB_ADMIN_REDIS_URL` 但 healthz 显示 `auth_backend=memory`：确认已安装 `redis` 包且 Redis 地址可达
 - 启动失败：查看 `bot.log` 最后一百行
 
+### 4.5 update_bot.sh 测试策略
+
+- 默认执行测试：UPDATE_RUN_TESTS=true
+- 默认测试失败不阻塞启动：UPDATE_TESTS_STRICT=false
+- 严格模式：UPDATE_TESTS_STRICT=true bash update_bot.sh
+- 临时跳过测试：UPDATE_RUN_TESTS=false bash update_bot.sh
+
 ## 5. 推荐生产部署方式（systemd）
 
 如果你长期运行在云端，建议改用 `systemd` 托管，而不是纯 `nohup`。
@@ -272,3 +279,4 @@ scripts/     辅助脚本
 ## 12. License
 
 MIT License，见 [LICENSE](LICENSE)。
+

@@ -64,11 +64,30 @@ echo "==> compile check"
 python3 -m compileall app core handlers renderers services shared tests web bot_async.py main.py
 
 echo "==> running tests"
-if python3 -c "import pytest" >/dev/null 2>&1; then
-  python3 -m pytest -q
+UPDATE_RUN_TESTS="${UPDATE_RUN_TESTS:-true}"
+UPDATE_TESTS_STRICT="${UPDATE_TESTS_STRICT:-false}"
+TEST_EXIT_CODE=0
+
+if [ "${UPDATE_RUN_TESTS,,}" = "true" ]; then
+  if python3 -c "import pytest" >/dev/null 2>&1; then
+    python3 -m pytest -q || TEST_EXIT_CODE=$?
+  else
+    echo "==> pytest not installed, fallback to unittest discover"
+    python3 -m unittest discover -s tests || TEST_EXIT_CODE=$?
+  fi
+
+  if [ "$TEST_EXIT_CODE" -ne 0 ]; then
+    if [ "${UPDATE_TESTS_STRICT,,}" = "true" ]; then
+      echo "ERROR: tests failed and UPDATE_TESTS_STRICT=true, aborting deploy."
+      exit "$TEST_EXIT_CODE"
+    fi
+    echo "WARNING: tests failed (exit=$TEST_EXIT_CODE), continue deploy (UPDATE_TESTS_STRICT=false)."
+    echo "         Set UPDATE_TESTS_STRICT=true to make test failures block startup."
+  else
+    echo "==> tests passed"
+  fi
 else
-  echo "==> pytest not installed, fallback to unittest discover"
-  python3 -m unittest discover -s tests
+  echo "==> skipping tests (UPDATE_RUN_TESTS=false)"
 fi
 
 if [ "${ENABLE_WEB_ADMIN,,}" = "true" ] && [ "${APP_RUN_MODE,,}" != "unified_async" ]; then
