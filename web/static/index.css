@@ -148,6 +148,7 @@
 }
 
 .logout-btn:hover { background-color: rgba(255, 255, 255, 0.3); transform: translateY(-1px); }
+.refresh-btn { background: rgba(255,255,255,0.15); }
 
 button {
   background: rgba(255,255,255,0.06);
@@ -228,6 +229,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 .body { padding: 16px; }
+.audit-summary-list { display: flex; flex-direction: column; gap: 12px; }
 
 .filters {
   display: grid;
@@ -295,6 +297,69 @@ th:first-child {
 }
 
 tbody tr:hover { background-color: rgba(148,163,184,0.08); }
+.table-empty-cell {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 40px;
+}
+.u-fw-700 { font-weight: 700; }
+.u-text-muted { color: var(--text-muted); }
+.u-flex-gap-6 { display: flex; gap: 6px; }
+.u-btn-compact { padding: 4px 10px; font-size: 12px; }
+.public-access-open { color: var(--success); font-weight: 700; }
+.public-access-closed { color: var(--danger); font-weight: 700; }
+.panel-empty-hint {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 20px;
+}
+.panel-empty-tight {
+  text-align: left;
+  padding: 10px;
+  font-size: 12px;
+}
+.audit-summary-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.audit-summary-label { color: var(--text-muted); }
+.audit-summary-value { font-weight: 700; }
+.recent-export-item { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.recent-export-identity { font-weight: 700; font-size: 13px; }
+.recent-export-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.recent-export-ts { font-size: 11px; color: var(--text-muted); }
+.recent-export-target {
+  margin-top: 4px;
+  font-size: 11px;
+  word-break: break-all;
+}
+.subscription-item {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.subscription-name { font-weight: 700; font-size: 13px; }
+.subscription-url {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 4px 0;
+}
+.subscription-meta { font-size: 11px; }
+.user-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
 
 
 .audit-source-badge {

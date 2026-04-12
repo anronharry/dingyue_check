@@ -114,13 +114,13 @@ const qs = (id) => document.getElementById(id);
       
       const body = qs("authorizedUsersBody");
       if (!data.users.length) {
-        body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:40px;">暂无满足条件的授权用户</td></tr>`;
+        body.innerHTML = `<tr><td colspan="5" class="table-empty-cell">暂无满足条件的授权用户</td></tr>`;
       } else {
         body.innerHTML = data.users.map(r => `
           <tr>
             <td>
-                <div style="font-weight:700;">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
-                <div class="mono" style="color:var(--text-muted)">ID: ${r.uid}</div>
+                <div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
+                <div class="mono u-text-muted">ID: ${r.uid}</div>
             </td>
             <td>
                 ${r.is_owner ? '<span class="badge badge-primary">OWNER</span>' : '<span class="badge">USER</span>'}
@@ -129,9 +129,9 @@ const qs = (id) => document.getElementById(id);
             <td class="mono">${r.last_seen}</td>
             <td class="mono">${r.source}</td>
             <td>
-                <div style="display:flex; gap:6px;">
-                    <button onclick="openUserDetail('${r.uid}')" style="padding:4px 10px; font-size:12px;">详情</button>
-                    ${!r.is_owner ? `<button class="btn-danger" onclick="setUserAccess('${r.uid}', false)" style="padding:4px 10px; font-size:12px;">撤销</button>` : ''}
+                <div class="u-flex-gap-6">
+                    <button class="u-btn-compact" onclick="openUserDetail('${r.uid}')">详情</button>
+                    ${!r.is_owner ? `<button class="btn-danger u-btn-compact" onclick="setUserAccess('${r.uid}', false)">撤销</button>` : ''}
                 </div>
             </td>
           </tr>
@@ -140,7 +140,7 @@ const qs = (id) => document.getElementById(id);
       renderPagination("usersPagination", data.page, data.total_pages, "window._goUsersPage");
       
       // Update Public Access Desc
-      qs("publicAccessDesc").innerHTML = `当前：${data.allow_all_users ? '<span style="color:var(--success); font-weight:700;">🟢 全员开放</span>' : '<span style="color:var(--danger); font-weight:700;">🔴 限制访问</span>'}`;
+      qs("publicAccessDesc").innerHTML = `当前：${data.allow_all_users ? '<span class="public-access-open">🟢 全员开放</span>' : '<span class="public-access-closed">🔴 限制访问</span>'}`;
       window.__allowAllUsers = data.allow_all_users;
     }
 
@@ -156,13 +156,13 @@ const qs = (id) => document.getElementById(id);
 
       const body = qs("recentChecksBody");
       if (!data.rows.length) {
-        body.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:40px;">找不到相关的检测记录</td></tr>`;
+        body.innerHTML = `<tr><td colspan="4" class="table-empty-cell">找不到相关的检测记录</td></tr>`;
       } else {
         body.innerHTML = data.rows.map((r, rowIndex) => {
           const auditCell = buildAuditUrlCell(r.urls || [], rowIndex);
           return `
             <tr>
-              <td><div style="font-weight:700;">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div></td>
+              <td><div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div></td>
               <td class="mono">${escapeHtml(r.ts || "-")}</td>
               <td><span class="badge badge-primary audit-source-badge">${escapeHtml(r.source || "-")}</span></td>
               <td class="audit-url-col">${auditCell}</td>
@@ -194,7 +194,7 @@ const qs = (id) => document.getElementById(id);
       if (!data) return;
       const el = qs("alertsBody");
       if (!data.alerts.length) {
-        el.innerHTML = `<div style="text-align:center; color:var(--text-muted); font-size:13px; padding:20px;">系统运行平稳，无异常告警</div>`;
+        el.innerHTML = `<div class="panel-empty-hint">系统运行平稳，无异常告警</div>`;
         return;
       }
       el.innerHTML = data.alerts.map(a => `
@@ -216,8 +216,8 @@ const qs = (id) => document.getElementById(id);
           {l: '24h 检测量', v: data.check_count},
           {l: '24h 用户数', v: data.user_count},
           {l: '24h URL 总数', v: data.url_count}
-      ].map(i => `<div style="display:flex; justify-content:space-between; font-size:14px; border-bottom:1px solid var(--border); padding-bottom:8px;">
-        <span style="color:var(--text-muted)">${i.l}</span><span style="font-weight:700;">${i.v}</span></div>`).join("");
+      ].map(i => `<div class="audit-summary-item">
+        <span class="audit-summary-label">${i.l}</span><span class="audit-summary-value">${i.v}</span></div>`).join("");
     }
 
     async function loadRecentExports() {
@@ -225,17 +225,17 @@ const qs = (id) => document.getElementById(id);
       if (!data) return;
       const el = qs("recentExportsBody");
       if (!data.rows.length) {
-        el.innerHTML = `<div style="padding:10px; color:var(--text-muted); font-size:12px;">无导出记录</div>`;
+        el.innerHTML = `<div class="panel-empty-hint panel-empty-tight">无导出记录</div>`;
         return;
       }
       el.innerHTML = data.rows.map(r => `
-        <div style="padding:12px 0; border-bottom:1px solid var(--border);">
-            <div style="font-weight:700; font-size:13px;">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
-            <div style="display:flex; justify-content:space-between; margin-top:4px;">
+        <div class="recent-export-item">
+            <div class="recent-export-identity">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
+            <div class="recent-export-meta">
                 <span class="badge badge-primary">${r.fmt}</span>
-                <span class="mono" style="font-size:11px; color:var(--text-muted)">${r.ts}</span>
+                <span class="mono recent-export-ts">${r.ts}</span>
             </div>
-            <div class="mono" style="margin-top:4px; font-size:11px; word-break:break-all;">${r.target}</div>
+            <div class="mono recent-export-target">${r.target}</div>
         </div>
       `).join("");
     }
@@ -275,15 +275,15 @@ const qs = (id) => document.getElementById(id);
       qs("userDetailTitle").textContent = `资源画像：${data.identity}`;
       
       const subs = (data.subscriptions || []).map(s => `
-        <div style="padding:10px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;">
-            <div style="font-weight:700; font-size:13px;">${s.name}</div>
-            <div class="mono" style="font-size:11px; color:var(--text-muted); margin:4px 0;">${s.url}</div>
-            <div style="font-size:11px;">更新: ${s.updated_at} | 到期: ${s.expire_time}</div>
+        <div class="subscription-item">
+            <div class="subscription-name">${s.name}</div>
+            <div class="mono subscription-url">${s.url}</div>
+            <div class="subscription-meta">更新: ${s.updated_at} | 到期: ${s.expire_time}</div>
         </div>
       `).join("") || "暂无订阅库数据";
 
       qs("userDetailBody").innerHTML = `
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px;">
+        <div class="user-detail-grid">
             <div class="runtime-item"><div class="k">UID</div><div class="v">${data.uid}</div></div>
             <div class="runtime-item"><div class="k">身份状态</div><div class="v">${data.is_owner ? '管理员' : '普通用户'}</div></div>
             <div class="runtime-item"><div class="k">订阅总数</div><div class="v">${data.subscription_count}</div></div>
