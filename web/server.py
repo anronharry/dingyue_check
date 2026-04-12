@@ -160,7 +160,10 @@ def _is_api_path(path: str) -> bool:
 
 
 def _is_protected_path(path: str) -> bool:
+    # Keep login and static assets public so login page CSS/JS can load.
     if path in {"/admin/login", "/admin/login/", "/healthz"}:
+        return False
+    if path.startswith("/admin/static/"):
         return False
     return path.startswith("/admin") or _is_api_path(path)
 
