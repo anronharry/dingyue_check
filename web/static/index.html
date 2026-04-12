@@ -7,166 +7,52 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-  :root {
-      --primary: #4361ee;
-      --primary-soft: rgba(67, 97, 238, 0.1);
-      --bg: #f5f7fb;
-      --card-bg: #ffffff;
-      --text: #1e293b;
-      --text-muted: #64748b;
-      --border: #e2e8f0;
-      --danger: #ef4444;
-      --danger-soft: rgba(239, 68, 68, 0.1);
-      --success: #22c55e;
-      --success-soft: rgba(34, 197, 94, 0.1);
-      --radius: 12px;
-      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-  }
-  * { box-sizing: border-box; }
-  body {
-      margin: 0;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background-color: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-  }
-  .navbar {
-      background-color: var(--primary);
-      color: white;
-      padding: 0 24px;
-      box-shadow: 0 4px 12px rgba(67, 97, 238, 0.15);
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      height: 70px;
-  }
-  .navbar-content {
-      display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto; height: 100%;
-  }
-  .logo-area { display: flex; align-items: center; gap: 14px; }
-  .logo-img { height: 40px; border-radius: 8px; background: white; padding: 2px; }
-  .brand-name { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
-  
-  .status {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 500;
-  }
-  .status.ok { color: #fff; background: var(--success); }
-  .status.warn { color: #fff; background: var(--danger); }
-
-  .nav-actions { display: flex; gap: 12px; align-items: center; }
-  .logout-btn {
-      background-color: rgba(255, 255, 255, 0.2); border: none; color: white; padding: 10px 18px; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 14px; font-weight: 600;
-  }
-  .logout-btn:hover { background-color: rgba(255, 255, 255, 0.3); transform: translateY(-1px); }
-  
-  button {
-      background: var(--card-bg); border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 13px; font-weight: 600;
-  }
-  button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  
-  .btn-brand { background: var(--primary); color: white; border: none; box-shadow: 0 2px 4px var(--primary-soft); }
-  .btn-brand:hover:not(:disabled) { background: #3a50d9; color: white; transform: translateY(-1px); box-shadow: 0 4px 8px var(--primary-soft); }
-  
-  .btn-danger { color: var(--danger); border-color: var(--danger); }
-  .btn-danger:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); }
-
-  .main-container { max-width: 1400px; margin: 0 auto; padding: 32px; }
-  
-  /* Metrics */
-  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 32px; }
-  .metric {
-      background: var(--card-bg); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); position: relative; overflow: hidden;
-  }
-  .metric::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--primary); }
-  .metric .k { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .metric .v { margin: 8px 0 0; font-size: 28px; font-weight: 800; color: var(--text); }
-
-  /* Layout */
-  .dashboard-layout { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 2fr); gap: 32px; }
-  @media (max-width: 1100px) {
-    .dashboard-layout { grid-template-columns: 1fr; }
-    .metrics { grid-template-columns: repeat(2, 1fr); }
-  }
-  
-  .stack { display: flex; flex-direction: column; gap: 32px; }
-
-  /* Cards */
-  .card { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border); }
-  .head {
-      padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;
-  }
-  .head h2 { font-size: 16px; font-weight: 700; margin: 0; color: var(--text); }
-  .body { padding: 24px; }
-
-  /* Filters */
-  .filters { 
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; 
-      margin-bottom: 20px; background: var(--bg); padding: 16px; border-radius: 10px; border: 1px solid var(--border);
-  }
-  .filters .actions { grid-column: 1 / -1; display: flex; gap: 10px; margin-top: 8px; }
-
-  input, select {
-      border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; background: white; color: var(--text); font-size: 14px; width: 100%;
-  }
-  input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-  
-  /* Tables */
-  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th { background: #f8fafc; color: var(--text-muted); font-weight: 600; padding: 14px 20px; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; text-align: left; }
-  td { padding: 16px 20px; border-top: 1px solid var(--border); vertical-align: middle; }
-  tbody tr:hover { background-color: #f1f5f9; }
-
-  /* Pagination */
-  .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 24px; }
-  .page-info { font-size: 13px; font-weight: 500; color: var(--text-muted); }
-  .page-btn { padding: 6px 14px; min-width: 40px; }
-
-  /* Specific Items */
-  .mono { font-family: 'JetBrains Mono', 'SF Mono', monospace; font-size: 12px; }
-  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-  .badge-primary { background: var(--primary-soft); color: var(--primary); }
-  .badge-success { background: var(--success-soft); color: var(--success); }
-  .badge-danger { background: var(--danger-soft); color: var(--danger); }
-
-  .op-card { border-top: 4px solid var(--primary); }
-  .op-grid { display: grid; gap: 14px; }
-  .op-item { 
-      padding: 16px; border-radius: 10px; border: 1px solid var(--border); display: flex; 
-      justify-content: space-between; align-items: center; background: #fafafa;
-  }
-  .op-info { display: flex; flex-direction: column; gap: 2px; }
-  .op-title { font-weight: 700; font-size: 14px; }
-  .op-desc { font-size: 12px; color: var(--text-muted); }
-
-  .runtime-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .runtime-item { padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: #fdfdfd; }
-  .runtime-item .k { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
-  .runtime-item .v { font-size: 14px; font-weight: 700; color: var(--text); margin-top: 4px; }
-
-  .alert { 
-      padding: 16px; border-radius: 10px; margin-bottom: 12px; border-left: 4px solid var(--border); 
-      display: flex; gap: 12px; align-items: flex-start; background: #fff; box-shadow: var(--shadow);
-  }
-  .alert.high { border-left-color: var(--danger); background: #fff5f5; }
-  .alert.medium { border-left-color: #f59e0b; background: #fffbeb; }
-  .alert.low { border-left-color: var(--primary); background: #f0f7ff; }
-  .alert-content { flex: 1; }
-  .alert-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
-  .alert-desc { font-size: 12px; color: var(--text-muted); }
-
-  dialog { border: none; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); width: 700px; max-width: 95vw; padding: 0; }
-  dialog::backdrop { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); }
-  .modal-head { padding: 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-  .modal-body { padding: 24px; max-height: 80vh; overflow-y: auto; }
-  </style>
+    <link rel="stylesheet" href="/admin/static/common.css">
+  <link rel="stylesheet" href="/admin/static/index.css">
 </head>
 <body>
-  <nav class="navbar">
+  <div class="page-container">
+    <div class="aurora-bg">
+      <div class="aurora-blob blob-1"></div>
+      <div class="aurora-blob blob-2"></div>
+      <div class="aurora-blob blob-3"></div>
+    </div>
+    <div class="noise-overlay"></div>
+
+    <main class="main-card">
+      <section class="visual-side">
+        <div class="visual-bg"></div>
+        <div class="trajectories">
+          <div class="trajectory t1"><div class="trajectory-line"></div><div class="trajectory-packet"></div></div>
+          <div class="trajectory t2"><div class="trajectory-line"></div><div class="trajectory-packet"></div></div>
+          <div class="trajectory t3"><div class="trajectory-line"></div><div class="trajectory-packet"></div></div>
+        </div>
+
+        <div class="visual-content">
+          <div class="brand-box">
+            <img class="brand-logo" src="/admin/static/logo.png" alt="Logo" onerror="this.style.display='none'">
+            <span class="brand-text">NEXUS ADMIN</span>
+          </div>
+
+          <div class="slogan-box">
+            <h1 class="hero-title">构建<br>无界未来</h1>
+            <p class="hero-sub">为开发者打造的下一代云原生架构，<br />极致的性能与安全。</p>
+          </div>
+
+          <div class="trust-box">
+            <div class="avatar-group">
+              <div class="avatar"></div>
+              <div class="avatar"></div>
+              <div class="avatar"></div>
+            </div>
+            <span>加入 10,000+ 开发者社区</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="form-side">
+        <div class="form-wrapper dashboard-shell">
+<nav class="navbar">
       <div class="navbar-content">
           <div class="logo-area">
               <img src="/admin/static/logo.png" class="logo-img" alt="Logo" onerror="this.style.display='none'">
@@ -285,7 +171,7 @@
                 <span class="op-title">快速授权/吊销</span>
               </div>
             </div>
-            <div class="quick-row" style="display:flex; gap:8px;">
+            <div class="quick-row">
                 <input id="quickUidInput" type="text" placeholder="输入 UID">
                 <button id="quickGrantBtn" class="btn-brand" title="授权用户">
                     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
@@ -294,6 +180,21 @@
                     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
                 <button id="quickDetailBtn" title="查看详情">详情</button>
+            </div>
+            <div class="op-item">
+              <div class="op-info">
+                <span class="op-title">数据迁移与备份</span>
+                <span class="op-desc">导入导出、备份恢复、全量体检</span>
+              </div>
+            </div>
+            <div class="tools-row">
+                <button id="ownerExportJsonBtn" class="btn-brand" type="button">导出 JSON</button>
+                <button id="ownerImportJsonBtn" type="button">导入 JSON</button>
+                <button id="ownerBackupBtn" type="button">下载备份 ZIP</button>
+                <button id="ownerRestoreBtn" class="btn-danger" type="button">恢复备份 ZIP</button>
+                <button id="ownerCheckAllBtn" type="button">全量体检</button>
+                <input id="ownerImportFile" type="file" accept=".json,application/json" hidden>
+                <input id="ownerRestoreFile" type="file" accept=".zip,application/zip" hidden>
             </div>
           </div>
         </article>
@@ -348,308 +249,19 @@
     </div>
     <div class="modal-body" id="userDetailBody"></div>
   </dialog>
-
-  <script>
-    const qs = (id) => document.getElementById(id);
-    const statusText = qs("statusText");
-
-    let state = {
-        usersPage: 1,
-        auditPage: 1,
-        limit: 10
-    };
-
-    async function apiRequest(path, options = {}) {
-      try {
-        const resp = await fetch(path, {
-            credentials: "include",
-            ...options
-        });
-        if (resp.status === 401) {
-            window.location.href = "/admin/login";
-            return null;
-        }
-        const data = await resp.json();
-        if (!resp.ok || !data.ok) throw new Error(data.error || "请求失败");
-        return data.data;
-      } catch (e) {
-        setStatus(e.message, "warn");
-        throw e;
-      }
-    }
-
-    function setStatus(text, cls) {
-      statusText.className = "status " + (cls || "");
-      statusText.textContent = text;
-    }
-
-    function renderPagination(containerId, current, total, onPageChange) {
-        const container = qs(containerId);
-        if (total <= 1) {
-            container.innerHTML = "";
-            return;
-        }
-        
-        let html = `<button class="page-btn" ${current === 1 ? 'disabled' : ''} onclick="${onPageChange}(${current - 1})">←</button>`;
-        html += `<span class="page-info">第 ${current} / ${total} 页</span>`;
-        html += `<button class="page-btn" ${current === total ? 'disabled' : ''} onclick="${onPageChange}(${current + 1})">→</button>`;
-        
-        container.innerHTML = html;
-    }
-
-    async function loadOverview() {
-      const data = await apiRequest("/api/v1/system/overview");
-      if (!data) return;
-      qs("mTotalSubs").textContent = data.total_subs;
-      qs("mUsers").textContent = data.authorized_users;
-      qs("mActive").textContent = data.active_24h;
-      qs("mExports").textContent = data.exports_24h;
-    }
-
-    async function loadAuthorizedUsers(page = 1) {
-      const data = await apiRequest(`/api/v1/users/authorized?page=${page}&limit=${state.limit}`);
-      if (!data) return;
-      state.usersPage = data.page;
-      
-      const body = qs("authorizedUsersBody");
-      if (!data.users.length) {
-        body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:40px;">暂无满足条件的授权用户</td></tr>`;
-      } else {
-        body.innerHTML = data.users.map(r => `
-          <tr>
-            <td>
-                <div style="font-weight:700;">${r.identity}</div>
-                <div class="mono" style="color:var(--text-muted)">ID: ${r.uid}</div>
-            </td>
-            <td>
-                ${r.is_owner ? '<span class="badge badge-primary">OWNER</span>' : '<span class="badge">USER</span>'}
-                ${r.is_authorized ? '<span class="badge badge-success">已授权</span>' : '<span class="badge badge-danger">未授权</span>'}
-            </td>
-            <td class="mono">${r.last_seen}</td>
-            <td class="mono">${r.source}</td>
-            <td>
-                <div style="display:flex; gap:6px;">
-                    <button onclick="openUserDetail('${r.uid}')" style="padding:4px 10px; font-size:12px;">详情</button>
-                    ${!r.is_owner ? `<button class="btn-danger" onclick="setUserAccess('${r.uid}', false)" style="padding:4px 10px; font-size:12px;">撤销</button>` : ''}
-                </div>
-            </td>
-          </tr>
-        `).join("");
-      }
-      renderPagination("usersPagination", data.page, data.total_pages, "window._goUsersPage");
-      
-      // Update Public Access Desc
-      qs("publicAccessDesc").innerHTML = `当前：${data.allow_all_users ? '<span style="color:var(--success); font-weight:700;">🟢 全员开放</span>' : '<span style="color:var(--danger); font-weight:700;">🔴 限制访问</span>'}`;
-      window.__allowAllUsers = data.allow_all_users;
-    }
-
-    // Global page handlers for onclick
-    window._goUsersPage = (p) => loadAuthorizedUsers(p);
-    window._goAuditPage = (p) => loadRecentChecks(p);
-
-    async function loadRecentChecks(page = 1) {
-      const q = currentAuditQuery();
-      const data = await apiRequest(`/api/v1/audit/recent-checks?page=${page}&limit=${state.limit}&${q}`);
-      if (!data) return;
-      state.auditPage = page;
-
-      const body = qs("recentChecksBody");
-      if (!data.rows.length) {
-        body.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:40px;">找不到相关的检测记录</td></tr>`;
-      } else {
-        body.innerHTML = data.rows.map(r => {
-          const urls = (r.urls || []).map(u => `<li><a href="${u}" target="_blank" class="mono" style="color:var(--primary); text-decoration:none;">${u}</a></li>`).join("");
-          return `
-            <tr>
-              <td><div style="font-weight:700;">${r.identity}</div></td>
-              <td class="mono">${r.ts}</td>
-              <td><span class="badge badge-primary">${r.source}</span></td>
-              <td><ul style="margin:0; padding-left:16px; font-size:12px;">${urls || "-"}</ul></td>
-            </tr>
-          `;
-        }).join("");
-      }
-      // Calculate total pages for audit
-      const totalPages = Math.ceil(data.total / state.limit) || 1;
-      renderPagination("auditPagination", page, totalPages, "window._goAuditPage");
-    }
-
-    async function loadRuntime() {
-      const data = await apiRequest("/api/v1/system/runtime");
-      if (!data) return;
-      window.__runtimeState = data;
-      qs("runtimeBody").innerHTML = [
-        {k: '运行模式', v: data.run_mode},
-        {k: '运行时长', v: fmtUptime(data.uptime_seconds)},
-        {k: '认证后端', v: data.auth_backend},
-        {k: '全员模式', v: data.allow_all_users ? '已开启' : '已关闭'},
-        {k: '解析引擎', v: data.parser_ready ? '就绪' : '异常'},
-        {k: '存储引擎', v: data.storage_ready ? '就绪' : '异常'}
-      ].map(i => `<div class="runtime-item"><div class="k">${i.k}</div><div class="v">${i.v}</div></div>`).join("");
-    }
-
-    async function loadAlerts() {
-      const data = await apiRequest("/api/v1/audit/alerts");
-      if (!data) return;
-      const el = qs("alertsBody");
-      if (!data.alerts.length) {
-        el.innerHTML = `<div style="text-align:center; color:var(--text-muted); font-size:13px; padding:20px;">系统运行平稳，无异常告警</div>`;
-        return;
-      }
-      el.innerHTML = data.alerts.map(a => `
-        <div class="alert ${a.severity}">
-          <div class="alert-content">
-            <div class="alert-title">[${a.severity.toUpperCase()}] ${a.title}</div>
-            <div class="alert-desc">${a.detail}</div>
-          </div>
         </div>
-      `).join("");
-    }
+      </section>
+    </main>
+  </div>
 
-    async function loadAuditSummary() {
-      const mode = qs("auditMode").value;
-      const data = await apiRequest(`/api/v1/audit/summary?mode=${encodeURIComponent(mode)}`);
-      if (!data) return;
-      qs("auditSummaryBody").innerHTML = [
-          {l: '当前模式', v: data.title},
-          {l: '24h 检测量', v: data.check_count},
-          {l: '24h 用户数', v: data.user_count},
-          {l: '24h URL 总数', v: data.url_count}
-      ].map(i => `<div style="display:flex; justify-content:space-between; font-size:14px; border-bottom:1px solid var(--border); padding-bottom:8px;">
-        <span style="color:var(--text-muted)">${i.l}</span><span style="font-weight:700;">${i.v}</span></div>`).join("");
-    }
-
-    async function loadRecentExports() {
-      const data = await apiRequest("/api/v1/exports/recent?scope=others&limit=10");
-      if (!data) return;
-      const el = qs("recentExportsBody");
-      if (!data.rows.length) {
-        el.innerHTML = `<div style="padding:10px; color:var(--text-muted); font-size:12px;">无导出记录</div>`;
-        return;
-      }
-      el.innerHTML = data.rows.map(r => `
-        <div style="padding:12px 0; border-bottom:1px solid var(--border);">
-            <div style="font-weight:700; font-size:13px;">${r.identity}</div>
-            <div style="display:flex; justify-content:space-between; margin-top:4px;">
-                <span class="badge badge-primary">${r.fmt}</span>
-                <span class="mono" style="font-size:11px; color:var(--text-muted)">${r.ts}</span>
-            </div>
-            <div class="mono" style="margin-top:4px; font-size:11px; word-break:break-all;">${r.target}</div>
-        </div>
-      `).join("");
-    }
-
-    async function togglePublicAccess() {
-      const current = window.__allowAllUsers;
-      const data = await apiRequest("/api/v1/system/public-access", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({ enabled: !current })
-      });
-      setStatus(`成功：${data.enabled ? "开启" : "关闭"}全员访问`, "ok");
-      loadAuthorizedUsers(state.usersPage);
-    }
-
-    async function revokeAllSessions() {
-      if (!confirm("确定要强制注销所有管理员在线会话吗？您自己也会被踢出。")) return;
-      const data = await apiRequest("/api/v1/system/sessions/revoke-all", { method: "POST" });
-      setStatus(`已撤消 ${data.revoked} 个活跃会话`, "ok");
-      setTimeout(() => window.location.href = "/admin/login", 1500);
-    }
-
-    async function setUserAccess(uid, enabled) {
-      await apiRequest("/api/v1/users/access", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({ uid, enabled })
-      });
-      setStatus(enabled ? "已授权" : "已撤销授权", "ok");
-      loadAuthorizedUsers(state.usersPage);
-      loadOverview();
-    }
-
-    async function openUserDetail(uid) {
-      const data = await apiRequest(`/api/v1/users/detail?uid=${encodeURIComponent(uid)}`);
-      if (!data) return;
-      qs("userDetailTitle").textContent = `资源画像：${data.identity}`;
-      
-      const subs = (data.subscriptions || []).map(s => `
-        <div style="padding:10px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;">
-            <div style="font-weight:700; font-size:13px;">${s.name}</div>
-            <div class="mono" style="font-size:11px; color:var(--text-muted); margin:4px 0;">${s.url}</div>
-            <div style="font-size:11px;">更新: ${s.updated_at} | 到期: ${s.expire_time}</div>
-        </div>
-      `).join("") || "暂无订阅库数据";
-
-      qs("userDetailBody").innerHTML = `
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px;">
-            <div class="runtime-item"><div class="k">UID</div><div class="v">${data.uid}</div></div>
-            <div class="runtime-item"><div class="k">身份状态</div><div class="v">${data.is_owner ? '管理员' : '普通用户'}</div></div>
-            <div class="runtime-item"><div class="k">订阅总数</div><div class="v">${data.subscription_count}</div></div>
-            <div class="runtime-item"><div class="k">最近活跃</div><div class="v">${data.last_seen}</div></div>
-        </div>
-        <h4>订阅库列表</h4>
-        ${subs}
-      `;
-      qs("userDetailModal").showModal();
-    }
-
-    function currentAuditQuery() {
-      const q = new URLSearchParams();
-      q.set("mode", qs("auditMode").value);
-      const uid = qs("filterUserId").value.trim();
-      const src = qs("filterSource").value.trim();
-      const kw = qs("filterQ").value.trim();
-      const f = qs("filterFrom").value;
-      const t = qs("filterTo").value;
-      if (uid) q.set("user_id", uid);
-      if (src) q.set("source", src);
-      if (kw) q.set("q", kw);
-      if (f) q.set("from", f);
-      if (t) q.set("to", t);
-      return q.toString();
-    }
-
-    function fmtUptime(seconds) {
-      const s = Math.max(0, Number(seconds || 0));
-      const d = Math.floor(s / 86400);
-      const h = Math.floor((s % 86400) / 3600);
-      const m = Math.floor((s % 3600) / 60);
-      return d > 0 ? `${d}天 ${h}时 ${m}分` : `${h}时 ${m}分`;
-    }
-
-    async function refreshAll() {
-      setStatus("数据刷新中...");
-      try {
-        await Promise.all([
-          loadOverview(),
-          loadRuntime(),
-          loadAuthorizedUsers(1),
-          loadRecentChecks(1),
-          loadAlerts(),
-          loadAuditSummary(),
-          loadRecentExports()
-        ]);
-        setStatus("实时数据已同步", "ok");
-      } catch (e) {}
-    }
-
-    // Events
-    qs("refreshBtn").onclick = refreshAll;
-    qs("logoutBtn").onclick = () => apiRequest("/admin/logout", {method:"POST"}).then(()=>window.location.href="/admin/login");
-    qs("loadUsersTableBtn").onclick = () => loadAuthorizedUsers(state.usersPage);
-    qs("loadChecksBtn").onclick = () => loadRecentChecks(1);
-    qs("exportCsvBtn").onclick = () => window.location.href = `/api/v1/audit/export?format=csv&${currentAuditQuery()}`;
-    qs("exportJsonBtn").onclick = () => window.location.href = `/api/v1/audit/export?format=json&${currentAuditQuery()}`;
-    qs("togglePublicBtn").onclick = togglePublicAccess;
-    qs("revokeSessionsBtn").onclick = revokeAllSessions;
-    qs("quickGrantBtn").onclick = () => setUserAccess(qs("quickUidInput").value, true);
-    qs("quickRevokeBtn").onclick = () => setUserAccess(qs("quickUidInput").value, false);
-    qs("quickDetailBtn").onclick = () => openUserDetail(qs("quickUidInput").value);
-    qs("closeUserDetailBtn").onclick = () => qs("userDetailModal").close();
-    
-    // Auto Refresh
-    refreshAll();
-  </script>
+    <script src="/admin/static/index.js"></script>
 </body>
 </html>
+
+
+
+
+
+
+
+

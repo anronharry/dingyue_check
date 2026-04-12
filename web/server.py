@@ -1,6 +1,7 @@
 """Lightweight aiohttp-based web admin server."""
 from __future__ import annotations
 
+import asyncio
 import hmac
 import io
 import json
@@ -830,6 +831,160 @@ async def _audit_export(request: web.Request) -> web.Response:
     )
 
 
+
+async def _owner_export_json(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    export_file = ""
+    export_name = "subscriptions_export.json"
+    try:
+        store = runtime.get_storage()
+        export_file, export_name = runtime.admin_service.make_export_file_path()
+        ok = store.export_to_file(export_file)
+        if not ok:
+            return _json_error("export_failed", status=500)
+        payload = Path(export_file).read_bytes()
+        return web.Response(
+            body=payload,
+            content_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{export_name}"'},
+        )
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+    finally:
+        if export_file:
+            try:
+                f = Path(export_file)
+                if f.exists():
+                    f.unlink()
+            except Exception:
+                pass
+
+
+async def _owner_import_json(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    try:
+        form = await request.post()
+    except Exception:
+        return _json_error("invalid_form", status=400)
+
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "file"):
+        return _json_error("file_required", status=400)
+
+    filename = str(getattr(upload, "filename", "") or "import.json")
+    if not filename.lower().endswith(".json"):
+        return _json_error("invalid_file_type", status=400)
+
+    content = upload.file.read()
+    if not isinstance(content, (bytes, bytearray)) or not content:
+        return _json_error("empty_file", status=400)
+    if len(content) > 20 * 1024 * 1024:
+        return _json_error("file_too_large", status=400)
+
+    try:
+        imported = await runtime.document_service.import_json(content_bytes=bytes(content))
+        return web.json_response(
+            {
+                "ok": True,
+                "data": {
+                    "imported": int(imported),
+                    "filename": filename,
+                },
+            }
+        )
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+async def _owner_backup_download(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    try:
+        zip_path, zip_name = runtime.backup_service.create_backup()
+        payload = Path(zip_path).read_bytes()
+        return web.Response(
+            body=payload,
+            content_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+        )
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+async def _owner_restore_backup(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    try:
+        form = await request.post()
+    except Exception:
+        return _json_error("invalid_form", status=400)
+
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "file"):
+        return _json_error("file_required", status=400)
+
+    filename = str(getattr(upload, "filename", "") or "backup.zip")
+    if not filename.lower().endswith(".zip"):
+        return _json_error("invalid_file_type", status=400)
+
+    content = upload.file.read()
+    if not isinstance(content, (bytes, bytearray)) or not content:
+        return _json_error("empty_file", status=400)
+
+    max_bytes = int(getattr(runtime.backup_service, "max_restore_total_bytes", 200 * 1024 * 1024))
+    if len(content) > max_bytes:
+        return _json_error("file_too_large", status=400)
+
+    try:
+        restored = runtime.backup_service.restore_backup_bytes(bytes(content))
+        return web.json_response(
+            {
+                "ok": True,
+                "data": {
+                    "restored_files": len(restored),
+                    "preview": restored[:20],
+                    "filename": filename,
+                },
+            }
+        )
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+async def _owner_check_all(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    store = runtime.get_storage()
+    subscriptions = store.get_all()
+    if not subscriptions:
+        return web.json_response({"ok": True, "data": {"total": 0, "success": 0, "failed": 0}})
+
+    semaphore = asyncio.Semaphore(20)
+
+    async def _check_one(url: str, data: dict[str, Any]) -> bool:
+        owner_uid = int(data.get("owner_uid", 0) or 0)
+        async with semaphore:
+            try:
+                if runtime.subscription_check_service:
+                    await runtime.subscription_check_service.parse_and_store(url=url, owner_uid=owner_uid)
+                else:
+                    parser_instance = await runtime.get_parser()
+                    result = await parser_instance.parse(url)
+                    store.add_or_update(url, result, user_id=owner_uid)
+                return True
+            except Exception as exc:
+                try:
+                    store.mark_check_failed(url, str(exc))
+                except Exception:
+                    pass
+                return False
+
+    store.begin_batch()
+    try:
+        results = await asyncio.gather(*[_check_one(url, data) for url, data in subscriptions.items()])
+    finally:
+        store.end_batch(save=True)
+
+    success = sum(1 for row in results if row)
+    failed = len(results) - success
+    return web.json_response({"ok": True, "data": {"total": len(results), "success": success, "failed": failed}})
 async def _close_auth_backend(app: web.Application) -> None:
     backend = app[AUTH_BACKEND_KEY]
     close = getattr(backend, "close", None)
@@ -887,5 +1042,10 @@ def build_web_app(
     app.router.add_post(f"{API_PREFIX}/system/sessions/revoke-all", _revoke_all_sessions)
     app.router.add_get(f"{API_PREFIX}/audit/alerts", _audit_alerts)
     app.router.add_get(f"{API_PREFIX}/audit/export", _audit_export)
+    app.router.add_get(f"{API_PREFIX}/owner/export-json", _owner_export_json)
+    app.router.add_post(f"{API_PREFIX}/owner/import-json", _owner_import_json)
+    app.router.add_get(f"{API_PREFIX}/owner/backup", _owner_backup_download)
+    app.router.add_post(f"{API_PREFIX}/owner/restore", _owner_restore_backup)
+    app.router.add_post(f"{API_PREFIX}/owner/check-all", _owner_check_all)
     app.router.add_static("/admin/static/", path=static_dir, show_index=False)
     return app
