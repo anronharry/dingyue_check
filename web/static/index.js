@@ -53,51 +53,89 @@ const qs = (id) => document.getElementById(id);
         .trim() || "-";
     }
 
-    function compactUrlLabel(rawUrl) {
-      try {
-        const u = new URL(String(rawUrl));
-        const path = `${u.pathname || "/"}${u.search || ""}`;
-        const compactPath = path.length > 86 ? `${path.slice(0, 86)}...` : path;
-        return `${u.hostname}${compactPath}`;
-      } catch (e) {
-        const fallback = String(rawUrl ?? "");
-        return fallback.length > 120 ? `${fallback.slice(0, 120)}...` : fallback;
-      }
-    }
-
-    function buildAuditUrlCell(urls, rowIndex) {
+    function buildAuditUrlCell(urls, rowIndex, extraClass = "") {
       const list = Array.isArray(urls) ? urls.filter(Boolean) : [];
       if (!list.length) return `<span class="audit-empty">-</span>`;
-
-      const firstRaw = String(list[0]);
-      const firstLabel = escapeHtml(compactUrlLabel(firstRaw));
-      const summaryText = list.length === 1 ? "1 条链接" : `共 ${list.length} 条链接`;
+      const className = extraClass ? `audit-url-list ${extraClass}` : "audit-url-list";
 
       const items = list.map((u, idx) => {
         const raw = String(u);
         const href = escapeHtml(raw);
         const full = escapeHtml(raw);
         const copyValue = encodeURIComponent(raw);
-        return `<li class="audit-url-item"><div class="audit-url-main"><a href="${href}" target="_blank" rel="noopener noreferrer" class="audit-url-link mono" title="${href}">${full}</a></div><div class="audit-url-actions"><span class="audit-url-tag">#${idx + 1}</span><button type="button" class="audit-copy-btn" data-copy="${copyValue}">复制</button></div></li>`;
+        return `<li class="audit-url-item"><div class="audit-url-main"><a href="${href}" target="_blank" rel="noopener noreferrer" class="audit-url-link mono" title="${href}">${full}</a></div><div class="audit-url-actions"><span class="audit-url-tag">#${idx + 1}</span><button type="button" class="audit-copy-btn" data-copy="${copyValue}">Copy</button></div></li>`;
       }).join("");
 
-      return `<details class="audit-url-details" id="audit-url-${rowIndex}"><summary class="audit-url-summary"><span>${summaryText}</span><span class="audit-url-hint">点击展开完整链接</span></summary><div class="audit-url-preview mono">${firstLabel}</div><ul class="audit-url-list">${items}</ul></details>`;
+      return `<ul class="${className}" id="audit-url-${rowIndex}">${items}</ul>`;
     }
 
-    function renderPagination(containerId, current, total, onPageChange) {
+    function renderPagination(containerId, current, total, onPageChange, totalItems = 0) {
         const container = qs(containerId);
         if (total <= 1) {
             container.innerHTML = "";
             return;
         }
-        
-        let html = `<button class="page-btn" ${current === 1 ? 'disabled' : ''} onclick="${onPageChange}(${current - 1})">←</button>`;
-        html += `<span class="page-info">第 ${current} / ${total} 页</span>`;
-        html += `<button class="page-btn" ${current === total ? 'disabled' : ''} onclick="${onPageChange}(${current + 1})">→</button>`;
-        
+
+        const safeCurrent = Math.max(1, Math.min(total, Number(current || 1)));
+        let html = `<button class="page-btn" ${safeCurrent === 1 ? 'disabled' : ''} onclick="${onPageChange}(1)">«</button>`;
+        html += `<button class="page-btn" ${safeCurrent === 1 ? 'disabled' : ''} onclick="${onPageChange}(${safeCurrent - 1})">←</button>`;
+        html += `<span class="page-info">Page ${safeCurrent}/${total}${totalItems ? ` (Total ${totalItems})` : ""}</span>`;
+        html += `<span class="page-jump">`;
+        html += `<input id="${containerId}JumpInput" class="page-jump-input" type="number" min="1" max="${total}" value="${safeCurrent}" aria-label="Jump page">`;
+        html += `<button class="page-btn page-jump-btn" type="button" onclick="(function(){const el=document.getElementById('${containerId}JumpInput');const p=Math.max(1,Math.min(${total},Number(el && el.value || ${safeCurrent})));${onPageChange}(p);})();">Go</button>`;
+        html += `</span>`;
+        html += `<button class="page-btn" ${safeCurrent === total ? 'disabled' : ''} onclick="${onPageChange}(${safeCurrent + 1})">→</button>`;
+        html += `<button class="page-btn" ${safeCurrent === total ? 'disabled' : ''} onclick="${onPageChange}(${total})">»</button>`;
+
         container.innerHTML = html;
     }
 
+    function renderAuthorizedUsersCards(users) {
+      const cardRoot = qs("authorizedUsersCards");
+      if (!users.length) {
+        cardRoot.innerHTML = `<div class="mobile-empty-card">No matching authorized users</div>`;
+        return;
+      }
+      cardRoot.innerHTML = users.map(r => `
+        <article class="mobile-card">
+          <div class="mobile-card-head">
+            <div>
+              <div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
+              <div class="mono u-text-muted">ID: ${r.uid}</div>
+            </div>
+          </div>
+          <div class="mobile-card-meta">
+            <div class="mobile-meta-row">${r.is_owner ? '<span class="badge badge-primary">OWNER</span>' : '<span class="badge">USER</span>'} ${r.is_authorized ? '<span class="badge badge-success">Authorized</span>' : '<span class="badge badge-danger">Unauthorized</span>'}</div>
+            <div class="mobile-meta-row mono">Active: ${escapeHtml(r.last_seen || "-")}</div>
+            <div class="mobile-meta-row mono">Source: ${escapeHtml(r.source || "-")}</div>
+          </div>
+          <div class="mobile-card-actions">
+            <button class="u-btn-compact" onclick="openUserDetail('${r.uid}')">Details</button>
+            ${!r.is_owner ? `<button class="btn-danger u-btn-compact" onclick="setUserAccess('${r.uid}', false)">Revoke</button>` : ''}
+          </div>
+        </article>
+      `).join("");
+    }
+
+    function renderRecentChecksCards(rows) {
+      const cardRoot = qs("recentChecksCards");
+      if (!rows.length) {
+        cardRoot.innerHTML = `<div class="mobile-empty-card">No matching checks</div>`;
+        return;
+      }
+      cardRoot.innerHTML = rows.map((r, rowIndex) => `
+        <article class="mobile-card">
+          <div class="mobile-card-head">
+            <div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
+          </div>
+          <div class="mobile-card-meta">
+            <div class="mobile-meta-row mono">Time: ${escapeHtml(r.ts || "-")}</div>
+            <div class="mobile-meta-row">${r.source ? `<span class="badge badge-primary audit-source-badge">${escapeHtml(r.source || "-")}</span>` : '<span class="audit-empty">-</span>'}</div>
+          </div>
+          <div class="mobile-card-urls">${buildAuditUrlCell(r.urls || [], rowIndex, "audit-url-list-mobile")}</div>
+        </article>
+      `).join("");
+    }
     async function loadOverview() {
       const data = await apiRequest("/api/v1/system/overview");
       if (!data) return;
@@ -137,7 +175,8 @@ const qs = (id) => document.getElementById(id);
           </tr>
         `).join("");
       }
-      renderPagination("usersPagination", data.page, data.total_pages, "window._goUsersPage");
+      renderPagination("usersPagination", data.page, data.total_pages, "window._goUsersPage", Number(data.total || 0));
+      renderAuthorizedUsersCards(data.users || []);
       
       // Update Public Access Desc
       qs("publicAccessDesc").innerHTML = `当前：${data.allow_all_users ? '<span class="public-access-open">🟢 全员开放</span>' : '<span class="public-access-closed">🔴 限制访问</span>'}`;
@@ -172,7 +211,8 @@ const qs = (id) => document.getElementById(id);
       }
       // Calculate total pages for audit
       const totalPages = Math.ceil(data.total / state.limit) || 1;
-      renderPagination("auditPagination", page, totalPages, "window._goAuditPage");
+      renderPagination("auditPagination", page, totalPages, "window._goAuditPage", Number(data.total || 0));
+      renderRecentChecksCards(data.rows || []);
     }
 
     async function loadRuntime() {
@@ -251,8 +291,45 @@ const qs = (id) => document.getElementById(id);
       loadAuthorizedUsers(state.usersPage);
     }
 
+
+    async function confirmAction(message, title = "Confirm Action", dangerLabel = "Confirm") {
+      const modal = qs("confirmActionModal");
+      const titleEl = qs("confirmActionTitle");
+      const msgEl = qs("confirmActionMessage");
+      const okBtn = qs("confirmActionBtn");
+      const cancelBtn = qs("cancelConfirmBtn");
+      if (!modal || !titleEl || !msgEl || !okBtn || !cancelBtn) {
+        return window.confirm(message);
+      }
+
+      titleEl.textContent = title;
+      msgEl.textContent = message;
+      okBtn.textContent = dangerLabel;
+
+      return await new Promise((resolve) => {
+        let done = false;
+        const finish = (val) => {
+          if (done) return;
+          done = true;
+          okBtn.removeEventListener("click", onOk);
+          cancelBtn.removeEventListener("click", onCancel);
+          modal.removeEventListener("cancel", onCancel);
+          modal.close();
+          resolve(val);
+        };
+        const onOk = () => finish(true);
+        const onCancel = (e) => {
+          if (e && typeof e.preventDefault === "function") e.preventDefault();
+          finish(false);
+        };
+        okBtn.addEventListener("click", onOk);
+        cancelBtn.addEventListener("click", onCancel);
+        modal.addEventListener("cancel", onCancel);
+        modal.showModal();
+      });
+    }
     async function revokeAllSessions() {
-      if (!confirm("确定要强制注销所有管理员在线会话吗？您自己也会被踢出。")) return;
+      if (!(await confirmAction("This will revoke all active admin sessions, including yours.", "Revoke Sessions", "Revoke"))) return;
       const data = await apiRequest("/api/v1/system/sessions/revoke-all", { method: "POST" });
       setStatus(`已撤消 ${data.revoked} 个活跃会话`, "ok");
       setTimeout(() => window.location.href = "/admin/login", 1500);
@@ -344,7 +421,7 @@ const qs = (id) => document.getElementById(id);
     }
 
     async function runOwnerRestore(file) {
-      if (!confirm("恢复备份可能覆盖当前数据，确定继续吗？")) return;
+      if (!(await confirmAction("Restore may overwrite current data. Continue?", "Restore Backup", "Restore"))) return;
       const data = await uploadOwnerFile("/api/v1/owner/restore", file);
       if (!data) return;
       setStatus(`恢复完成：${data.restored_files} 个文件`, "ok");
@@ -352,7 +429,7 @@ const qs = (id) => document.getElementById(id);
     }
 
     async function runOwnerCheckAll() {
-      if (!confirm("确定要执行全量体检吗？这可能需要一段时间。")) return;
+      if (!(await confirmAction("Run full check now? This may take a while.", "Full Check", "Run"))) return;
       setStatus("正在执行全量体检...");
       const data = await apiRequest("/api/v1/owner/check-all", { method: "POST" });
       if (!data) return;
@@ -375,18 +452,49 @@ const qs = (id) => document.getElementById(id);
       } catch (e) {}
     }
 
+
+    function getQuickUid() {
+      return (qs("quickUidInput")?.value || "").trim();
+    }
+
+    function toggleQuickAuthPanel(forceOpen = null) {
+      const panel = qs("quickAuthPanel");
+      if (!panel) return;
+      const shouldOpen = forceOpen === null ? !!panel.hidden : !!forceOpen;
+      panel.hidden = !shouldOpen;
+      if (shouldOpen) {
+        const uidInput = qs("quickUidInput");
+        if (uidInput) uidInput.focus();
+      }
+    }
     // Events
     qs("refreshBtn").onclick = refreshAll;
     qs("logoutBtn").onclick = () => apiRequest("/admin/logout", {method:"POST"}).then(()=>window.location.href="/admin/login");
+    qs("openQuickAuthBtn").onclick = () => toggleQuickAuthPanel();
     qs("loadUsersTableBtn").onclick = () => loadAuthorizedUsers(state.usersPage);
     qs("loadChecksBtn").onclick = () => loadRecentChecks(1);
     qs("exportCsvBtn").onclick = () => window.location.href = `/api/v1/audit/export?format=csv&${currentAuditQuery()}`;
     qs("exportJsonBtn").onclick = () => window.location.href = `/api/v1/audit/export?format=json&${currentAuditQuery()}`;
     qs("togglePublicBtn").onclick = togglePublicAccess;
     qs("revokeSessionsBtn").onclick = revokeAllSessions;
-    qs("quickGrantBtn").onclick = () => setUserAccess(qs("quickUidInput").value, true);
-    qs("quickRevokeBtn").onclick = () => setUserAccess(qs("quickUidInput").value, false);
-    qs("quickDetailBtn").onclick = () => openUserDetail(qs("quickUidInput").value);
+    qs("quickGrantBtn").onclick = () => {
+      const uid = getQuickUid();
+      if (!uid) return setStatus("Please input UID", "warn");
+      setUserAccess(uid, true);
+      toggleQuickAuthPanel(false);
+    };
+    qs("quickRevokeBtn").onclick = () => {
+      const uid = getQuickUid();
+      if (!uid) return setStatus("Please input UID", "warn");
+      setUserAccess(uid, false);
+      toggleQuickAuthPanel(false);
+    };
+    qs("quickDetailBtn").onclick = () => {
+      const uid = getQuickUid();
+      if (!uid) return setStatus("Please input UID", "warn");
+      openUserDetail(uid);
+      toggleQuickAuthPanel(false);
+    };
     qs("closeUserDetailBtn").onclick = () => qs("userDetailModal").close();
     
     qs("ownerExportJsonBtn").onclick = () => {

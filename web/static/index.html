@@ -82,9 +82,9 @@
         <article class="card">
           <div class="head">
             <h2>授权用户管理</h2>
-            <button id="loadUsersTableBtn" type="button">手动刷新</button>
+            <div class="head-actions"><button id="openQuickAuthBtn" type="button" class="btn-brand">Authorize User</button><button id="loadUsersTableBtn" type="button">Refresh</button></div>
           </div>
-          <div class="body">
+          <div id="quickAuthPanel" class="quick-auth-panel" hidden><input id="quickUidInput" type="text" placeholder="UID"><button id="quickGrantBtn" class="btn-brand" type="button">Grant</button><button id="quickRevokeBtn" class="btn-danger" type="button">Revoke</button><button id="quickDetailBtn" type="button">Details</button></div><div class="body">
             <div class="table-wrap">
               <table>
                 <thead>
@@ -99,6 +99,7 @@
                 <tbody id="authorizedUsersBody"></tbody>
               </table>
             </div>
+            <div id="authorizedUsersCards" class="mobile-card-list"></div>
             <div id="usersPagination" class="pagination"></div>
           </div>
         </article>
@@ -139,6 +140,7 @@
                 <tbody id="recentChecksBody"></tbody>
               </table>
             </div>
+            <div id="recentChecksCards" class="mobile-card-list"></div>
             <div id="auditPagination" class="pagination"></div>
           </div>
         </article>
@@ -171,16 +173,7 @@
                 <span class="op-title">快速授权/吊销</span>
               </div>
             </div>
-            <div class="quick-row">
-                <input id="quickUidInput" type="text" placeholder="输入 UID">
-                <button id="quickGrantBtn" class="btn-brand" title="授权用户">
-                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
-                </button>
-                <button id="quickRevokeBtn" class="btn-danger" title="吊销用户">
-                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-                <button id="quickDetailBtn" title="查看详情">详情</button>
-            </div>
+            
             <div class="op-item">
               <div class="op-info">
                 <span class="op-title">数据迁移与备份</span>
@@ -248,7 +241,7 @@
       <button id="closeUserDetailBtn" type="button">关闭窗口</button>
     </div>
     <div class="modal-body" id="userDetailBody"></div>
-  </dialog>
+  </dialog><dialog id="confirmActionModal"><div class="modal-head"><strong id="confirmActionTitle">Confirm Action</strong><button id="cancelConfirmBtn" type="button">Cancel</button></div><div class="modal-body"><p id="confirmActionMessage" class="confirm-message">Are you sure you want to continue?</p><div class="confirm-actions"><button id="confirmActionBtn" class="btn-danger" type="button">Confirm</button></div></div></dialog>
         </div>
       </section>
     </main>

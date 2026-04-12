@@ -89,6 +89,10 @@
   cursor: pointer;
 }
 .submit-btn:hover { background: #e4e4e7; }
+.submit-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
 
 .divider-box { margin: 1.8rem 0 1rem; position: relative; text-align: center; }
 .divider-box::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--line); }
