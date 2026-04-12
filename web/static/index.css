@@ -303,8 +303,8 @@ tbody tr:hover { background-color: rgba(148,163,184,0.08); }
 }
 
 .audit-url-col {
-  min-width: 280px;
-  max-width: 520px;
+  min-width: 320px;
+  max-width: 680px;
   white-space: normal;
 }
 
@@ -313,16 +313,16 @@ tbody tr:hover { background-color: rgba(148,163,184,0.08); }
   font-style: italic;
 }
 
-.audit-url-single {
-  display: flex;
-  align-items: center;
-}
-
 .audit-url-details {
   border: 1px solid rgba(34, 211, 238, 0.25);
   border-radius: 10px;
-  background: rgba(6, 34, 49, 0.35);
+  background: rgba(6, 34, 49, 0.32);
   padding: 8px;
+}
+
+.audit-url-details[open] {
+  border-color: rgba(34, 211, 238, 0.55);
+  background: rgba(6, 34, 49, 0.52);
 }
 
 .audit-url-summary {
@@ -367,9 +367,14 @@ tbody tr:hover { background-color: rgba(148,163,184,0.08); }
 
 .audit-url-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+}
+
+.audit-url-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .audit-url-link {
@@ -379,7 +384,7 @@ tbody tr:hover { background-color: rgba(148,163,184,0.08); }
   border: 1px solid rgba(34, 211, 238, 0.35);
   border-radius: 8px;
   padding: 6px 8px;
-  display: inline-block;
+  display: block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -387,10 +392,24 @@ tbody tr:hover { background-color: rgba(148,163,184,0.08); }
   font-size: 12px;
 }
 
+.audit-url-details[open] .audit-url-link {
+  white-space: normal;
+  word-break: break-all;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.45;
+}
+
 .audit-url-link:hover {
   color: #ecfeff;
   border-color: #22d3ee;
   background: rgba(34, 211, 238, 0.22);
+}
+
+.audit-url-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .audit-url-tag {
@@ -406,6 +425,23 @@ tbody tr:hover { background-color: rgba(148,163,184,0.08); }
   background: rgba(30, 41, 59, 0.55);
   white-space: nowrap;
 }
+
+.audit-copy-btn {
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  background: rgba(15, 23, 42, 0.8);
+  color: #a5f3fc;
+  border-radius: 8px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.audit-copy-btn:hover {
+  border-color: #22d3ee;
+  color: #ecfeff;
+  background: rgba(34, 211, 238, 0.2);
+}
+
 .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 16px; }
 .page-info { font-size: 13px; font-weight: 500; color: var(--muted); }
 .page-btn { padding: 6px 14px; min-width: 40px; }
@@ -543,8 +579,8 @@ dialog {
     flex-direction: column;
     align-items: stretch;
   }
-  .audit-url-tag {
-    align-self: flex-end;
+  .audit-url-actions {
+    justify-content: space-between;
   }
   .audit-url-link {
     width: 100%;

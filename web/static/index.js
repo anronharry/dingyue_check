@@ -40,15 +40,28 @@ const qs = (id) => document.getElementById(id);
         .replace(/'/g, "&#39;");
     }
 
+    function normalizeIdentity(value) {
+      return String(value ?? "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/&#39;/gi, "'")
+        .replace(/&quot;/gi, '"')
+        .replace(/\s+/g, " ")
+        .trim() || "-";
+    }
+
     function compactUrlLabel(rawUrl) {
       try {
         const u = new URL(String(rawUrl));
         const path = `${u.pathname || "/"}${u.search || ""}`;
-        const compactPath = path.length > 48 ? `${path.slice(0, 48)}...` : path;
+        const compactPath = path.length > 86 ? `${path.slice(0, 86)}...` : path;
         return `${u.hostname}${compactPath}`;
       } catch (e) {
         const fallback = String(rawUrl ?? "");
-        return fallback.length > 64 ? `${fallback.slice(0, 64)}...` : fallback;
+        return fallback.length > 120 ? `${fallback.slice(0, 120)}...` : fallback;
       }
     }
 
@@ -57,21 +70,20 @@ const qs = (id) => document.getElementById(id);
       if (!list.length) return `<span class="audit-empty">-</span>`;
 
       const firstRaw = String(list[0]);
-      const firstHref = escapeHtml(firstRaw);
       const firstLabel = escapeHtml(compactUrlLabel(firstRaw));
-      if (list.length === 1) {
-        return `<div class="audit-url-single"><a href="${firstHref}" target="_blank" rel="noopener noreferrer" class="audit-url-link mono" title="${firstHref}">${firstLabel}</a></div>`;
-      }
+      const summaryText = list.length === 1 ? "1 条链接" : `共 ${list.length} 条链接`;
 
       const items = list.map((u, idx) => {
         const raw = String(u);
         const href = escapeHtml(raw);
-        const label = escapeHtml(compactUrlLabel(raw));
-        return `<li class="audit-url-item"><a href="${href}" target="_blank" rel="noopener noreferrer" class="audit-url-link mono" title="${href}">${label}</a><span class="audit-url-tag">#${idx + 1}</span></li>`;
+        const full = escapeHtml(raw);
+        const copyValue = encodeURIComponent(raw);
+        return `<li class="audit-url-item"><div class="audit-url-main"><a href="${href}" target="_blank" rel="noopener noreferrer" class="audit-url-link mono" title="${href}">${full}</a></div><div class="audit-url-actions"><span class="audit-url-tag">#${idx + 1}</span><button type="button" class="audit-copy-btn" data-copy="${copyValue}">复制</button></div></li>`;
       }).join("");
 
-      return `<details class="audit-url-details" id="audit-url-${rowIndex}"><summary class="audit-url-summary"><span>共 ${list.length} 条链接</span><span class="audit-url-hint">点击展开</span></summary><div class="audit-url-preview mono">${firstLabel}</div><ul class="audit-url-list">${items}</ul></details>`;
+      return `<details class="audit-url-details" id="audit-url-${rowIndex}"><summary class="audit-url-summary"><span>${summaryText}</span><span class="audit-url-hint">点击展开完整链接</span></summary><div class="audit-url-preview mono">${firstLabel}</div><ul class="audit-url-list">${items}</ul></details>`;
     }
+
     function renderPagination(containerId, current, total, onPageChange) {
         const container = qs(containerId);
         if (total <= 1) {
@@ -107,7 +119,7 @@ const qs = (id) => document.getElementById(id);
         body.innerHTML = data.users.map(r => `
           <tr>
             <td>
-                <div style="font-weight:700;">${r.identity}</div>
+                <div style="font-weight:700;">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
                 <div class="mono" style="color:var(--text-muted)">ID: ${r.uid}</div>
             </td>
             <td>
@@ -150,7 +162,7 @@ const qs = (id) => document.getElementById(id);
           const auditCell = buildAuditUrlCell(r.urls || [], rowIndex);
           return `
             <tr>
-              <td><div style="font-weight:700;">${escapeHtml(r.identity || "-")}</div></td>
+              <td><div style="font-weight:700;">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div></td>
               <td class="mono">${escapeHtml(r.ts || "-")}</td>
               <td><span class="badge badge-primary audit-source-badge">${escapeHtml(r.source || "-")}</span></td>
               <td class="audit-url-col">${auditCell}</td>
@@ -218,7 +230,7 @@ const qs = (id) => document.getElementById(id);
       }
       el.innerHTML = data.rows.map(r => `
         <div style="padding:12px 0; border-bottom:1px solid var(--border);">
-            <div style="font-weight:700; font-size:13px;">${r.identity}</div>
+            <div style="font-weight:700; font-size:13px;">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
             <div style="display:flex; justify-content:space-between; margin-top:4px;">
                 <span class="badge badge-primary">${r.fmt}</span>
                 <span class="mono" style="font-size:11px; color:var(--text-muted)">${r.ts}</span>
@@ -410,5 +422,23 @@ const qs = (id) => document.getElementById(id);
         setStatus(e.message || String(e), "warn");
       }
     };
+    document.addEventListener("click", async (event) => {
+      const btn = event.target.closest(".audit-copy-btn");
+      if (!btn) return;
+      const encoded = btn.getAttribute("data-copy") || "";
+      let textToCopy = "";
+      try {
+        textToCopy = decodeURIComponent(encoded);
+      } catch (e) {
+        textToCopy = encoded;
+      }
+      if (!textToCopy) return;
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        setStatus("链接已复制", "ok");
+      } catch (e) {
+        setStatus("复制失败，请手动复制", "warn");
+      }
+    });
     // Auto Refresh
     refreshAll();
