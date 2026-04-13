@@ -114,7 +114,10 @@ class P2BehaviorTest(unittest.IsolatedAsyncioTestCase):
             get_storage=lambda: storage,
             get_parser=get_parser,
             make_sub_keyboard=lambda url: url,
-            admin_service=SimpleNamespace(build_checkall_report=lambda **kwargs: "report"),
+            admin_service=SimpleNamespace(
+                to_batch_result=lambda results: SimpleNamespace(total=len(results), success=results, failed=[]),
+                user_profile_service=SimpleNamespace(format_user_identity=lambda uid: f"user-{uid}"),
+            ),
             usage_audit_service=audit,
             schedule_auto_delete=lambda *args, **kwargs: None,
         )

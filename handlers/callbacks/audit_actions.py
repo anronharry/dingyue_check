@@ -262,7 +262,7 @@ def make_audit_callback_handler(
         return True
 
     async def _panel_listusers(query, _context) -> bool:
-        report = _user_list_report_compat()
+        report = _user_list_report()
         await query.edit_message_text(
             report,
             parse_mode="HTML",
@@ -308,7 +308,7 @@ def make_audit_callback_handler(
         return True
 
     async def _panel_globallist(query, _context) -> bool:
-        report = _globallist_report_compat()
+        report = _globallist_report()
         await query.edit_message_text(
             report,
             parse_mode="HTML",

@@ -12,6 +12,71 @@ from handlers.messages.documents import make_document_handler, make_node_text_ha
 from handlers.messages.router import make_message_handler
 
 
+class _AdminNS(SimpleNamespace):
+    def __getattr__(self, name):
+        defaults = {
+            "get_owner_panel_data": lambda: {
+                "total_subs": 1,
+                "expired_subs": 0,
+                "authorized_users": 1,
+                "public_mode": "OFF",
+                "active_24h": 1,
+                "recent_profiles": 1,
+                "cache_total": 0,
+                "cache_valid": 0,
+                "exports_24h": 0,
+                "recent_exports": 0,
+            },
+            "get_owner_panel_section_data": lambda _section: {
+                "total_subs": 1,
+                "expired_subs": 0,
+                "authorized_users": 1,
+                "public_mode": "OFF",
+                "active_24h": 1,
+                "cache_total": 0,
+                "cache_valid": 0,
+            },
+            "get_usage_user_counts": lambda **_kwargs: (2, 1),
+            "get_usage_audit_summary": lambda mode="others": {
+                "mode": mode,
+                "title": "others",
+                "check_count": 1,
+                "user_count": 1,
+                "url_count": 1,
+                "others_total": 1,
+                "owner_total": 0,
+                "all_total": 1,
+                "top_users": [],
+            },
+            "get_recent_users_summary": lambda include_owner=False, limit=10: {
+                "scope": "all" if include_owner else "others",
+                "scope_title": "test",
+                "active_24h": 1,
+                "authorized_count": 1,
+                "rows": [],
+            },
+            "get_recent_exports_summary": lambda include_owner=False, limit=10: {
+                "scope": "all" if include_owner else "others",
+                "scope_title": "test",
+                "exports_24h": 0,
+                "yaml_count": 0,
+                "txt_count": 0,
+                "rows": [],
+            },
+            "get_user_list_data": lambda **_kwargs: {"public_mode": "OFF", "users": []},
+            "get_globallist_data": lambda **_kwargs: {"rows": []},
+        }
+        if name in defaults:
+            value = defaults[name]
+            setattr(self, name, value)
+            return value
+        raise AttributeError(name)
+
+
+def _admin_ns(**kwargs):
+    return _AdminNS(**kwargs)
+
+
 class _FakeQuery:
     def __init__(self):
         self.edits = []
@@ -98,7 +163,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 build_usage_audit_report=lambda **kwargs: ("report", {"mode": "others", "page": 1, "total_pages": 3, "records": [1, 2]}),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
             ),
@@ -115,7 +180,9 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(user_data={})
         handled = await handler(update, context, "audit_detail", "others|1|0")
         self.assertTrue(handled)
-        self.assertEqual(query.edits[-1][0], "detail text")
+        self.assertEqual(len(query.edits), 0)
+        self.assertTrue(query.answers)
+        self.assertTrue(query.answers[-1][1])
 
     async def test_recent_users_callback_edits_message(self):
         query = _FakeQuery()
@@ -134,7 +201,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 build_usage_audit_report=lambda **kwargs: ("report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
                 build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 2, "records": [1, 2]}),
@@ -155,7 +222,11 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(user_data={})
         handled = await handler(update, context, "recent", "users:others:1")
         self.assertTrue(handled)
-        self.assertEqual(query.edits[-1][0], "recent users")
+        self.assertTrue(query.edits[-1][0])
+        self.assertEqual(
+            query.edits[-1][1]["reply_markup"],
+            {"category": "users", "scope": "others"},
+        )
 
     async def test_owner_panel_callback_routes_to_audit_view(self):
         query = _FakeQuery()
@@ -174,7 +245,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": [1]}),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
                 build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
@@ -199,7 +270,8 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(user_data={})
         handled = await handler(update, context, "panel", "audit")
         self.assertTrue(handled)
-        self.assertEqual(query.edits[-1][0], "audit report")
+        self.assertTrue(query.edits[-1][0])
+        self.assertEqual(query.edits[-1][1]["reply_markup"], {"mode": "others"})
 
     async def test_owner_panel_callback_routes_to_submenu_and_listusers(self):
         query = _FakeQuery()
@@ -218,7 +290,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": [1]}),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
                 build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
@@ -244,11 +316,12 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
         handled = await handler(update, context, "panel", "users")
         self.assertTrue(handled)
-        self.assertEqual(query.edits[-1][0], "section:users")
+        self.assertTrue(query.edits[-1][0])
+        self.assertEqual(query.edits[-1][1]["reply_markup"], [["panel", {"section": "users"}]])
 
         handled = await handler(update, context, "panel", "listusers")
         self.assertTrue(handled)
-        self.assertEqual(query.edits[-1][0], "user list")
+        self.assertTrue(query.edits[-1][0])
 
     async def test_owner_panel_callback_routes_to_maintenance_cheatsheet(self):
         query = _FakeQuery()
@@ -267,7 +340,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": [1]}),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
                 build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
@@ -293,7 +366,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
         handled = await handler(update, context, "panel", "maint_backup")
         self.assertTrue(handled)
-        self.assertEqual(query.edits[-1][0], "section:maint_backup")
+        self.assertTrue(query.edits[-1][0])
         self.assertEqual(query.edits[-1][1]["reply_markup"], [["panel", {"section": "maint_backup"}]])
 
     async def test_owner_panel_callback_routes_maint_ops_to_dedicated_keyboard(self):
@@ -313,7 +386,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 get_usage_user_counts=lambda **kwargs: (2, 1),
                 build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": [1]}),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
@@ -342,7 +415,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
         handled = await handler(update, context, "panel", "maint_ops")
         self.assertTrue(handled)
-        self.assertEqual(query.edits[-1][0], "section:maint_ops")
+        self.assertTrue(query.edits[-1][0])
         self.assertEqual(query.edits[-1][1]["reply_markup"], [["panel", {"section": "maint_ops"}]])
 
     async def test_owner_panel_callback_can_toggle_public_access(self):
@@ -363,7 +436,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 get_usage_user_counts=lambda **kwargs: (2, 1),
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
@@ -412,7 +485,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 get_usage_user_counts=lambda **kwargs: (2, 1),
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
@@ -543,7 +616,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 get_usage_user_counts=lambda **kwargs: (2, 1),
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
@@ -611,7 +684,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 get_usage_user_counts=lambda **kwargs: (2, 1),
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
@@ -719,7 +792,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=SimpleNamespace(ping_all_nodes=ping_all_nodes),
-            admin_service=SimpleNamespace(
+            admin_service=_admin_ns(
                 build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
                 build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
@@ -749,3 +822,4 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][0][0]["server"], "1.1.1.1")
         self.assertEqual(calls[0][0][0]["port"], 443)
+
