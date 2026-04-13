@@ -37,7 +37,7 @@ def create_progress_bar(percent, length=10):
 
 def get_country_flag(country_name):
     def _code_to_flag(alpha2: str) -> str:
-        if len(alpha2) != 2 or not alpha2.isalpha():
+        if len(alpha2) != 2 or not alpha2.isascii() or not alpha2.isalpha():
             return "🏳️"
         return "".join(chr(ord(ch) + 127397) for ch in alpha2.upper())
 
@@ -48,12 +48,15 @@ def get_country_flag(country_name):
         return "🏳️"
 
     # Direct ISO-3166 alpha-2 code (e.g. US/CN/JP).
-    if len(text) == 2 and text.isalpha():
+    if len(text) == 2 and text.isascii() and text.isalpha():
         return _code_to_flag(text)
 
     normalized = text.lower().replace(" ", "").replace("-", "").replace("_", "").replace(".", "")
     aliases = {
         "香港": "HK",
+        "hongkong": "HK",
+        "hongkongsar": "HK",
+        "hk": "HK",
         "taiwan": "TW",
         "台湾": "TW",
         "japan": "JP",

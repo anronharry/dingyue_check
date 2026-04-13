@@ -9,7 +9,7 @@ APP_STARTUP = "正在启动 Telegram 订阅检测机器人..."
 OWNER_ONLY_MSG = "只有管理员可以使用此命令"
 NO_PERMISSION_MSG = (
     "你当前没有权限使用这个机器人。\n\n"
-    "如需开通权限，请联系维护者。"
+    "如需开通权限，请联系维护者 http://t.me/anpuxuan?direct 。"
 )
 NO_PERMISSION_ALERT = "无权限，请联系维护者"
 

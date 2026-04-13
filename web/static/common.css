@@ -3,9 +3,9 @@ html, body { margin: 0; padding: 0; }
 
 body {
   min-height: 100vh;
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: 'Inter', "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: var(--text);
-  background: #0f172a;
+  background: var(--bg-900);
 }
 
 .page-container {
@@ -30,16 +30,16 @@ body {
 }
 .aurora-blob {
   position: absolute;
-  filter: blur(80px);
-  opacity: 0.58;
+  filter: blur(100px);
+  opacity: 0.45;
   border-radius: 50%;
   animation: float 20s infinite ease-in-out alternate;
   will-change: transform, opacity;
   backface-visibility: hidden;
 }
-.blob-1 { background: #4338ca; width: 50vw; height: 50vw; top: -25vw; left: -10vw; animation-duration: 25s; }
-.blob-2 { background: #0891b2; width: 40vw; height: 40vw; bottom: -10vw; right: -10vw; animation-duration: 30s; animation-delay: -5s; }
-.blob-3 { background: #7e22ce; width: 30vw; height: 30vw; top: 40%; left: 40%; transform: translate(-50%, -50%); opacity: 0.35; animation-duration: 22s; animation-delay: -10s; }
+.blob-1 { background: #818cf8; width: 60vw; height: 60vw; top: -30vw; left: -15vw; animation-duration: 25s; }
+.blob-2 { background: #22d3ee; width: 50vw; height: 50vw; bottom: -15vw; right: -15vw; animation-duration: 30s; animation-delay: -5s; }
+.blob-3 { background: #c084fc; width: 40vw; height: 40vw; top: 40%; left: 40%; transform: translate(-50%, -50%); opacity: 0.25; animation-duration: 22s; animation-delay: -10s; }
 
 @keyframes float {
   0% { transform: translate3d(0, 0, 0) scale(1); }

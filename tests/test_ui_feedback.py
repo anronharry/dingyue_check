@@ -236,6 +236,9 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(get_country_flag("China"), "🇨🇳")
         self.assertEqual(get_country_flag("Japan"), "🇯🇵")
         self.assertEqual(get_country_flag("United States"), "🇺🇸")
+        self.assertEqual(get_country_flag("Hong Kong"), "🇭🇰")
+        self.assertEqual(get_country_flag("香港"), "🇭🇰")
+        self.assertEqual(get_country_flag("美国"), "🇺🇸")
         self.assertEqual(get_country_flag("KR"), "🇰🇷")
         self.assertEqual(get_country_flag("other"), "🌐")
 
