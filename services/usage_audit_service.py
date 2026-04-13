@@ -1,11 +1,14 @@
 """Owner-facing usage audit logging."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import threading
 from collections import deque
 from datetime import datetime
+
+import aiofiles
 
 
 class UsageAuditService:
@@ -14,6 +17,7 @@ class UsageAuditService:
         self.max_records = max_records
         self.max_read_records = max_read_records
         self._lock = threading.Lock()
+        self._async_lock = asyncio.Lock()
         self._record_count: int | None = None
 
     def log_check(self, *, user, urls: list[str], source: str) -> None:
@@ -29,6 +33,19 @@ class UsageAuditService:
         }
         self._append_record(record)
 
+    async def alog_check(self, *, user, urls: list[str], source: str) -> None:
+        if not user or not urls:
+            return
+        record = {
+            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "user_id": user.id,
+            "username": getattr(user, "username", None),
+            "full_name": getattr(user, "full_name", None),
+            "source": source,
+            "urls": urls,
+        }
+        await self._append_record_async(record)
+
     def _append_record(self, record: dict) -> None:
         serialized = json.dumps(record, ensure_ascii=False) + "\n"
         with self._lock:
@@ -43,6 +60,22 @@ class UsageAuditService:
             retained = self._read_recent_lines_locked(limit=max(0, self.max_records - 1))
             retained.append(serialized)
             self._write_lines_locked(retained[-self.max_records :])
+            self._record_count = min(self.max_records, len(retained))
+
+    async def _append_record_async(self, record: dict) -> None:
+        serialized = json.dumps(record, ensure_ascii=False) + "\n"
+        async with self._async_lock:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            count = await self._aget_record_count_locked()
+            if count < self.max_records:
+                async with aiofiles.open(self.path, "a", encoding="utf-8") as handle:
+                    await handle.write(serialized)
+                self._record_count = count + 1
+                return
+
+            retained = await self._aread_recent_lines_locked(limit=max(0, self.max_records - 1))
+            retained.append(serialized)
+            await self._awrite_lines_locked(retained[-self.max_records :])
             self._record_count = min(self.max_records, len(retained))
 
     def _get_record_count_locked(self) -> int:
@@ -65,11 +98,41 @@ class UsageAuditService:
                     tail.append(line if line.endswith("\n") else line + "\n")
         return list(tail)
 
+    async def _aget_record_count_locked(self) -> int:
+        if self._record_count is not None:
+            return self._record_count
+        if not os.path.exists(self.path):
+            self._record_count = 0
+            return 0
+        count = 0
+        async with aiofiles.open(self.path, "r", encoding="utf-8") as handle:
+            async for line in handle:
+                if line.strip():
+                    count += 1
+        self._record_count = count
+        return count
+
+    async def _aread_recent_lines_locked(self, *, limit: int) -> list[str]:
+        if limit <= 0 or not os.path.exists(self.path):
+            return []
+        tail = deque(maxlen=limit)
+        async with aiofiles.open(self.path, "r", encoding="utf-8") as handle:
+            async for line in handle:
+                if line.strip():
+                    tail.append(line if line.endswith("\n") else line + "\n")
+        return list(tail)
+
     def _write_lines_locked(self, lines: list[str]) -> None:
         tmp_path = self.path + ".tmp"
         with open(tmp_path, "w", encoding="utf-8") as handle:
             handle.writelines(lines)
         os.replace(tmp_path, self.path)
+
+    async def _awrite_lines_locked(self, lines: list[str]) -> None:
+        tmp_path = self.path + ".tmp"
+        async with aiofiles.open(tmp_path, "w", encoding="utf-8") as handle:
+            await handle.writelines(lines)
+        await asyncio.to_thread(os.replace, tmp_path, self.path)
 
     def get_recent_records(self, limit: int = 20) -> list[dict]:
         safe_limit = max(0, min(limit, self.max_read_records))
@@ -77,6 +140,20 @@ class UsageAuditService:
             return []
         with self._lock:
             lines = self._read_recent_lines_locked(limit=safe_limit)
+        records = []
+        for line in lines:
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return records
+
+    async def aget_recent_records(self, limit: int = 20) -> list[dict]:
+        safe_limit = max(0, min(limit, self.max_read_records))
+        if safe_limit == 0 or not os.path.exists(self.path):
+            return []
+        async with self._async_lock:
+            lines = await self._aread_recent_lines_locked(limit=safe_limit)
         records = []
         for line in lines:
             try:

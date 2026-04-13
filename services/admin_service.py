@@ -301,13 +301,19 @@ class AdminService:
             "total_pages": 1,
         }
 
-    def get_recent_exports_summary(self, *, include_owner: bool = False, limit: int = 10) -> dict:
+    def get_recent_exports_summary(self, *, include_owner: bool = False, page: int = 1, limit: int = 10) -> dict:
         audit_records = self._get_audit_records(limit=self.usage_audit_service.max_read_records)
         records = self._get_recent_export_records(include_owner=include_owner, limit=1000, records=audit_records)
         yaml_count = sum(1 for row in records if row.get("source") == f"{EXPORT_AUDIT_PREFIX}yaml")
         txt_count = sum(1 for row in records if row.get("source") == f"{EXPORT_AUDIT_PREFIX}txt")
+        safe_limit = max(1, int(limit or 1))
+        total = len(records)
+        total_pages = max(1, (total + safe_limit - 1) // safe_limit)
+        safe_page = max(1, min(int(page or 1), total_pages))
+        start = (safe_page - 1) * safe_limit
+        end = start + safe_limit
         rows = []
-        for record in records[: max(1, limit)]:
+        for record in records[start:end]:
             urls = record.get("urls", [])
             first_url = str(urls[0] if urls else "-")
             rows.append(
@@ -325,8 +331,8 @@ class AdminService:
             "yaml_count": yaml_count,
             "txt_count": txt_count,
             "rows": rows,
-            "page": 1,
-            "total_pages": 1,
+            "page": safe_page,
+            "total_pages": total_pages,
         }
 
     def get_owner_panel_data(self) -> dict:

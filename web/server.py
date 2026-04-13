@@ -345,7 +345,7 @@ def _extract_overview(runtime: Any) -> dict[str, Any]:
 async def _system_overview(request: web.Request) -> web.Response:
     runtime = request.app[RUNTIME_KEY]
     try:
-        payload = _extract_overview(runtime)
+        payload = await asyncio.to_thread(_extract_overview, runtime)
         return web.json_response(payload)
     except Exception as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
@@ -389,6 +389,7 @@ def _collect_check_rows(
     runtime: Any,
     *,
     mode: str,
+    page: int = 1,
     limit: int,
     query_text: str = "",
     source: str = "",
@@ -408,7 +409,12 @@ def _collect_check_rows(
 
     query_text = query_text.strip().lower()
     source = source.strip().lower()
-    filtered: list[dict[str, Any]] = []
+    safe_limit = max(1, int(limit or 1))
+    safe_page = max(1, int(page or 1))
+    start = (safe_page - 1) * safe_limit
+    end = start + safe_limit
+    total = 0
+    page_rows: list[dict[str, Any]] = []
     for row in rows:
         uid = row.get("user_id")
         if user_id is not None and uid != user_id:
@@ -427,18 +433,19 @@ def _collect_check_rows(
             haystack = " ".join([identity, row_source, " ".join(urls), str(uid or "")]).lower()
             if query_text not in haystack:
                 continue
-        filtered.append(
-            {
-                "user_id": uid if isinstance(uid, int) else 0,
-                "identity": identity,
-                "ts": row.get("ts", "-"),
-                "source": row_source,
-                "url_count": len(urls),
-                "urls": urls,
-            }
-        )
+        row_data = {
+            "user_id": uid if isinstance(uid, int) else 0,
+            "identity": identity,
+            "ts": row.get("ts", "-"),
+            "source": row_source,
+            "url_count": len(urls),
+            "urls": urls,
+        }
+        if total >= start and total < end:
+            page_rows.append(row_data)
+        total += 1
 
-    return {"mode": mode, "total": len(filtered), "rows": filtered[: max(1, limit)]}
+    return {"mode": mode, "total": total, "rows": page_rows}
 
 
 async def _recent_users(request: web.Request) -> web.Response:
@@ -450,7 +457,11 @@ async def _recent_users(request: web.Request) -> web.Response:
     if err is not None:
         return err
     try:
-        data = runtime.admin_service.get_recent_users_summary(include_owner=include_owner, limit=limit)
+        data = await asyncio.to_thread(
+            runtime.admin_service.get_recent_users_summary,
+            include_owner=include_owner,
+            limit=limit,
+        )
         return web.json_response({"ok": True, "data": data})
     except Exception as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
@@ -461,11 +472,19 @@ async def _recent_exports(request: web.Request) -> web.Response:
     include_owner, err = _parse_scope(request)
     if err is not None:
         return err
+    page, err = _parse_positive_int(request, "page", 1, 1, 10000)
+    if err is not None:
+        return err
     limit, err = _parse_limit(request, default=10)
     if err is not None:
         return err
     try:
-        data = runtime.admin_service.get_recent_exports_summary(include_owner=include_owner, limit=limit)
+        data = await asyncio.to_thread(
+            runtime.admin_service.get_recent_exports_summary,
+            include_owner=include_owner,
+            page=page,
+            limit=limit,
+        )
         return web.json_response({"ok": True, "data": data})
     except Exception as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
@@ -477,7 +496,7 @@ async def _audit_summary(request: web.Request) -> web.Response:
     if mode not in {"others", "owner", "all"}:
         return _json_error("invalid_mode", status=400)
     try:
-        data = runtime.admin_service.get_usage_audit_summary(mode=mode)
+        data = await asyncio.to_thread(runtime.admin_service.get_usage_audit_summary, mode=mode)
         return web.json_response({"ok": True, "data": data})
     except Exception as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
@@ -503,7 +522,8 @@ async def _subscriptions_global(request: web.Request) -> web.Response:
     if err is not None:
         return err
     try:
-        data = runtime.admin_service.get_globallist_data(
+        data = await asyncio.to_thread(
+            runtime.admin_service.get_globallist_data,
             max_users=max_users,
             max_subs_per_user=max_subs_per_user,
         )
@@ -521,7 +541,7 @@ async def _authorized_users(request: web.Request) -> web.Response:
     if err is not None:
         return err
     try:
-        data = runtime.admin_service.get_user_list_data(page=page, limit=limit)
+        data = await asyncio.to_thread(runtime.admin_service.get_user_list_data, page=page, limit=limit)
         return web.json_response({"ok": True, "data": data})
     except Exception as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
@@ -532,6 +552,9 @@ async def _recent_checks(request: web.Request) -> web.Response:
     mode = request.query.get("mode", "others").strip().lower()
     if mode not in {"others", "owner", "all"}:
         return _json_error("invalid_mode", status=400)
+    page, err = _parse_positive_int(request, "page", 1, 1, 10000)
+    if err is not None:
+        return err
     limit, err = _parse_limit(request, default=20, maximum=200)
     if err is not None:
         return err
@@ -547,9 +570,11 @@ async def _recent_checks(request: web.Request) -> web.Response:
     dt_from = _parse_datetime_text(request.query.get("from"))
     dt_to = _parse_datetime_text(request.query.get("to"))
     try:
-        data = _collect_check_rows(
+        data = await asyncio.to_thread(
+            _collect_check_rows,
             runtime,
             mode=mode,
+            page=page,
             limit=limit,
             query_text=query_text,
             source=source,
@@ -575,73 +600,77 @@ async def _user_detail(request: web.Request) -> web.Response:
         return _json_error("invalid_uid", status=400)
 
     try:
-        profile = runtime.user_profile_service.get_profile(uid) or {}
-        is_owner = runtime.access_service.is_owner_uid(uid)
-        is_authorized = runtime.access_service.is_authorized_uid(uid)
-        subs = runtime.get_storage().get_by_user(uid)
-        sorted_subs = sorted(
-            subs.items(),
-            key=lambda item: item[1].get("updated_at", ""),
-            reverse=True,
-        )
-        sub_rows = []
-        for url, data in sorted_subs[:20]:
-            sub_rows.append(
-                {
-                    "name": data.get("name", "未命名"),
-                    "url": url,
-                    "updated_at": data.get("updated_at", "-"),
-                    "expire_time": data.get("expire_time", "-"),
-                }
+        def _build_detail_data() -> dict[str, Any]:
+            profile = runtime.user_profile_service.get_profile(uid) or {}
+            is_owner = runtime.access_service.is_owner_uid(uid)
+            is_authorized = runtime.access_service.is_authorized_uid(uid)
+            subs = runtime.get_storage().get_by_user(uid)
+            sorted_subs = sorted(
+                subs.items(),
+                key=lambda item: item[1].get("updated_at", ""),
+                reverse=True,
             )
-        checks = _collect_check_rows(runtime, mode="all", limit=200, user_id=uid)["rows"][:20]
-        audit_records = list(reversed(runtime.usage_audit_service.get_recent_records(limit=runtime.usage_audit_service.max_read_records)))
-        export_records = runtime.usage_audit_service.query_by_source_prefix(
-            prefix="导出缓存:",
-            limit=200,
-            owner_id=runtime.admin_service.owner_id,
-            include_owner=True,
-            records=audit_records,
-        )
-        user_exports = []
-        for row in export_records:
-            if row.get("user_id") != uid:
-                continue
-            urls = row.get("urls") or []
-            first_url = str(urls[0] if urls else "-")
-            user_exports.append(
-                {
-                    "identity": _format_identity(runtime, uid),
-                    "ts": row.get("ts", "-"),
-                    "fmt": str(row.get("source", "-").split(":", 1)[-1].upper()),
-                    "target": first_url[:120] + ("..." if len(first_url) > 120 else ""),
-                }
+            sub_rows = []
+            for url, data in sorted_subs[:20]:
+                sub_rows.append(
+                    {
+                        "name": data.get("name", "未命名"),
+                        "url": url,
+                        "updated_at": data.get("updated_at", "-"),
+                        "expire_time": data.get("expire_time", "-"),
+                    }
+                )
+            checks = _collect_check_rows(runtime, mode="all", limit=200, user_id=uid)["rows"][:20]
+            audit_records = list(
+                reversed(runtime.usage_audit_service.get_recent_records(limit=runtime.usage_audit_service.max_read_records))
             )
-            if len(user_exports) >= 20:
-                break
+            export_records = runtime.usage_audit_service.query_by_source_prefix(
+                prefix="导出缓存:",
+                limit=200,
+                owner_id=runtime.admin_service.owner_id,
+                include_owner=True,
+                records=audit_records,
+            )
+            user_exports = []
+            for row in export_records:
+                if row.get("user_id") != uid:
+                    continue
+                urls = row.get("urls") or []
+                first_url = str(urls[0] if urls else "-")
+                user_exports.append(
+                    {
+                        "identity": _format_identity(runtime, uid),
+                        "ts": row.get("ts", "-"),
+                        "fmt": str(row.get("source", "-").split(":", 1)[-1].upper()),
+                        "target": first_url[:120] + ("..." if len(first_url) > 120 else ""),
+                    }
+                )
+                if len(user_exports) >= 20:
+                    break
+            return {
+                "uid": uid,
+                "identity": _format_identity(runtime, uid),
+                "username": profile.get("username"),
+                "full_name": profile.get("full_name"),
+                "last_seen": profile.get("last_seen_at", "-"),
+                "last_source": profile.get("last_source", "-"),
+                "is_owner": is_owner,
+                "is_authorized": is_authorized,
+                "subscription_count": len(subs),
+                "subscriptions": sub_rows,
+                "recent_checks": checks,
+                "recent_exports": user_exports,
+            }
+
+        detail = await asyncio.to_thread(_build_detail_data)
         return web.json_response(
             {
                 "ok": True,
-                "data": {
-                    "uid": uid,
-                    "identity": _format_identity(runtime, uid),
-                    "username": profile.get("username"),
-                    "full_name": profile.get("full_name"),
-                    "last_seen": profile.get("last_seen_at", "-"),
-                    "last_source": profile.get("last_source", "-"),
-                    "is_owner": is_owner,
-                    "is_authorized": is_authorized,
-                    "subscription_count": len(subs),
-                    "subscriptions": sub_rows,
-                    "recent_checks": checks,
-                    "recent_exports": user_exports,
-                },
+                "data": detail,
             }
         )
     except Exception as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
-
-
 async def _set_user_access(request: web.Request) -> web.Response:
     runtime = request.app[RUNTIME_KEY]
     try:
@@ -662,15 +691,16 @@ async def _set_user_access(request: web.Request) -> web.Response:
 
     try:
         if enabled:
-            changed = runtime.user_manager.add_user(uid)
+            changed = await asyncio.to_thread(runtime.user_manager.add_user, uid)
         else:
-            changed = runtime.user_manager.remove_user(uid)
+            changed = await asyncio.to_thread(runtime.user_manager.remove_user, uid)
+        current_enabled = await asyncio.to_thread(runtime.access_service.is_authorized_uid, uid)
         return web.json_response(
             {
                 "ok": True,
                 "data": {
                     "uid": uid,
-                    "enabled": runtime.access_service.is_authorized_uid(uid),
+                    "enabled": current_enabled,
                     "changed": bool(changed),
                 },
             }
@@ -686,7 +716,7 @@ async def _set_public_access(request: web.Request) -> web.Response:
     except Exception:
         return _json_error("invalid_payload", status=400)
     enabled = bool(payload.get("enabled"))
-    changed, current = runtime.access_service.set_allow_all_users(enabled)
+    changed, current = await asyncio.to_thread(runtime.access_service.set_allow_all_users, enabled)
     return web.json_response({"ok": True, "data": {"changed": bool(changed), "enabled": bool(current)}})
 
 
@@ -712,7 +742,7 @@ async def _audit_alerts(request: web.Request) -> web.Response:
     url_threshold, err = _parse_positive_int(request, "high_url_threshold", 40, 1, 2000)
     if err is not None:
         return err
-    rows = _collect_check_rows(runtime, mode="all", limit=10000)["rows"]
+    rows = (await asyncio.to_thread(_collect_check_rows, runtime, mode="all", limit=10000)).get("rows", [])
     cutoff = datetime.now() - timedelta(hours=24)
     recent = []
     for row in rows:
@@ -796,23 +826,7 @@ def _build_export_rows(runtime: Any, request: web.Request) -> tuple[list[dict[st
     return data.get("rows", []), None
 
 
-async def _audit_export(request: web.Request) -> web.Response:
-    runtime = request.app[RUNTIME_KEY]
-    fmt = request.query.get("format", "csv").strip().lower()
-    rows, err = _build_export_rows(runtime, request)
-    if err is not None:
-        return err
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if fmt == "json":
-        body = json.dumps(rows, ensure_ascii=False, indent=2)
-        return web.Response(
-            text=body,
-            content_type="application/json",
-            headers={"Content-Disposition": f'attachment; filename="audit_checks_{ts}.json"'},
-        )
-    if fmt != "csv":
-        return _json_error("invalid_format", status=400)
-
+def _render_audit_csv(rows: list[dict[str, Any]]) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["user_id", "identity", "ts", "source", "url_count", "urls"])
@@ -827,8 +841,29 @@ async def _audit_export(request: web.Request) -> web.Response:
                 "\n".join(row.get("urls", [])),
             ]
         )
+    return output.getvalue()
+
+
+async def _audit_export(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    fmt = request.query.get("format", "csv").strip().lower()
+    rows, err = await asyncio.to_thread(_build_export_rows, runtime, request)
+    if err is not None:
+        return err
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if fmt == "json":
+        body = await asyncio.to_thread(json.dumps, rows, ensure_ascii=False, indent=2)
+        return web.Response(
+            text=body,
+            content_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="audit_checks_{ts}.json"'},
+        )
+    if fmt != "csv":
+        return _json_error("invalid_format", status=400)
+
+    csv_text = await asyncio.to_thread(_render_audit_csv, rows)
     return web.Response(
-        text=output.getvalue(),
+        text=csv_text,
         content_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="audit_checks_{ts}.csv"'},
     )
@@ -841,11 +876,11 @@ async def _owner_export_json(request: web.Request) -> web.Response:
     export_name = "subscriptions_export.json"
     try:
         store = runtime.get_storage()
-        export_file, export_name = runtime.admin_service.make_export_file_path()
-        ok = store.export_to_file(export_file)
+        export_file, export_name = await asyncio.to_thread(runtime.admin_service.make_export_file_path)
+        ok = await asyncio.to_thread(store.export_to_file, export_file)
         if not ok:
             return _json_error("export_failed", status=500)
-        payload = Path(export_file).read_bytes()
+        payload = await asyncio.to_thread(Path(export_file).read_bytes)
         return web.Response(
             body=payload,
             content_type="application/json",
@@ -858,7 +893,7 @@ async def _owner_export_json(request: web.Request) -> web.Response:
             try:
                 f = Path(export_file)
                 if f.exists():
-                    f.unlink()
+                    await asyncio.to_thread(f.unlink)
             except Exception:
                 pass
 
@@ -878,7 +913,7 @@ async def _owner_import_json(request: web.Request) -> web.Response:
     if not filename.lower().endswith(".json"):
         return _json_error("invalid_file_type", status=400)
 
-    content = upload.file.read()
+    content = await asyncio.to_thread(upload.file.read)
     if not isinstance(content, (bytes, bytearray)) or not content:
         return _json_error("empty_file", status=400)
     if len(content) > 20 * 1024 * 1024:
@@ -902,8 +937,8 @@ async def _owner_import_json(request: web.Request) -> web.Response:
 async def _owner_backup_download(request: web.Request) -> web.Response:
     runtime = request.app[RUNTIME_KEY]
     try:
-        zip_path, zip_name = runtime.backup_service.create_backup()
-        payload = Path(zip_path).read_bytes()
+        zip_path, zip_name = await asyncio.to_thread(runtime.backup_service.create_backup)
+        payload = await asyncio.to_thread(Path(zip_path).read_bytes)
         return web.Response(
             body=payload,
             content_type="application/zip",
@@ -928,7 +963,7 @@ async def _owner_restore_backup(request: web.Request) -> web.Response:
     if not filename.lower().endswith(".zip"):
         return _json_error("invalid_file_type", status=400)
 
-    content = upload.file.read()
+    content = await asyncio.to_thread(upload.file.read)
     if not isinstance(content, (bytes, bytearray)) or not content:
         return _json_error("empty_file", status=400)
 
@@ -937,7 +972,7 @@ async def _owner_restore_backup(request: web.Request) -> web.Response:
         return _json_error("file_too_large", status=400)
 
     try:
-        restored = runtime.backup_service.restore_backup_bytes(bytes(content))
+        restored = await asyncio.to_thread(runtime.backup_service.restore_backup_bytes, bytes(content))
         return web.json_response(
             {
                 "ok": True,
@@ -955,7 +990,7 @@ async def _owner_restore_backup(request: web.Request) -> web.Response:
 async def _owner_check_all(request: web.Request) -> web.Response:
     runtime = request.app[RUNTIME_KEY]
     store = runtime.get_storage()
-    subscriptions = store.get_all()
+    subscriptions = await asyncio.to_thread(store.get_all)
     if not subscriptions:
         return web.json_response({"ok": True, "data": {"total": 0, "success": 0, "failed": 0}})
 
@@ -970,20 +1005,20 @@ async def _owner_check_all(request: web.Request) -> web.Response:
                 else:
                     parser_instance = await runtime.get_parser()
                     result = await parser_instance.parse(url)
-                    store.add_or_update(url, result, user_id=owner_uid)
+                    await asyncio.to_thread(store.add_or_update, url, result, owner_uid)
                 return True
             except Exception as exc:
                 try:
-                    store.mark_check_failed(url, str(exc))
+                    await asyncio.to_thread(store.mark_check_failed, url, str(exc))
                 except Exception:
                     pass
                 return False
 
-    store.begin_batch()
+    await asyncio.to_thread(store.begin_batch)
     try:
         results = await asyncio.gather(*[_check_one(url, data) for url, data in subscriptions.items()])
     finally:
-        store.end_batch(save=True)
+        await asyncio.to_thread(store.end_batch, True)
 
     success = sum(1 for row in results if row)
     failed = len(results) - success

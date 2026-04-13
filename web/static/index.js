@@ -1,5 +1,6 @@
 const qs = (id) => document.getElementById(id);
 const statusText = qs("statusText");
+const AUTH_HEARTBEAT_MS = 10000;
 
 const state = {
   usersPage: 1,
@@ -15,17 +16,107 @@ let auditRequestToken = 0;
 let exportsRequestToken = 0;
 let detailRequestToken = 0;
 let statusTimer = null;
+let authHeartbeatTimer = null;
+let loginRedirecting = false;
+
+function redirectToLogin() {
+  if (loginRedirecting) return;
+  loginRedirecting = true;
+  window.location.href = "/admin/login";
+}
+
+async function authFetch(path, options = {}) {
+  const resp = await fetch(path, {
+    credentials: "include",
+    ...options,
+  });
+  if (resp.status === 401) {
+    redirectToLogin();
+    return null;
+  }
+  return resp;
+}
+
+async function readErrorMessage(resp) {
+  if (!resp) return "Request failed";
+  try {
+    const contentType = (resp.headers.get("content-type") || "").toLowerCase();
+    if (contentType.includes("application/json")) {
+      const data = await resp.json();
+      if (data && typeof data === "object") {
+        return data.error || data.message || `Request failed (${resp.status})`;
+      }
+    }
+    const text = await resp.text();
+    return text || `Request failed (${resp.status})`;
+  } catch (_) {
+    return `Request failed (${resp.status})`;
+  }
+}
+
+function extractFilename(disposition, fallback = "download.bin") {
+  const text = String(disposition || "");
+  const utf8Match = text.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match && utf8Match[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].replace(/["']/g, ""));
+    } catch (_) {
+      return utf8Match[1].replace(/["']/g, "");
+    }
+  }
+  const plainMatch = text.match(/filename="?([^";]+)"?/i);
+  if (plainMatch && plainMatch[1]) return plainMatch[1];
+  return fallback;
+}
+
+async function downloadWithBlob(path, fallbackName) {
+  const resp = await authFetch(path, { method: "GET" });
+  if (!resp) return false;
+  if (!resp.ok) {
+    throw new Error(await readErrorMessage(resp));
+  }
+
+  const blob = await resp.blob();
+  if (!blob || blob.size <= 0) {
+    throw new Error("Empty download payload");
+  }
+
+  const filename = extractFilename(resp.headers.get("content-disposition"), fallbackName);
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename || fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+  return true;
+}
+
+function formatLocalDateTime(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "-") return "-";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const dt = new Date(normalized);
+  if (Number.isNaN(dt.getTime())) return raw;
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(dt);
+}
 
 async function apiRequest(path, options = {}) {
   try {
-    const resp = await fetch(path, {
-      credentials: "include",
-      ...options,
-    });
-    if (resp.status === 401) {
-      window.location.href = "/admin/login";
-      return null;
-    }
+    const resp = await authFetch(path, options);
+    if (!resp) return null;
     const data = await resp.json();
     if (!resp.ok || !data.ok) {
       throw new Error(data.error || "Request failed");
@@ -182,7 +273,7 @@ function patchAuthorizedUserRow(tr, r) {
       ${r.is_owner ? '<span class="badge badge-primary">OWNER</span>' : '<span class="badge">USER</span>'}
       ${r.is_authorized ? '<span class="badge badge-success">Authorized</span>' : '<span class="badge badge-danger">Unauthorized</span>'}
     </td>
-    <td class="mono">${escapeHtml(r.last_seen || "-")}</td>
+    <td class="mono">${escapeHtml(formatLocalDateTime(r.last_seen || "-"))}</td>
     <td class="mono">${escapeHtml(r.source || "-")}</td>
     <td>
       <div class="u-flex-gap-6">
@@ -240,7 +331,7 @@ function renderAuthorizedUsersCards(users) {
       </div>
       <div class="mobile-card-meta">
         <div class="mobile-meta-row">${r.is_owner ? '<span class="badge badge-primary">OWNER</span>' : '<span class="badge">USER</span>'} ${r.is_authorized ? '<span class="badge badge-success">Authorized</span>' : '<span class="badge badge-danger">Unauthorized</span>'}</div>
-        <div class="mobile-meta-row mono">Active: ${escapeHtml(r.last_seen || "-")}</div>
+        <div class="mobile-meta-row mono">Active: ${escapeHtml(formatLocalDateTime(r.last_seen || "-"))}</div>
         <div class="mobile-meta-row mono">Source: ${escapeHtml(r.source || "-")}</div>
       </div>
       <div class="mobile-card-actions">
@@ -259,7 +350,7 @@ function patchAuditRow(tr, r, rowKey) {
   const auditCell = buildAuditUrlCell(r.urls || [], rowKey);
   tr.innerHTML = `
     <td><div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div></td>
-    <td class="mono">${escapeHtml(r.ts || "-")}</td>
+    <td class="mono">${escapeHtml(formatLocalDateTime(r.ts || "-"))}</td>
     <td><span class="badge badge-primary audit-source-badge">${escapeHtml(r.source || "-")}</span></td>
     <td class="audit-url-col">${auditCell}</td>`;
 }
@@ -308,7 +399,7 @@ function renderRecentChecksCards(rows) {
         <div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
       </div>
       <div class="mobile-card-meta">
-        <div class="mobile-meta-row mono">Time: ${escapeHtml(r.ts || "-")}</div>
+        <div class="mobile-meta-row mono">Time: ${escapeHtml(formatLocalDateTime(r.ts || "-"))}</div>
         <div class="mobile-meta-row">${r.source ? `<span class="badge badge-primary audit-source-badge">${escapeHtml(r.source || "-")}</span>` : '<span class="audit-empty">-</span>'}</div>
       </div>
       <div class="mobile-card-urls">${buildAuditUrlCell(r.urls || [], `${auditRowKey(r, idx)}-mobile`, "audit-url-list-mobile")}</div>
@@ -535,7 +626,7 @@ async function loadRecentExports(page = 1) {
         <div class="recent-export-identity">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
         <div class="recent-export-meta">
           <span class="badge badge-primary">${escapeHtml(r.fmt || "-")}</span>
-          <span class="mono recent-export-ts">${escapeHtml(r.ts || "-")}</span>
+          <span class="mono recent-export-ts">${escapeHtml(formatLocalDateTime(r.ts || "-"))}</span>
         </div>
         <div class="mono recent-export-target">${escapeHtml(r.target || "-")}</div>
       </div>`
@@ -672,7 +763,7 @@ async function openUserDetail(uid) {
           <div class="subscription-item">
             <div class="subscription-name">${escapeHtml(s.name || "-")}</div>
             <div class="mono subscription-url">${escapeHtml(s.url || "-")}</div>
-            <div class="subscription-meta">Updated: ${escapeHtml(s.updated_at || "-")} | Expire: ${escapeHtml(s.expire_time || "-")}</div>
+            <div class="subscription-meta">Updated: ${escapeHtml(formatLocalDateTime(s.updated_at || "-"))} | Expire: ${escapeHtml(formatLocalDateTime(s.expire_time || "-"))}</div>
           </div>`
           )
           .join("")
@@ -684,7 +775,7 @@ async function openUserDetail(uid) {
         <div class="runtime-item"><div class="k">UID</div><div class="v">${escapeHtml(data.uid || "-")}</div></div>
         <div class="runtime-item"><div class="k">Role</div><div class="v">${data.is_owner ? "Owner" : "User"}</div></div>
         <div class="runtime-item"><div class="k">Subscriptions</div><div class="v">${escapeHtml(String(data.subscription_count || 0))}</div></div>
-        <div class="runtime-item"><div class="k">Last Seen</div><div class="v">${escapeHtml(data.last_seen || "-")}</div></div>
+        <div class="runtime-item"><div class="k">Last Seen</div><div class="v">${escapeHtml(formatLocalDateTime(data.last_seen || "-"))}</div></div>
       </div>
       <h4>Subscriptions</h4>
       ${subHtml}
@@ -697,18 +788,27 @@ async function openUserDetail(uid) {
 async function uploadOwnerFile(path, file) {
   const form = new FormData();
   form.append("file", file, file.name || "upload.bin");
-  const resp = await fetch(path, {
+  const resp = await authFetch(path, {
     method: "POST",
-    credentials: "include",
     body: form,
   });
-  if (resp.status === 401) {
-    window.location.href = "/admin/login";
-    return null;
-  }
+  if (!resp) return null;
   const data = await resp.json();
   if (!resp.ok || !data.ok) throw new Error(data.error || "Request failed");
   return data.data;
+}
+
+function startAuthHeartbeat() {
+  if (authHeartbeatTimer) clearInterval(authHeartbeatTimer);
+  authHeartbeatTimer = setInterval(async () => {
+    try {
+      const probeUrl = `/api/v1/system/runtime?probe_ts=${Date.now()}`;
+      const resp = await authFetch(probeUrl, { method: "GET", cache: "no-store" });
+      if (!resp) return;
+    } catch (_) {
+      // Ignore transient network errors and keep heartbeat alive.
+    }
+  }, AUTH_HEARTBEAT_MS);
 }
 
 async function runOwnerImport(file) {
@@ -804,25 +904,47 @@ function bindEvents() {
     loadAuditSummary();
   };
 
-  qs("exportCsvBtn").onclick = () => {
+  qs("exportCsvBtn").onclick = async () => {
     const snapshot = state.auditSnapshot || collectAuditFilters();
-    window.location.href = `/api/v1/audit/export?format=csv&${buildAuditExportQuery(snapshot)}`;
+    try {
+      setStatus("Preparing CSV export...", "", { autoHideMs: 2000 });
+      await downloadWithBlob(`/api/v1/audit/export?format=csv&${buildAuditExportQuery(snapshot)}`, "audit_checks.csv");
+      setStatus("CSV downloaded", "ok");
+    } catch (e) {
+      setStatus(e.message || "CSV export failed", "warn");
+    }
   };
-  qs("exportJsonBtn").onclick = () => {
+  qs("exportJsonBtn").onclick = async () => {
     const snapshot = state.auditSnapshot || collectAuditFilters();
-    window.location.href = `/api/v1/audit/export?format=json&${buildAuditExportQuery(snapshot)}`;
+    try {
+      setStatus("Preparing JSON export...", "", { autoHideMs: 2000 });
+      await downloadWithBlob(`/api/v1/audit/export?format=json&${buildAuditExportQuery(snapshot)}`, "audit_checks.json");
+      setStatus("JSON downloaded", "ok");
+    } catch (e) {
+      setStatus(e.message || "JSON export failed", "warn");
+    }
   };
 
   qs("togglePublicBtn").onclick = togglePublicAccess;
   qs("revokeSessionsBtn").onclick = revokeAllSessions;
 
-  qs("ownerExportJsonBtn").onclick = () => {
-    setStatus("Downloading JSON export...", "", { autoHideMs: 1800 });
-    window.location.href = "/api/v1/owner/export-json";
+  qs("ownerExportJsonBtn").onclick = async () => {
+    try {
+      setStatus("Downloading JSON export...", "", { autoHideMs: 2000 });
+      await downloadWithBlob("/api/v1/owner/export-json", "subscriptions_export.json");
+      setStatus("JSON backup downloaded", "ok");
+    } catch (e) {
+      setStatus(e.message || "JSON export failed", "warn");
+    }
   };
-  qs("ownerBackupBtn").onclick = () => {
-    setStatus("Preparing ZIP backup...", "", { autoHideMs: 1800 });
-    window.location.href = "/api/v1/owner/backup";
+  qs("ownerBackupBtn").onclick = async () => {
+    try {
+      setStatus("Preparing ZIP backup...", "", { autoHideMs: 2000 });
+      await downloadWithBlob("/api/v1/owner/backup", "backup.zip");
+      setStatus("ZIP backup downloaded", "ok");
+    } catch (e) {
+      setStatus(e.message || "ZIP backup failed", "warn");
+    }
   };
   qs("ownerImportJsonBtn").onclick = () => qs("ownerImportFile").click();
   qs("ownerRestoreBtn").onclick = () => qs("ownerRestoreFile").click();
@@ -873,6 +995,13 @@ function init() {
   state.auditPage = restored.page;
   applyAuditFilters(restored.snapshot);
   bindEvents();
+  startAuthHeartbeat();
+  window.addEventListener("beforeunload", () => {
+    if (authHeartbeatTimer) {
+      clearInterval(authHeartbeatTimer);
+      authHeartbeatTimer = null;
+    }
+  });
   refreshAll();
 }
 

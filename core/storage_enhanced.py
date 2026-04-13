@@ -1,6 +1,7 @@
 """Enhanced subscription storage with owner/tag/import-export support."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -8,6 +9,8 @@ import threading
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List
+
+import aiofiles
 
 from core.workspace_manager import WorkspaceManager
 
@@ -23,7 +26,8 @@ class SubscriptionStorage:
 
     def __init__(self, data_file: str = DATA_FILE):
         self.data_file = data_file
-        self._lock = threading.RLock()
+        self._lock = threading.Lock()
+        self._async_lock = asyncio.Lock()
         self._batch_depth = 0
         self._dirty = False
         self._ensure_data_dir()
@@ -68,6 +72,30 @@ class SubscriptionStorage:
             with self._lock:
                 self._dirty = False
         return saved
+
+    async def _save_data_async(self) -> bool:
+        try:
+            with self._lock:
+                snapshot = deepcopy(self.subscriptions)
+            temp_file = self.data_file + ".tmp"
+            payload = json.dumps(snapshot, indent=2, ensure_ascii=False)
+            async with aiofiles.open(temp_file, "w", encoding="utf-8") as f:
+                await f.write(payload)
+            await asyncio.to_thread(os.replace, temp_file, self.data_file)
+            with self._lock:
+                self._dirty = False
+            logger.debug("Saved %s subscriptions (async)", len(snapshot))
+            return True
+        except Exception as exc:
+            logger.error("Failed to async save subscriptions data: %s", exc)
+            return False
+
+    async def flush_async(self) -> bool:
+        with self._lock:
+            if not self._dirty:
+                return False
+        async with self._async_lock:
+            return await self._save_data_async()
 
     def _mark_dirty(self) -> None:
         with self._lock:
