@@ -232,6 +232,28 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<b>原始订阅链接：</b>", text)
         self.assertGreater(text.index("<b>原始订阅链接：</b>"), text.index("</blockquote>"))
 
+    def test_verbose_formatter_marks_exhausted_when_remaining_is_negative(self):
+        text = format_subscription_info(
+            {
+                "name": "Demo",
+                "node_count": 5,
+                "used": 2.12 * 1024**4,
+                "total": 500 * 1024**3,
+                "remaining": -1788804691331,
+            }
+        )
+        self.assertIn("<b>订阅状态：</b> 流量耗尽", text)
+
+    def test_verbose_formatter_shows_unknown_usage_when_traffic_missing(self):
+        text = format_subscription_info(
+            {
+                "name": "Demo",
+                "node_count": 3,
+            }
+        )
+        self.assertIn("<b>已用 / 总量：</b> 未知 / 未知", text)
+        self.assertIn("<b>剩余流量：</b> 未知", text)
+
     def test_get_country_flag_supports_english_names_and_iso2(self):
         self.assertEqual(get_country_flag("China"), "🇨🇳")
         self.assertEqual(get_country_flag("Japan"), "🇯🇵")

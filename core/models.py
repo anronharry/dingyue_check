@@ -89,7 +89,7 @@ def _parse_expire_date(value: str | datetime | None) -> datetime | None:
 class SubscriptionEntity:
     url: str
     name: str
-    remaining_bytes: int = 0
+    remaining_bytes: int | None = None
     expire_date: datetime | None = None
     owner_uid: int | None = None
     error: str | None = None
@@ -97,15 +97,19 @@ class SubscriptionEntity:
     @classmethod
     def from_parse_result(cls, *, url: str, result: dict, owner_uid: int | None = None) -> "SubscriptionEntity":
         remaining = result.get("remaining")
-        if not isinstance(remaining, int):
+        if remaining is None:
+            parsed_remaining: int | None = None
+        elif isinstance(remaining, int):
+            parsed_remaining = remaining
+        else:
             try:
-                remaining = int(remaining or 0)
+                parsed_remaining = int(remaining)
             except Exception:
-                remaining = 0
+                parsed_remaining = None
         return cls(
             url=url,
             name=str(result.get("name") or "未知"),
-            remaining_bytes=max(0, remaining),
+            remaining_bytes=max(0, parsed_remaining) if parsed_remaining is not None else None,
             expire_date=_parse_expire_date(result.get("expire_time")),
             owner_uid=owner_uid,
             error=None,
@@ -123,7 +127,7 @@ class SubscriptionEntity:
         return cls(
             url=url,
             name=name or "未知",
-            remaining_bytes=0,
+            remaining_bytes=None,
             expire_date=None,
             owner_uid=owner_uid,
             error=error or "未知错误",
@@ -131,6 +135,8 @@ class SubscriptionEntity:
 
     @property
     def is_low_traffic(self) -> bool:
+        if self.remaining_bytes is None:
+            return False
         return 0 < self.remaining_bytes < 5 * 1024 * 1024 * 1024
 
     @property
@@ -143,6 +149,8 @@ class SubscriptionEntity:
     def status(self) -> SubscriptionStatus:
         if self.error:
             return SubscriptionStatus.FAILED
+        if self.remaining_bytes is not None and self.remaining_bytes <= 0:
+            return SubscriptionStatus.WARNING
         if self.is_low_traffic or self.is_expiring_soon:
             return SubscriptionStatus.WARNING
         return SubscriptionStatus.ACTIVE

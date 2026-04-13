@@ -15,6 +15,12 @@ def _fmt_expire(value) -> str:
     return str(value)
 
 
+def _fmt_remaining(value, *, format_traffic) -> str:
+    if value is None:
+        return "未知"
+    return format_traffic(value)
+
+
 def render_subscription_check_report(*, batch: BatchCheckResult, format_traffic) -> str:
     lines = [
         "<b>订阅检测结果</b>",
@@ -30,7 +36,7 @@ def render_subscription_check_report(*, batch: BatchCheckResult, format_traffic)
         lines.append("<b>需关注订阅</b>")
         for item in batch.warning:
             lines.append(f"<b>{html.escape(item.name)}</b>")
-            lines.append(f"剩余: {format_traffic(item.remaining_bytes)} | 到期: {_fmt_expire(item.expire_date)}")
+            lines.append(f"剩余: {_fmt_remaining(item.remaining_bytes, format_traffic=format_traffic)} | 到期: {_fmt_expire(item.expire_date)}")
             lines.append(f"<code>{html.escape(item.url)}</code>")
             lines.append("")
     if batch.failed:

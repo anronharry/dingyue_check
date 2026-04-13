@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+from datetime import datetime
 
 from shared.format_helpers import (
     create_progress_bar,
@@ -153,6 +154,23 @@ def _render_node_lines(info: dict, *, max_items: int, char_budget: int) -> tuple
 
 
 def _status_text(info: dict) -> str:
+    expire_time = str(info.get("expire_time") or "").strip()
+    if expire_time:
+        try:
+            if datetime.strptime(expire_time, "%Y-%m-%d %H:%M:%S") < datetime.now():
+                return "已过期"
+        except Exception:
+            pass
+
+    total = info.get("total")
+    remaining = info.get("remaining")
+    if total is not None and remaining is not None:
+        try:
+            if float(total) > 0 and float(remaining) <= 0:
+                return "流量耗尽"
+        except Exception:
+            pass
+
     node_count = int(info.get("node_count") or 0)
     if node_count > 0:
         return "可用"
@@ -163,9 +181,12 @@ def _status_text(info: dict) -> str:
 
 
 def _format_usage(info: dict) -> tuple[str, str, str]:
-    used = format_traffic(info.get("used", 0)) if info.get("used") is not None else "未知"
-    total = format_traffic(info.get("total", 0)) if info.get("total") is not None else "未知"
-    remaining = format_traffic(info.get("remaining", 0)) if info.get("remaining") is not None else "未知"
+    used_value = info.get("used") if "used" in info else None
+    total_value = info.get("total") if "total" in info else None
+    remaining_value = info.get("remaining") if "remaining" in info else None
+    used = format_traffic(used_value) if used_value is not None else "未知"
+    total = format_traffic(total_value) if total_value is not None else "未知"
+    remaining = format_traffic(remaining_value) if remaining_value is not None else "未知"
     return used, total, remaining
 
 
