@@ -436,7 +436,7 @@ async def _collect_check_rows_async(
                 return False
         return True
 
-    data = await service.query_records(
+    data = await service.aquery_records(
         owner_id=runtime.admin_service.owner_id,
         mode=mode,
         page=page,
@@ -640,7 +640,7 @@ async def _user_detail(request: web.Request) -> web.Response:
             checks_data = await _collect_check_rows_async(runtime, mode="all", limit=20, user_id=uid)
             checks = checks_data["rows"]
             
-            export_records = await runtime.usage_audit_service.query_by_source_prefix(
+            export_records = await runtime.usage_audit_service.aquery_by_source_prefix(
                 prefix="导出缓存:",
                 limit=20,
                 owner_id=runtime.admin_service.owner_id,
@@ -764,7 +764,7 @@ async def _audit_alerts(request: web.Request) -> web.Response:
         ts = _parse_datetime_text(row.get("ts"))
         return bool(ts and ts >= cutoff)
 
-    raw = await runtime.usage_audit_service.query_records(
+    raw = await runtime.usage_audit_service.aquery_records(
         owner_id=runtime.admin_service.owner_id,
         mode="all",
         page=1,
