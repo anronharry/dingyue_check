@@ -4,6 +4,7 @@
   --form-bg: rgba(15, 23, 42, 0.65);
   --line: #3f3f46;
   --muted: #94a3b8;
+  --text-muted: #94a3b8;
   --text: #ffffff;
   --border: rgba(255, 255, 255, 0.08);
   --primary: #22d3ee;
@@ -245,6 +246,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   padding: 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
+}
+.filters {
+  margin: 0 0 16px;
 }
 .quick-auth-panel {
   display: grid;
@@ -641,6 +645,14 @@ tbody tr:hover { background-color: rgba(148,163,184,0.08); }
 .alert-content { flex: 1; }
 .alert-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
 .alert-desc { font-size: 12px; color: #cbd5e1; }
+.alert-limit-note {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px dashed rgba(245, 158, 11, 0.45);
+  border-radius: 8px;
+  color: #fcd34d;
+  font-size: 12px;
+}
 
 .list > div { border-bottom: 1px solid var(--border); padding: 8px 0; }
 .list > div:last-child { border-bottom: none; }
@@ -658,6 +670,21 @@ dialog {
  dialog::backdrop { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); }
 .modal-head { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .modal-body { padding: 20px; max-height: 80vh; overflow-y: auto; }
+.modal-skeleton {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  color: var(--text-muted);
+}
+.modal-warning {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 8px;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.25);
+  font-size: 12px;
+}
 .confirm-message {
   margin: 0;
   color: #cbd5e1;

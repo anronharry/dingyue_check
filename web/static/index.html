@@ -82,9 +82,18 @@
         <article class="card">
           <div class="head">
             <h2>授权用户管理</h2>
-            <div class="head-actions"><button id="openQuickAuthBtn" type="button" class="btn-brand">Authorize User</button><button id="loadUsersTableBtn" type="button">Refresh</button></div>
+            <div class="head-actions">
+              <button id="openQuickAuthBtn" type="button" class="btn-brand">Authorize User</button>
+              <button id="loadUsersTableBtn" type="button">Refresh</button>
+            </div>
           </div>
-          <div id="quickAuthPanel" class="quick-auth-panel" hidden><input id="quickUidInput" type="text" placeholder="UID"><button id="quickGrantBtn" class="btn-brand" type="button">Grant</button><button id="quickRevokeBtn" class="btn-danger" type="button">Revoke</button><button id="quickDetailBtn" type="button">Details</button></div><div class="body">
+          <div id="quickAuthPanel" class="quick-auth-panel" hidden>
+            <input id="quickUidInput" type="text" placeholder="UID">
+            <button id="quickGrantBtn" class="btn-brand" type="button">Grant</button>
+            <button id="quickRevokeBtn" class="btn-danger" type="button">Revoke</button>
+            <button id="quickDetailBtn" type="button">Details</button>
+          </div>
+          <div class="body">
             <div class="table-wrap">
               <table>
                 <thead>
@@ -110,7 +119,7 @@
             <h2>检测审计记录</h2>
           </div>
           <div class="body">
-            <div class="filters">
+            <form id="auditFilterForm" class="filters">
               <select id="auditMode">
                 <option value="others" selected>过滤管理员 (Others)</option>
                 <option value="owner">仅查看管理员 (Owner)</option>
@@ -126,7 +135,7 @@
                 <button id="exportCsvBtn" type="button">导出 CSV</button>
                 <button id="exportJsonBtn" type="button">导出 JSON</button>
               </div>
-            </div>
+            </form>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -168,12 +177,6 @@
               </div>
               <button id="revokeSessionsBtn" class="btn-danger">强制登出</button>
             </div>
-            <div class="op-item">
-              <div class="op-info">
-                <span class="op-title">快速授权/吊销</span>
-              </div>
-            </div>
-            
             <div class="op-item">
               <div class="op-info">
                 <span class="op-title">数据迁移与备份</span>
@@ -230,6 +233,7 @@
             <button id="loadExportsBtn" type="button">刷新</button>
           </div>
           <div class="body list" id="recentExportsBody"></div>
+          <div id="exportsPagination" class="pagination"></div>
         </article>
       </div>
     </div>
@@ -241,7 +245,19 @@
       <button id="closeUserDetailBtn" type="button">关闭窗口</button>
     </div>
     <div class="modal-body" id="userDetailBody"></div>
-  </dialog><dialog id="confirmActionModal"><div class="modal-head"><strong id="confirmActionTitle">Confirm Action</strong><button id="cancelConfirmBtn" type="button">Cancel</button></div><div class="modal-body"><p id="confirmActionMessage" class="confirm-message">Are you sure you want to continue?</p><div class="confirm-actions"><button id="confirmActionBtn" class="btn-danger" type="button">Confirm</button></div></div></dialog>
+  </dialog>
+  <dialog id="confirmActionModal">
+    <div class="modal-head">
+      <strong id="confirmActionTitle">Confirm Action</strong>
+      <button id="cancelConfirmBtn" type="button">Cancel</button>
+    </div>
+    <div class="modal-body">
+      <p id="confirmActionMessage" class="confirm-message">Are you sure you want to continue?</p>
+      <div class="confirm-actions">
+        <button id="confirmActionBtn" class="btn-danger" type="button">Confirm</button>
+      </div>
+    </div>
+  </dialog>
         </div>
       </section>
     </main>
@@ -250,11 +266,3 @@
     <script src="/admin/static/index.js"></script>
 </body>
 </html>
-
-
-
-
-
-
-
-
