@@ -16,8 +16,10 @@ let auditRequestToken = 0;
 let exportsRequestToken = 0;
 let detailRequestToken = 0;
 let statusTimer = null;
+let statusHistory = [];
 let authHeartbeatTimer = null;
 let loginRedirecting = false;
+let ownerCheckAllRunning = false;
 
 function redirectToLogin() {
   if (loginRedirecting) return;
@@ -123,7 +125,7 @@ async function apiRequest(path, options = {}) {
     }
     return data.data;
   } catch (e) {
-    setStatus(e.message || String(e), "warn", { autoHideMs: 4500 });
+    setStatus(e.message || String(e), "warn", { autoHideMs: 4500, merge: true });
     throw e;
   }
 }
@@ -131,6 +133,13 @@ async function apiRequest(path, options = {}) {
 function setStatus(text, cls = "", options = {}) {
   const autoHideMs = Number(options.autoHideMs ?? 2600);
   const sticky = !!options.sticky;
+  const merge = !!options.merge;
+  const cleanText = String(text || "").trim();
+  if (merge && cleanText) {
+    statusHistory = [cleanText, ...statusHistory.filter((line) => line !== cleanText)].slice(0, 3);
+  } else if (cleanText) {
+    statusHistory = [cleanText];
+  }
 
   if (statusTimer) {
     clearTimeout(statusTimer);
@@ -138,12 +147,13 @@ function setStatus(text, cls = "", options = {}) {
   }
 
   statusText.className = "status " + cls;
-  statusText.textContent = text || "";
+  statusText.textContent = statusHistory.join(" | ");
 
-  if (!sticky && text) {
+  if (!sticky && cleanText) {
     statusTimer = setTimeout(() => {
       statusText.className = "status";
       statusText.textContent = "";
+      statusHistory = [];
       statusTimer = null;
     }, autoHideMs);
   }
@@ -196,7 +206,14 @@ function buildAuditUrlCell(urls, rowIndex, extraClass = "") {
   return `<ul class="${className}" id="audit-url-${rowIndex}">${items}</ul>`;
 }
 
-function renderPagination(containerId, current, total, onPageChange, totalItems = 0) {
+function goPage(pageType, page) {
+  const safePage = Math.max(1, Number(page || 1));
+  if (pageType === "users") return loadAuthorizedUsers(safePage);
+  if (pageType === "audit") return loadRecentChecks(safePage, { syncUrl: true });
+  if (pageType === "exports") return loadRecentExports(safePage);
+}
+
+function renderPagination(containerId, current, total, pageType, totalItems = 0) {
   const container = qs(containerId);
   if (!container) return;
 
@@ -206,19 +223,19 @@ function renderPagination(containerId, current, total, onPageChange, totalItems 
   }
 
   const safeCurrent = clampPage(current, total);
-  let html = `<button class="page-btn" ${safeCurrent === 1 ? "disabled" : ""} onclick="${onPageChange}(1)">«</button>`;
-  html += `<button class="page-btn" ${safeCurrent === 1 ? "disabled" : ""} onclick="${onPageChange}(${safeCurrent - 1})">←</button>`;
+  container.dataset.pageType = pageType;
+  let html = `<button class="page-btn" ${safeCurrent === 1 ? "disabled" : ""} data-page-target="1">&laquo;</button>`;
+  html += `<button class="page-btn" ${safeCurrent === 1 ? "disabled" : ""} data-page-target="${safeCurrent - 1}">&larr;</button>`;
   html += `<span class="page-info">Page ${safeCurrent}/${total}${totalItems ? ` (Total ${totalItems})` : ""}</span>`;
   html += '<span class="page-jump">';
-  html += `<input id="${containerId}JumpInput" class="page-jump-input" type="number" min="1" max="${total}" value="${safeCurrent}" aria-label="Jump page">`;
-  html += `<button class="page-btn page-jump-btn" type="button" onclick="(function(){const el=document.getElementById('${containerId}JumpInput');const p=Math.max(1,Math.min(${total},Number(el && el.value || ${safeCurrent})));${onPageChange}(p);})();">Go</button>`;
+  html += `<input id="${containerId}JumpInput" class="page-jump-input" type="number" min="1" max="${total}" value="${safeCurrent}" data-page-total="${total}" aria-label="Jump page">`;
+  html += `<button class="page-btn page-jump-btn" type="button" data-page-go="${containerId}">Go</button>`;
   html += "</span>";
-  html += `<button class="page-btn" ${safeCurrent === total ? "disabled" : ""} onclick="${onPageChange}(${safeCurrent + 1})">→</button>`;
-  html += `<button class="page-btn" ${safeCurrent === total ? "disabled" : ""} onclick="${onPageChange}(${total})">»</button>`;
+  html += `<button class="page-btn" ${safeCurrent === total ? "disabled" : ""} data-page-target="${safeCurrent + 1}">&rarr;</button>`;
+  html += `<button class="page-btn" ${safeCurrent === total ? "disabled" : ""} data-page-target="${total}">&raquo;</button>`;
 
   container.innerHTML = html;
 }
-
 function syncList(container, items, keyFn, createFn, updateFn, emptyFactory) {
   if (!container) return;
 
@@ -277,8 +294,8 @@ function patchAuthorizedUserRow(tr, r) {
     <td class="mono">${escapeHtml(r.source || "-")}</td>
     <td>
       <div class="u-flex-gap-6">
-        <button class="u-btn-compact" onclick="openUserDetail('${escapeHtml(String(r.uid || ""))}')">Details</button>
-        ${!r.is_owner ? `<button class="btn-danger u-btn-compact" onclick="setUserAccess('${escapeHtml(String(r.uid || ""))}', false)">Revoke</button>` : ""}
+        <button class="u-btn-compact" data-action="open-detail" data-uid="${escapeHtml(String(r.uid || ""))}">Details</button>
+        ${!r.is_owner ? `<button class="btn-danger u-btn-compact" data-action="set-access" data-enabled="0" data-uid="${escapeHtml(String(r.uid || ""))}">Revoke</button>` : ""}
       </div>
     </td>`;
 }
@@ -335,8 +352,8 @@ function renderAuthorizedUsersCards(users) {
         <div class="mobile-meta-row mono">Source: ${escapeHtml(r.source || "-")}</div>
       </div>
       <div class="mobile-card-actions">
-        <button class="u-btn-compact" onclick="openUserDetail('${escapeHtml(String(r.uid || ""))}')">Details</button>
-        ${!r.is_owner ? `<button class="btn-danger u-btn-compact" onclick="setUserAccess('${escapeHtml(String(r.uid || ""))}', false)">Revoke</button>` : ""}
+        <button class="u-btn-compact" data-action="open-detail" data-uid="${escapeHtml(String(r.uid || ""))}">Details</button>
+        ${!r.is_owner ? `<button class="btn-danger u-btn-compact" data-action="set-access" data-enabled="0" data-uid="${escapeHtml(String(r.uid || ""))}">Revoke</button>` : ""}
       </div>
     </article>
   `).join("");
@@ -483,7 +500,15 @@ function buildAuditExportQuery(snapshot) {
   return q.toString();
 }
 
+function skeletonLines(count = 3) {
+  return Array.from({ length: count }).map(() => '<div class="skeleton-line"></div>').join("");
+}
+
 async function loadOverview() {
+  ["mTotalSubs", "mUsers", "mActive", "mExports"].forEach((id) => {
+    const el = qs(id);
+    if (el) el.textContent = "...";
+  });
   const data = await apiRequest("/api/v1/system/overview");
   if (!data) return;
   qs("mTotalSubs").textContent = data.total_subs ?? "-";
@@ -493,6 +518,14 @@ async function loadOverview() {
 }
 
 async function loadAuthorizedUsers(page = 1, options = {}) {
+  const usersBody = qs("authorizedUsersBody");
+  const usersCards = qs("authorizedUsersCards");
+  if (usersBody) {
+    usersBody.innerHTML = '<tr><td colspan="5"><div class="skeleton-line"></div><div class="skeleton-line"></div></td></tr>';
+  }
+  if (usersCards) {
+    usersCards.innerHTML = '<div class="mobile-empty-card"><div class="skeleton-line"></div></div>';
+  }
   const token = ++usersRequestToken;
   const data = await apiRequest(`/api/v1/users/authorized?page=${page}&limit=${state.limit}`);
   if (!data || token !== usersRequestToken) return;
@@ -507,17 +540,22 @@ async function loadAuthorizedUsers(page = 1, options = {}) {
 
   renderAuthorizedUsersTable(users);
   renderAuthorizedUsersCards(users);
-  renderPagination("usersPagination", state.usersPage, data.total_pages || 1, "window._goUsersPage", Number(data.total || 0));
+  renderPagination("usersPagination", state.usersPage, data.total_pages || 1, "users", Number(data.total || 0));
 
   qs("publicAccessDesc").innerHTML = `Current: ${data.allow_all_users ? '<span class="public-access-open">OPEN</span>' : '<span class="public-access-closed">RESTRICTED</span>'}`;
   window.__allowAllUsers = !!data.allow_all_users;
 }
 
-window._goUsersPage = (p) => loadAuthorizedUsers(p);
-window._goAuditPage = (p) => loadRecentChecks(p, { syncUrl: true });
-window._goExportsPage = (p) => loadRecentExports(p);
 
 async function loadRecentChecks(page = 1, options = {}) {
+  const checksBody = qs("recentChecksBody");
+  const checksCards = qs("recentChecksCards");
+  if (checksBody) {
+    checksBody.innerHTML = '<tr><td colspan="4"><div class="skeleton-line"></div><div class="skeleton-line"></div></td></tr>';
+  }
+  if (checksCards) {
+    checksCards.innerHTML = '<div class="mobile-empty-card"><div class="skeleton-line"></div></div>';
+  }
   const snapshot = options.snapshot || state.auditSnapshot || collectAuditFilters();
   state.auditSnapshot = snapshot;
   if (options.syncUrl !== false) writeAuditStateToUrl(snapshot, page);
@@ -538,7 +576,7 @@ async function loadRecentChecks(page = 1, options = {}) {
 
   renderRecentChecksTable(rows);
   renderRecentChecksCards(rows);
-  renderPagination("auditPagination", state.auditPage, totalPages, "window._goAuditPage", Number(data.total || rows.length));
+  renderPagination("auditPagination", state.auditPage, totalPages, "audit", Number(data.total || rows.length));
 }
 
 function fmtUptime(seconds) {
@@ -550,6 +588,7 @@ function fmtUptime(seconds) {
 }
 
 async function loadRuntime() {
+  qs("runtimeBody").innerHTML = '<div class="skeleton-block"></div><div class="skeleton-block"></div><div class="skeleton-block"></div><div class="skeleton-block"></div>';
   const data = await apiRequest("/api/v1/system/runtime");
   if (!data) return;
   qs("runtimeBody").innerHTML = [
@@ -565,6 +604,7 @@ async function loadRuntime() {
 }
 
 async function loadAlerts() {
+  qs("alertsBody").innerHTML = `<div class="skeleton-block">${skeletonLines(2)}</div><div class="skeleton-block">${skeletonLines(2)}</div>`;
   const data = await apiRequest("/api/v1/audit/alerts");
   if (!data) return;
   const el = qs("alertsBody");
@@ -593,6 +633,7 @@ async function loadAlerts() {
 }
 
 async function loadAuditSummary() {
+  qs("auditSummaryBody").innerHTML = '<div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div>';
   const mode = qs("auditMode")?.value || "others";
   const data = await apiRequest(`/api/v1/audit/summary?mode=${encodeURIComponent(mode)}`);
   if (!data) return;
@@ -607,6 +648,7 @@ async function loadAuditSummary() {
 }
 
 async function loadRecentExports(page = 1) {
+  qs("recentExportsBody").innerHTML = `<div class="skeleton-block">${skeletonLines(2)}</div><div class="skeleton-block">${skeletonLines(2)}</div>`;
   const token = ++exportsRequestToken;
   const data = await apiRequest(`/api/v1/exports/recent?scope=others&limit=${state.exportsLimit}&page=${page}`);
   if (!data || token !== exportsRequestToken) return;
@@ -634,7 +676,7 @@ async function loadRecentExports(page = 1) {
       .join("");
   }
 
-  renderPagination("exportsPagination", state.exportsPage, totalPages, "window._goExportsPage", Number(data.total || rows.length));
+  renderPagination("exportsPagination", state.exportsPage, totalPages, "exports", Number(data.total || rows.length));
 }
 
 async function confirmAction(message, title = "Confirm Action", dangerLabel = "Confirm") {
@@ -769,8 +811,13 @@ async function openUserDetail(uid) {
           .join("")
       : '<div class="panel-empty-hint panel-empty-tight">No subscription data</div>';
 
+    const safeDetailUid = escapeHtml(String(data.uid || safeUid));
     body.innerHTML = `
       ${truncatedBlock}
+      <div class="user-detail-actions">
+        <button type="button" class="btn-brand" data-action="set-access" data-enabled="1" data-uid="${safeDetailUid}">Grant</button>
+        ${data.is_owner ? '<button type="button" class="btn-danger" disabled>Owner cannot be revoked</button>' : `<button type="button" class="btn-danger" data-action="set-access" data-enabled="0" data-uid="${safeDetailUid}">Revoke</button>`}
+      </div>
       <div class="user-detail-grid">
         <div class="runtime-item"><div class="k">UID</div><div class="v">${escapeHtml(data.uid || "-")}</div></div>
         <div class="runtime-item"><div class="k">Role</div><div class="v">${data.is_owner ? "Owner" : "User"}</div></div>
@@ -802,7 +849,7 @@ function startAuthHeartbeat() {
   if (authHeartbeatTimer) clearInterval(authHeartbeatTimer);
   authHeartbeatTimer = setInterval(async () => {
     try {
-      const probeUrl = `/api/v1/system/runtime?probe_ts=${Date.now()}`;
+      const probeUrl = `/healthz?probe_ts=${Date.now()}`;
       const resp = await authFetch(probeUrl, { method: "GET", cache: "no-store" });
       if (!resp) return;
     } catch (_) {
@@ -828,13 +875,25 @@ async function runOwnerRestore(file) {
 }
 
 async function runOwnerCheckAll() {
+  if (ownerCheckAllRunning) {
+    setStatus("Full check is already running", "warn", { autoHideMs: 2200 });
+    return;
+  }
   const ok = await confirmAction("Run full check now? This may take a while.", "Full Check", "Run");
   if (!ok) return;
+  const btn = qs("ownerCheckAllBtn");
+  ownerCheckAllRunning = true;
+  if (btn) btn.disabled = true;
   setStatus("Running full check...", "", { sticky: true });
-  const data = await apiRequest("/api/v1/owner/check-all", { method: "POST" });
-  if (!data) return;
-  setStatus(`Full check finished: success ${data.success} / failed ${data.failed}`, "ok");
-  await refreshAll();
+  try {
+    const data = await apiRequest("/api/v1/owner/check-all", { method: "POST" });
+    if (!data) return;
+    setStatus(`Full check finished: success ${data.success} / failed ${data.failed}`, "ok");
+    await refreshAll();
+  } finally {
+    ownerCheckAllRunning = false;
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function refreshAll() {
@@ -969,10 +1028,24 @@ function bindEvents() {
   qs("loadAuditBtn").onclick = () => loadAuditSummary();
   qs("loadExportsBtn").onclick = () => loadRecentExports(state.exportsPage || 1);
 
+  document.addEventListener("keydown", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.classList.contains("page-jump-input")) return;
+    if (event.key !== "Enter") return;
+    const container = input.closest(".pagination");
+    if (!container) return;
+    const total = Number(input.dataset.pageTotal || 1);
+    const page = Math.max(1, Math.min(total, Number(input.value || 1)));
+    goPage(container.dataset.pageType || "", page);
+  });
+
   document.addEventListener("click", async (event) => {
-    const btn = event.target.closest(".audit-copy-btn");
-    if (btn) {
-      const encoded = btn.getAttribute("data-copy") || "";
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const copyBtn = target.closest(".audit-copy-btn");
+    if (copyBtn) {
+      const encoded = copyBtn.getAttribute("data-copy") || "";
       let textToCopy = "";
       try { textToCopy = decodeURIComponent(encoded); } catch { textToCopy = encoded; }
       if (!textToCopy) return;
@@ -981,9 +1054,45 @@ function bindEvents() {
       return;
     }
 
+    const actionBtn = target.closest("[data-action]");
+    if (actionBtn) {
+      const action = actionBtn.getAttribute("data-action") || "";
+      const uid = actionBtn.getAttribute("data-uid") || "";
+      if (action === "open-detail") {
+        await openUserDetail(uid);
+        return;
+      }
+      if (action === "set-access") {
+        const enabled = actionBtn.getAttribute("data-enabled") === "1";
+        await setUserAccess(uid, enabled);
+        return;
+      }
+    }
+
+    const pageBtn = target.closest("[data-page-target]");
+    if (pageBtn) {
+      const container = pageBtn.closest(".pagination");
+      if (!container) return;
+      const page = Number(pageBtn.getAttribute("data-page-target") || 1);
+      goPage(container.dataset.pageType || "", page);
+      return;
+    }
+
+    const pageGo = target.closest("[data-page-go]");
+    if (pageGo) {
+      const containerId = pageGo.getAttribute("data-page-go");
+      const container = qs(containerId);
+      const input = qs(`${containerId}JumpInput`);
+      if (!container || !(input instanceof HTMLInputElement)) return;
+      const total = Number(input.dataset.pageTotal || 1);
+      const page = Math.max(1, Math.min(total, Number(input.value || 1)));
+      goPage(container.dataset.pageType || "", page);
+      return;
+    }
+
     const panel = qs("quickAuthPanel");
     const trigger = qs("openQuickAuthBtn");
-    if (panel && !panel.hidden && !panel.contains(event.target) && trigger && !trigger.contains(event.target)) {
+    if (panel && !panel.hidden && !panel.contains(target) && trigger && !trigger.contains(target)) {
       panel.hidden = true;
     }
   });
@@ -1006,3 +1115,7 @@ function init() {
 }
 
 init();
+
+
+
+

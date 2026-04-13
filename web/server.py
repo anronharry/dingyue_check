@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import hmac
 import io
 import json
@@ -19,7 +20,7 @@ from aiohttp import web
 API_PREFIX = "/api/v1"
 SESSION_COOKIE = "web_admin_session"
 LOGIN_WINDOW_SECONDS = 600
-MAX_LOGIN_ATTEMPTS = 10
+MAX_LOGIN_ATTEMPTS = 5
 logger = logging.getLogger(__name__)
 
 RUNTIME_KEY = web.AppKey("runtime", object)
@@ -199,6 +200,17 @@ async def _security_headers_middleware(request: web.Request, handler):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -385,7 +397,7 @@ def _format_identity(runtime: Any, uid: int | None) -> str:
     return runtime.user_profile_service.format_user_identity(uid)
 
 
-def _collect_check_rows(
+async def _collect_check_rows_async(
     runtime: Any,
     *,
     mode: str,
@@ -398,54 +410,59 @@ def _collect_check_rows(
     dt_to: datetime | None = None,
 ) -> dict[str, Any]:
     service = runtime.usage_audit_service
-    source_records = list(reversed(service.get_recent_records(limit=service.max_read_records)))
-    rows = service.query_records(
-        owner_id=runtime.admin_service.owner_id,
-        mode=mode,
-        page=1,
-        page_size=max(1, len(source_records) or 1),
-        records=source_records,
-    )["records"]
+    q_text = query_text.strip().lower()
+    src = source.strip().lower()
 
-    query_text = query_text.strip().lower()
-    source = source.strip().lower()
-    safe_limit = max(1, int(limit or 1))
-    safe_page = max(1, int(page or 1))
-    start = (safe_page - 1) * safe_limit
-    end = start + safe_limit
-    total = 0
-    page_rows: list[dict[str, Any]] = []
-    for row in rows:
+    def predicate(row):
         uid = row.get("user_id")
         if user_id is not None and uid != user_id:
-            continue
+            return False
+        
         row_source = str(row.get("source", ""))
-        if source and source not in row_source.lower():
-            continue
+        if src and src not in row_source.lower():
+            return False
+            
         ts = _parse_datetime_text(row.get("ts"))
         if dt_from and (ts is None or ts < dt_from):
-            continue
+            return False
         if dt_to and (ts is None or ts > dt_to):
-            continue
-        urls = [str(u) for u in (row.get("urls") or []) if str(u).strip()]
-        identity = _format_identity(runtime, uid if isinstance(uid, int) else None)
-        if query_text:
+            return False
+            
+        if q_text:
+            identity = _format_identity(runtime, uid if isinstance(uid, int) else None)
+            urls = [str(u) for u in (row.get("urls") or []) if str(u).strip()]
             haystack = " ".join([identity, row_source, " ".join(urls), str(uid or "")]).lower()
-            if query_text not in haystack:
-                continue
-        row_data = {
-            "user_id": uid if isinstance(uid, int) else 0,
-            "identity": identity,
-            "ts": row.get("ts", "-"),
-            "source": row_source,
-            "url_count": len(urls),
-            "urls": urls,
-        }
-        if total >= start and total < end:
-            page_rows.append(row_data)
-        total += 1
+            if q_text not in haystack:
+                return False
+        return True
 
-    return {"mode": mode, "total": total, "rows": page_rows}
+    data = await service.query_records(
+        owner_id=runtime.admin_service.owner_id,
+        mode=mode,
+        page=page,
+        page_size=limit,
+        predicate=predicate
+    )
+    
+    # Process results to add identity and cleanup
+    processed_rows = []
+    for row in data["records"]:
+        uid = row.get("user_id")
+        processed_rows.append({
+            "user_id": uid if isinstance(uid, int) else 0,
+            "identity": _format_identity(runtime, uid if isinstance(uid, int) else None),
+            "ts": row.get("ts", "-"),
+            "source": str(row.get("source", "")),
+            "url_count": len(row.get("urls") or []),
+            "urls": row.get("urls") or [],
+        })
+    
+    return {
+        "mode": data["mode"],
+        "total": data["total"],
+        "total_pages": data["total_pages"],
+        "rows": processed_rows
+    }
 
 
 async def _recent_users(request: web.Request) -> web.Response:
@@ -570,8 +587,7 @@ async def _recent_checks(request: web.Request) -> web.Response:
     dt_from = _parse_datetime_text(request.query.get("from"))
     dt_to = _parse_datetime_text(request.query.get("to"))
     try:
-        data = await asyncio.to_thread(
-            _collect_check_rows,
+        data = await _collect_check_rows_async(
             runtime,
             mode=mode,
             page=page,
@@ -600,7 +616,7 @@ async def _user_detail(request: web.Request) -> web.Response:
         return _json_error("invalid_uid", status=400)
 
     try:
-        def _build_detail_data() -> dict[str, Any]:
+        async def _build_detail_data() -> dict[str, Any]:
             profile = runtime.user_profile_service.get_profile(uid) or {}
             is_owner = runtime.access_service.is_owner_uid(uid)
             is_authorized = runtime.access_service.is_authorized_uid(uid)
@@ -620,16 +636,15 @@ async def _user_detail(request: web.Request) -> web.Response:
                         "expire_time": data.get("expire_time", "-"),
                     }
                 )
-            checks = _collect_check_rows(runtime, mode="all", limit=200, user_id=uid)["rows"][:20]
-            audit_records = list(
-                reversed(runtime.usage_audit_service.get_recent_records(limit=runtime.usage_audit_service.max_read_records))
-            )
-            export_records = runtime.usage_audit_service.query_by_source_prefix(
+            
+            checks_data = await _collect_check_rows_async(runtime, mode="all", limit=20, user_id=uid)
+            checks = checks_data["rows"]
+            
+            export_records = await runtime.usage_audit_service.query_by_source_prefix(
                 prefix="导出缓存:",
-                limit=200,
+                limit=20,
                 owner_id=runtime.admin_service.owner_id,
                 include_owner=True,
-                records=audit_records,
             )
             user_exports = []
             for row in export_records:
@@ -645,8 +660,6 @@ async def _user_detail(request: web.Request) -> web.Response:
                         "target": first_url[:120] + ("..." if len(first_url) > 120 else ""),
                     }
                 )
-                if len(user_exports) >= 20:
-                    break
             return {
                 "uid": uid,
                 "identity": _format_identity(runtime, uid),
@@ -662,7 +675,7 @@ async def _user_detail(request: web.Request) -> web.Response:
                 "recent_exports": user_exports,
             }
 
-        detail = await asyncio.to_thread(_build_detail_data)
+        detail = await _build_detail_data()
         return web.json_response(
             {
                 "ok": True,
@@ -726,9 +739,12 @@ async def _revoke_all_sessions(request: web.Request) -> web.Response:
     if clear_all is None:
         return _json_error("revoke_not_supported", status=400)
     try:
-        deleted = clear_all()
-        if hasattr(deleted, "__await__"):
-            deleted = await deleted
+        if inspect.iscoroutinefunction(clear_all):
+            deleted = await clear_all()
+        else:
+            deleted = clear_all()
+            if inspect.isawaitable(deleted):
+                deleted = await deleted
         return web.json_response({"ok": True, "data": {"revoked": int(deleted or 0)}})
     except Exception as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
@@ -742,16 +758,32 @@ async def _audit_alerts(request: web.Request) -> web.Response:
     url_threshold, err = _parse_positive_int(request, "high_url_threshold", 40, 1, 2000)
     if err is not None:
         return err
-    rows = (await asyncio.to_thread(_collect_check_rows, runtime, mode="all", limit=10000)).get("rows", [])
     cutoff = datetime.now() - timedelta(hours=24)
-    recent = []
-    for row in rows:
+
+    def _is_recent(row: dict[str, Any]) -> bool:
         ts = _parse_datetime_text(row.get("ts"))
-        if ts and ts >= cutoff:
-            recent.append(row)
+        return bool(ts and ts >= cutoff)
+
+    raw = await runtime.usage_audit_service.query_records(
+        owner_id=runtime.admin_service.owner_id,
+        mode="all",
+        page=1,
+        page_size=2000,
+        predicate=_is_recent,
+    )
+    rows = []
+    for row in raw.get("records", []):
+        uid = row.get("user_id")
+        rows.append(
+            {
+                "user_id": uid if isinstance(uid, int) else 0,
+                "identity": _format_identity(runtime, uid if isinstance(uid, int) else None),
+                "url_count": len(row.get("urls") or []),
+            }
+        )
 
     bucket: dict[int, dict[str, Any]] = {}
-    for row in recent:
+    for row in rows:
         uid = int(row.get("user_id", 0) or 0)
         item = bucket.setdefault(uid, {"checks": 0, "urls": 0, "identity": row.get("identity", "-")})
         item["checks"] += 1
@@ -791,13 +823,13 @@ async def _audit_alerts(request: web.Request) -> web.Response:
             "data": {
                 "window_hours": 24,
                 "alerts": alerts,
-                "recent_check_rows": len(recent),
+                "recent_check_rows": len(rows),
             },
         }
     )
 
 
-def _build_export_rows(runtime: Any, request: web.Request) -> tuple[list[dict[str, Any]], web.Response | None]:
+async def _build_export_rows(runtime: Any, request: web.Request) -> tuple[list[dict[str, Any]], web.Response | None]:
     mode = request.query.get("mode", "others").strip().lower()
     if mode not in {"others", "owner", "all"}:
         return [], _json_error("invalid_mode", status=400)
@@ -813,7 +845,7 @@ def _build_export_rows(runtime: Any, request: web.Request) -> tuple[list[dict[st
             return [], _json_error("invalid_user_id", status=400)
     dt_from = _parse_datetime_text(request.query.get("from"))
     dt_to = _parse_datetime_text(request.query.get("to"))
-    data = _collect_check_rows(
+    data = await _collect_check_rows_async(
         runtime,
         mode=mode,
         limit=limit,
@@ -847,7 +879,7 @@ def _render_audit_csv(rows: list[dict[str, Any]]) -> str:
 async def _audit_export(request: web.Request) -> web.Response:
     runtime = request.app[RUNTIME_KEY]
     fmt = request.query.get("format", "csv").strip().lower()
-    rows, err = await asyncio.to_thread(_build_export_rows, runtime, request)
+    rows, err = await _build_export_rows(runtime, request)
     if err is not None:
         return err
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

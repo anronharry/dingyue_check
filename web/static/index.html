@@ -6,8 +6,8 @@
   <title>Owner 运维控制台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/admin/static/common.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/static/common.css">
   <link rel="stylesheet" href="/admin/static/index.css">
 </head>
 <body>
@@ -19,250 +19,207 @@
     </div>
     <div class="noise-overlay"></div>
 
-    <main class="main-card">
-      <section class="visual-side">
-        <div class="visual-bg"></div>
-        <div class="trajectories">
-          <div class="trajectory t1"><div class="trajectory-line"></div><div class="trajectory-packet"></div></div>
-          <div class="trajectory t2"><div class="trajectory-line"></div><div class="trajectory-packet"></div></div>
-          <div class="trajectory t3"><div class="trajectory-line"></div><div class="trajectory-packet"></div></div>
-        </div>
-
-        <div class="visual-content">
-          <div class="brand-box">
-            <img class="brand-logo" src="/admin/static/logo.png" alt="Logo" onerror="this.style.display='none'">
-            <span class="brand-text">NEXUS ADMIN</span>
-          </div>
-
-          <div class="slogan-box">
-            <h1 class="hero-title">构建<br>无界未来</h1>
-            <p class="hero-sub">为开发者打造的下一代云原生架构，<br />极致的性能与安全。</p>
-          </div>
-
-          <div class="trust-box">
-            <div class="avatar-group">
-              <div class="avatar"></div>
-              <div class="avatar"></div>
-              <div class="avatar"></div>
-            </div>
-            <span>加入 10,000+ 开发者社区</span>
-          </div>
-        </div>
-      </section>
-
-      <section class="form-side">
-        <div class="form-wrapper dashboard-shell">
-<nav class="navbar">
-      <div class="navbar-content">
+    <main class="main-card dashboard-main">
+      <nav class="navbar">
+        <div class="navbar-content">
           <div class="logo-area">
-              <img src="/admin/static/logo.png" class="logo-img" alt="Logo" onerror="this.style.display='none'">
-              <span class="brand-name">Owner 运维控制台</span>
-              <span class="status" id="statusText">系统初始化...</span>
+            <img src="/admin/static/logo.png" class="logo-img" alt="Logo">
+            <span class="brand-name">Owner 运维控制台</span>
+            <span class="status" id="statusText">系统初始化...</span>
           </div>
           <div class="nav-actions">
-              <button id="refreshBtn" type="button" class="logout-btn refresh-btn">全量刷新</button>
-              <button class="logout-btn" id="logoutBtn" type="button">退出登录</button>
+            <button id="refreshBtn" type="button" class="logout-btn refresh-btn">全量刷新</button>
+            <button class="logout-btn" id="logoutBtn" type="button">退出登录</button>
           </div>
-      </div>
-  </nav>
-
-  <main class="main-container">
-    <!-- Metrics Row -->
-    <section class="metrics">
-      <article class="metric"><p class="k">总订阅量</p><p class="v" id="mTotalSubs">-</p></article>
-      <article class="metric"><p class="k">授权用户</p><p class="v" id="mUsers">-</p></article>
-      <article class="metric"><p class="k">24h 活跃</p><p class="v" id="mActive">-</p></article>
-      <article class="metric"><p class="k">24h 导出</p><p class="v" id="mExports">-</p></article>
-    </section>
-
-    <div class="dashboard-layout">
-      <!-- Left Column: Tables -->
-      <div class="stack">
-        <!-- Authorized Users Table -->
-        <article class="card">
-          <div class="head">
-            <h2>授权用户管理</h2>
-            <div class="head-actions">
-              <button id="openQuickAuthBtn" type="button" class="btn-brand">Authorize User</button>
-              <button id="loadUsersTableBtn" type="button">Refresh</button>
-            </div>
-          </div>
-          <div id="quickAuthPanel" class="quick-auth-panel" hidden>
-            <input id="quickUidInput" type="text" placeholder="UID">
-            <button id="quickGrantBtn" class="btn-brand" type="button">Grant</button>
-            <button id="quickRevokeBtn" class="btn-danger" type="button">Revoke</button>
-            <button id="quickDetailBtn" type="button">Details</button>
-          </div>
-          <div class="body">
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>用户信息</th>
-                    <th>身份状态</th>
-                    <th>最近活跃</th>
-                    <th>访问来源</th>
-                    <th>管理操作</th>
-                  </tr>
-                </thead>
-                <tbody id="authorizedUsersBody"></tbody>
-              </table>
-            </div>
-            <div id="authorizedUsersCards" class="mobile-card-list"></div>
-            <div id="usersPagination" class="pagination"></div>
-          </div>
-        </article>
-
-        <!-- Audit Table -->
-        <article class="card">
-          <div class="head">
-            <h2>检测审计记录</h2>
-          </div>
-          <div class="body">
-            <form id="auditFilterForm" class="filters">
-              <select id="auditMode">
-                <option value="others" selected>过滤管理员 (Others)</option>
-                <option value="owner">仅查看管理员 (Owner)</option>
-                <option value="all">查看全部 (All)</option>
-              </select>
-              <input id="filterUserId" type="text" placeholder="UID: 123456">
-              <input id="filterSource" type="text" placeholder="来源关键词">
-              <input id="filterQ" type="text" placeholder="搜 URL / 内容">
-              <input id="filterFrom" type="date" placeholder="起始日期">
-              <input id="filterTo" type="date" placeholder="结束日期">
-              <div class="actions">
-                <button class="btn-brand" id="loadChecksBtn" type="button">执行多重筛选</button>
-                <button id="exportCsvBtn" type="button">导出 CSV</button>
-                <button id="exportJsonBtn" type="button">导出 JSON</button>
-              </div>
-            </form>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>用户</th>
-                    <th>时间</th>
-                    <th>来源</th>
-                    <th>URL 详情</th>
-                  </tr>
-                </thead>
-                <tbody id="recentChecksBody"></tbody>
-              </table>
-            </div>
-            <div id="recentChecksCards" class="mobile-card-list"></div>
-            <div id="auditPagination" class="pagination"></div>
-          </div>
-        </article>
-      </div>
-
-      <!-- Right Column: Stats & Operations -->
-      <div class="stack">
-        <!-- System Operations -->
-        <article class="card op-card">
-          <div class="head">
-            <h2>系统权限与运维</h2>
-          </div>
-          <div class="body op-grid">
-            <div class="op-item">
-              <div class="op-info">
-                <span class="op-title">全员公开访问</span>
-                <span class="op-desc" id="publicAccessDesc">当前：正在查询...</span>
-              </div>
-              <button id="togglePublicBtn" class="btn-brand">切换状态</button>
-            </div>
-            <div class="op-item">
-              <div class="op-info">
-                <span class="op-title">会话安全管理</span>
-                <span class="op-desc">强制所有已登录管理端下线</span>
-              </div>
-              <button id="revokeSessionsBtn" class="btn-danger">强制登出</button>
-            </div>
-            <div class="op-item">
-              <div class="op-info">
-                <span class="op-title">数据迁移与备份</span>
-                <span class="op-desc">导入导出、备份恢复、全量体检</span>
-              </div>
-            </div>
-            <div class="tools-row">
-                <button id="ownerExportJsonBtn" class="btn-brand" type="button">导出 JSON</button>
-                <button id="ownerImportJsonBtn" type="button">导入 JSON</button>
-                <button id="ownerBackupBtn" type="button">下载备份 ZIP</button>
-                <button id="ownerRestoreBtn" class="btn-danger" type="button">恢复备份 ZIP</button>
-                <button id="ownerCheckAllBtn" type="button">全量体检</button>
-                <input id="ownerImportFile" type="file" accept=".json,application/json" hidden>
-                <input id="ownerRestoreFile" type="file" accept=".zip,application/zip" hidden>
-            </div>
-          </div>
-        </article>
-
-        <!-- Runtime -->
-        <article class="card">
-          <div class="head">
-            <h2>运行环境状态</h2>
-            <button id="loadRuntimeBtn" type="button">刷新</button>
-          </div>
-          <div class="body">
-            <div class="runtime-grid" id="runtimeBody"></div>
-          </div>
-        </article>
-
-        <!-- Alerts -->
-        <article class="card">
-          <div class="head">
-            <h2>实时异常告警</h2>
-            <button id="loadAlertsBtn" type="button">刷新</button>
-          </div>
-          <div class="body" id="alertsBody"></div>
-        </article>
-
-        <!-- Audit Summary -->
-        <article class="card">
-          <div class="head">
-            <h2>审计统计摘要</h2>
-            <button id="loadAuditBtn" type="button">刷新</button>
-          </div>
-          <div class="body">
-            <div id="auditSummaryBody" class="audit-summary-list"></div>
-          </div>
-        </article>
-
-        <!-- Recent Exports -->
-        <article class="card">
-          <div class="head">
-            <h2>近期文件导出</h2>
-            <button id="loadExportsBtn" type="button">刷新</button>
-          </div>
-          <div class="body list" id="recentExportsBody"></div>
-          <div id="exportsPagination" class="pagination"></div>
-        </article>
-      </div>
-    </div>
-  </main>
-
-  <dialog id="userDetailModal">
-    <div class="modal-head">
-      <strong id="userDetailTitle">用户资源画像</strong>
-      <button id="closeUserDetailBtn" type="button">关闭窗口</button>
-    </div>
-    <div class="modal-body" id="userDetailBody"></div>
-  </dialog>
-  <dialog id="confirmActionModal">
-    <div class="modal-head">
-      <strong id="confirmActionTitle">Confirm Action</strong>
-      <button id="cancelConfirmBtn" type="button">Cancel</button>
-    </div>
-    <div class="modal-body">
-      <p id="confirmActionMessage" class="confirm-message">Are you sure you want to continue?</p>
-      <div class="confirm-actions">
-        <button id="confirmActionBtn" class="btn-danger" type="button">Confirm</button>
-      </div>
-    </div>
-  </dialog>
         </div>
-      </section>
+      </nav>
+
+      <main class="main-container">
+        <section class="metrics">
+          <article class="metric"><p class="k">总订阅量</p><p class="v" id="mTotalSubs">-</p></article>
+          <article class="metric"><p class="k">授权用户</p><p class="v" id="mUsers">-</p></article>
+          <article class="metric"><p class="k">24h 活跃</p><p class="v" id="mActive">-</p></article>
+          <article class="metric"><p class="k">24h 导出</p><p class="v" id="mExports">-</p></article>
+        </section>
+
+        <div class="dashboard-layout">
+          <div class="stack">
+            <article class="card">
+              <div class="head">
+                <h2>授权用户管理</h2>
+                <div class="head-actions">
+                  <button id="openQuickAuthBtn" type="button" class="btn-brand">Authorize User</button>
+                  <button id="loadUsersTableBtn" type="button">Refresh</button>
+                </div>
+              </div>
+              <div id="quickAuthPanel" class="quick-auth-panel" hidden>
+                <input id="quickUidInput" type="text" placeholder="UID">
+                <button id="quickGrantBtn" class="btn-brand" type="button">Grant</button>
+                <button id="quickRevokeBtn" class="btn-danger" type="button">Revoke</button>
+                <button id="quickDetailBtn" type="button">Details</button>
+              </div>
+              <div class="body">
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>用户信息</th>
+                        <th>身份状态</th>
+                        <th>最近活跃</th>
+                        <th>访问来源</th>
+                        <th>管理操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="authorizedUsersBody"></tbody>
+                  </table>
+                </div>
+                <div id="authorizedUsersCards" class="mobile-card-list"></div>
+                <div id="usersPagination" class="pagination"></div>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="head">
+                <h2>检测审计记录</h2>
+              </div>
+              <div class="body">
+                <form id="auditFilterForm" class="filters">
+                  <select id="auditMode">
+                    <option value="others" selected>过滤管理员 (Others)</option>
+                    <option value="owner">仅查看管理员 (Owner)</option>
+                    <option value="all">查看全部 (All)</option>
+                  </select>
+                  <input id="filterUserId" type="text" placeholder="UID: 123456">
+                  <input id="filterSource" type="text" placeholder="来源关键词">
+                  <input id="filterQ" type="text" placeholder="搜 URL / 内容">
+                  <input id="filterFrom" type="date" placeholder="起始日期">
+                  <input id="filterTo" type="date" placeholder="结束日期">
+                  <div class="actions">
+                    <button class="btn-brand" id="loadChecksBtn" type="button">执行多重筛选</button>
+                    <button id="exportCsvBtn" type="button">导出 CSV</button>
+                    <button id="exportJsonBtn" type="button">导出 JSON</button>
+                  </div>
+                </form>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>用户</th>
+                        <th>时间</th>
+                        <th>来源</th>
+                        <th>URL 详情</th>
+                      </tr>
+                    </thead>
+                    <tbody id="recentChecksBody"></tbody>
+                  </table>
+                </div>
+                <div id="recentChecksCards" class="mobile-card-list"></div>
+                <div id="auditPagination" class="pagination"></div>
+              </div>
+            </article>
+          </div>
+
+          <div class="stack">
+            <article class="card op-card">
+              <div class="head">
+                <h2>系统权限与运维</h2>
+              </div>
+              <div class="body op-grid">
+                <div class="op-item">
+                  <div class="op-info">
+                    <span class="op-title">全员公开访问</span>
+                    <span class="op-desc" id="publicAccessDesc">当前：正在查询...</span>
+                  </div>
+                  <button id="togglePublicBtn" class="btn-brand">切换状态</button>
+                </div>
+                <div class="op-item">
+                  <div class="op-info">
+                    <span class="op-title">会话安全管理</span>
+                    <span class="op-desc">强制所有已登录管理端下线</span>
+                  </div>
+                  <button id="revokeSessionsBtn" class="btn-danger">强制登出</button>
+                </div>
+                <div class="op-item">
+                  <div class="op-info">
+                    <span class="op-title">数据迁移与备份</span>
+                    <span class="op-desc">导入导出、备份恢复、全量体检</span>
+                  </div>
+                </div>
+                <div class="tools-row">
+                  <button id="ownerExportJsonBtn" class="btn-brand" type="button">导出 JSON</button>
+                  <button id="ownerImportJsonBtn" type="button">导入 JSON</button>
+                  <button id="ownerBackupBtn" type="button">下载备份 ZIP</button>
+                  <button id="ownerRestoreBtn" class="btn-danger" type="button">恢复备份 ZIP</button>
+                  <button id="ownerCheckAllBtn" type="button">全量体检</button>
+                  <input id="ownerImportFile" type="file" accept=".json,application/json" hidden>
+                  <input id="ownerRestoreFile" type="file" accept=".zip,application/zip" hidden>
+                </div>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="head">
+                <h2>运行环境状态</h2>
+                <button id="loadRuntimeBtn" type="button">刷新</button>
+              </div>
+              <div class="body">
+                <div class="runtime-grid" id="runtimeBody"></div>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="head">
+                <h2>实时异常告警</h2>
+                <button id="loadAlertsBtn" type="button">刷新</button>
+              </div>
+              <div class="body" id="alertsBody"></div>
+            </article>
+
+            <article class="card">
+              <div class="head">
+                <h2>审计统计摘要</h2>
+                <button id="loadAuditBtn" type="button">刷新</button>
+              </div>
+              <div class="body">
+                <div id="auditSummaryBody" class="audit-summary-list"></div>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="head">
+                <h2>近期文件导出</h2>
+                <button id="loadExportsBtn" type="button">刷新</button>
+              </div>
+              <div class="body list" id="recentExportsBody"></div>
+              <div id="exportsPagination" class="pagination"></div>
+            </article>
+          </div>
+        </div>
+      </main>
+
+      <dialog id="userDetailModal">
+        <div class="modal-head">
+          <strong id="userDetailTitle">用户资源画像</strong>
+          <button id="closeUserDetailBtn" type="button">关闭窗口</button>
+        </div>
+        <div class="modal-body" id="userDetailBody"></div>
+      </dialog>
+
+      <dialog id="confirmActionModal">
+        <div class="modal-head">
+          <strong id="confirmActionTitle">Confirm Action</strong>
+          <button id="cancelConfirmBtn" type="button">Cancel</button>
+        </div>
+        <div class="modal-body">
+          <p id="confirmActionMessage" class="confirm-message">Are you sure you want to continue?</p>
+          <div class="confirm-actions">
+            <button id="confirmActionBtn" class="btn-danger" type="button">Confirm</button>
+          </div>
+        </div>
+      </dialog>
     </main>
   </div>
 
-    <script src="/admin/static/index.js"></script>
+  <script src="/admin/static/index.js"></script>
 </body>
 </html>
