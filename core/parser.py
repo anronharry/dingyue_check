@@ -32,6 +32,7 @@ class SubscriptionParser:
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     )
+    DEFAULT_UA_STASH = "Stash/1.0"
 
     def __init__(
         self,
@@ -138,9 +139,10 @@ class SubscriptionParser:
     async def _download_subscription(self, url):
         from utils.retry_utils import async_retry_on_failure
 
-        ua_clash, ua_browser = self._resolve_subscription_user_agents()
+        ua_clash, ua_browser, ua_stash = self._resolve_subscription_user_agents()
         clash_headers = {"User-Agent": ua_clash, "Accept": "*/*"}
         browser_headers = {"User-Agent": ua_browser, "Accept": "*/*"}
+        stash_headers = {"User-Agent": ua_stash, "Accept": "*/*"}
         session_to_use = self.session
         close_session = False
         if session_to_use is None:
@@ -168,6 +170,31 @@ class SubscriptionParser:
                 status, text, response_headers = await _request_once(browser_headers)
             if status >= 400:
                 raise aiohttp.ClientError(f"HTTP {status}")
+            if self._should_probe_traffic_with_stash(
+                url=url,
+                status=status,
+                content=text,
+                headers=response_headers,
+            ):
+                stash_status, stash_text, stash_resp_headers = await _request_once(stash_headers)
+                if (
+                    stash_status < 400
+                    and self._looks_like_subscription_response_text(stash_text)
+                    and str(stash_resp_headers.get("subscription-userinfo", "")).strip()
+                    and not str(response_headers.get("subscription-userinfo", "")).strip()
+                ):
+                    merged_headers = dict(response_headers)
+                    merged_headers["subscription-userinfo"] = stash_resp_headers["subscription-userinfo"]
+                    for key in (
+                        "profile-title",
+                        "x-profile-title",
+                        "x-airport-name",
+                        "x-subscription-title",
+                        "content-disposition",
+                    ):
+                        if not merged_headers.get(key) and stash_resp_headers.get(key):
+                            merged_headers[key] = stash_resp_headers[key]
+                    response_headers = merged_headers
             return text, response_headers
 
         try:
@@ -187,15 +214,35 @@ class SubscriptionParser:
         return any(marker in content_lower for marker in waf_markers)
 
     @classmethod
-    def _resolve_subscription_user_agents(cls) -> tuple[str, str]:
+    def _resolve_subscription_user_agents(cls) -> tuple[str, str, str]:
         try:
             import config  # local import to avoid startup coupling
 
             ua_clash = str(getattr(config, "UA_CLASH", "") or "").strip() or cls.DEFAULT_UA_CLASH
             ua_browser = str(getattr(config, "UA_BROWSER", "") or "").strip() or cls.DEFAULT_UA_BROWSER
-            return ua_clash, ua_browser
+            ua_stash = str(getattr(config, "UA_STASH", "") or "").strip() or cls.DEFAULT_UA_STASH
+            return ua_clash, ua_browser, ua_stash
         except Exception:
-            return cls.DEFAULT_UA_CLASH, cls.DEFAULT_UA_BROWSER
+            return cls.DEFAULT_UA_CLASH, cls.DEFAULT_UA_BROWSER, cls.DEFAULT_UA_STASH
+
+    def _should_probe_traffic_with_stash(self, *, url: str, status: int, content: str, headers: dict[str, str]) -> bool:
+        if status >= 400:
+            return False
+        if str(headers.get("subscription-userinfo", "")).strip():
+            return False
+        if "/api/v1/client/subscribe" not in str(url).lower():
+            return False
+        return self._looks_like_subscription_response_text(content)
+
+    def _looks_like_subscription_response_text(self, content: str) -> bool:
+        normalized = self._normalize_subscription_text(content)
+        if not normalized:
+            return False
+        if self._contains_direct_protocol(normalized):
+            return True
+        if self._parse_yaml_nodes(normalized, max_nodes=1) is not None:
+            return True
+        return self._try_decode_subscription_base64(normalized) is not None
 
     def _shannon_entropy(self, data: str) -> float:
         if not data:

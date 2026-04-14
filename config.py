@@ -117,6 +117,7 @@ UA_BROWSER: str = os.getenv(
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/120.0.0.0 Safari/537.36",
 )
+UA_STASH: str = os.getenv("UA_STASH", "Stash/1.0")
 
 LOG_KEEP_DAYS: int = int(os.getenv("LOG_KEEP_DAYS", "30"))
 NODE_TEST_VERBOSE: bool = _bool("NODE_TEST_VERBOSE", False)

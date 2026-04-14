@@ -42,17 +42,23 @@ class ParserDownloadFallbackTest(unittest.IsolatedAsyncioTestCase):
             [
                 _FakeResponse(status=403, body="safeline waf blocked", headers={"content-type": "text/html"}),
                 _FakeResponse(status=200, body="trojan://password@example.org:443#JP01"),
+                _FakeResponse(
+                    status=200,
+                    body="trojan://password@example.org:443#JP01",
+                    headers={"subscription-userinfo": "upload=1; download=2; total=10; expire=2000000000"},
+                ),
             ]
         )
         parser = SubscriptionParser(session=session)
 
-        text, _ = await parser._download_subscription("https://139.196.241.76:18181/api/v1/client/subscribe?token=abc")
-        ua_clash, ua_browser = SubscriptionParser._resolve_subscription_user_agents()
+        text, headers = await parser._download_subscription("https://139.196.241.76:18181/api/v1/client/subscribe?token=abc")
+        ua_clash, ua_browser, ua_stash = SubscriptionParser._resolve_subscription_user_agents()
 
         self.assertIn("trojan://", text)
+        self.assertIn("subscription-userinfo", headers)
         self.assertEqual(
             session.user_agents,
-            [ua_clash, ua_browser],
+            [ua_clash, ua_browser, ua_stash],
         )
 
     async def test_download_uses_single_request_when_first_response_is_valid(self):
@@ -64,7 +70,7 @@ class ParserDownloadFallbackTest(unittest.IsolatedAsyncioTestCase):
         parser = SubscriptionParser(session=session)
 
         text, _ = await parser._download_subscription("https://example.com/sub")
-        ua_clash, _ = SubscriptionParser._resolve_subscription_user_agents()
+        ua_clash, _, _ = SubscriptionParser._resolve_subscription_user_agents()
 
         self.assertIn("trojan://", text)
         self.assertEqual(session.user_agents, [ua_clash])
