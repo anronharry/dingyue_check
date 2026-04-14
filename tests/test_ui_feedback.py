@@ -235,6 +235,7 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<code>https://example.com/sub?token=abc</code>", text)
         self.assertLess(text.index("<b>机场名称：</b> Demo"), text.index("<b>已用 / 总量：</b>"))
         self.assertLess(text.index("<code>https://example.com/sub?token=abc</code>"), text.index("<b>已用 / 总量：</b>"))
+        self.assertNotIn("<blockquote>\n<b>机场名称：</b>", text)
 
     def test_verbose_formatter_marks_exhausted_when_remaining_is_negative(self):
         text = format_subscription_info(
@@ -287,7 +288,7 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.assertIn("<b>提示：</b>", text)
-        self.assertIn("subscription-userinfo", text)
+        self.assertIn("无流量信息", text)
 
     def test_get_country_flag_supports_english_names_and_iso2(self):
         self.assertEqual(get_country_flag("China"), "🇨🇳")

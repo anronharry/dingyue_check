@@ -214,16 +214,11 @@ def format_subscription_info(info, url=None):
     used, total, remaining = _format_usage(info)
     expire_time = info.get("expire_time") or "未知"
 
-    summary_lines = [
-        f"<b>机场名称：</b> {html.escape(str(info.get('name') or '未知机场'))}",
-    ]
+    header_lines = [f"<b>机场名称：</b> {html.escape(str(info.get('name') or '未知机场'))}"]
     if url:
-        summary_lines.extend(
-            [
-                "<b>订阅链接：</b>",
-                f"<code>{html.escape(url)}</code>",
-            ]
-        )
+        header_lines.extend(["<b>订阅链接：</b>", f"<code>{html.escape(url)}</code>"])
+
+    summary_lines = []
     summary_lines.extend(
         [
         f"<b>已用 / 总量：</b> {used} / {total}",
@@ -243,18 +238,18 @@ def format_subscription_info(info, url=None):
         summary_lines.append(f"<b>剩余时间：</b> {html.escape(remain_text)}")
     traffic_warning = str(info.get("_traffic_warning") or "").strip()
     if traffic_warning:
-        summary_lines.append(f"<b>提示：</b> ⚠️ {html.escape(traffic_warning)}")
+        summary_lines.append("<b>提示：</b> 无流量信息")
 
     summary_block = "<blockquote>\n" + "\n".join(summary_lines) + "\n</blockquote>"
     details = _build_details(info, node_limit=100, node_char_budget=1800)
-    message = summary_block + ("\n\n" + details if details else "")
+    message = "\n".join(header_lines) + "\n\n" + summary_block + ("\n\n" + details if details else "")
 
     if len(message) > MAX_TELEGRAM_TEXT:
         details = _build_details(info, node_limit=40, node_char_budget=1000)
-        message = summary_block + ("\n\n" + details if details else "")
+        message = "\n".join(header_lines) + "\n\n" + summary_block + ("\n\n" + details if details else "")
     if len(message) > MAX_TELEGRAM_TEXT:
         details = _build_details(info, node_limit=20, node_char_budget=650)
-        message = summary_block + ("\n\n" + details if details else "")
+        message = "\n".join(header_lines) + "\n\n" + summary_block + ("\n\n" + details if details else "")
 
     return message[:MAX_TELEGRAM_TEXT]
 
