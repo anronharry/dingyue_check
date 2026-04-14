@@ -52,13 +52,13 @@ class ParserDownloadFallbackTest(unittest.IsolatedAsyncioTestCase):
         parser = SubscriptionParser(session=session)
 
         text, headers = await parser._download_subscription("https://139.196.241.76:18181/api/v1/client/subscribe?token=abc")
-        ua_clash, ua_browser, ua_stash = SubscriptionParser._resolve_subscription_user_agents()
+        ua_candidates = list(SubscriptionParser._resolve_subscription_user_agents())
 
         self.assertIn("trojan://", text)
         self.assertIn("subscription-userinfo", headers)
         self.assertEqual(
             session.user_agents,
-            [ua_clash, ua_browser, ua_stash],
+            ua_candidates[:3],
         )
 
     async def test_download_uses_single_request_when_first_response_is_valid(self):
@@ -70,7 +70,7 @@ class ParserDownloadFallbackTest(unittest.IsolatedAsyncioTestCase):
         parser = SubscriptionParser(session=session)
 
         text, _ = await parser._download_subscription("https://example.com/sub")
-        ua_clash, _, _ = SubscriptionParser._resolve_subscription_user_agents()
+        ua_clash = SubscriptionParser._resolve_subscription_user_agents()[0]
 
         self.assertIn("trojan://", text)
         self.assertEqual(session.user_agents, [ua_clash])

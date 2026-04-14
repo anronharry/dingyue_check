@@ -241,6 +241,9 @@ def format_subscription_info(info, url=None):
     remain_text = format_remaining_time(info.get("expire_time", ""), include_seconds=False) if info.get("expire_time") else ""
     if remain_text:
         summary_lines.append(f"<b>剩余时间：</b> {html.escape(remain_text)}")
+    traffic_warning = str(info.get("_traffic_warning") or "").strip()
+    if traffic_warning:
+        summary_lines.append(f"<b>提示：</b> ⚠️ {html.escape(traffic_warning)}")
 
     summary_block = "<blockquote>\n" + "\n".join(summary_lines) + "\n</blockquote>"
     details = _build_details(info, node_limit=100, node_char_budget=1800)

@@ -26,13 +26,16 @@ class SubscriptionParser:
     DIRECT_PROTOCOL_PATTERN = re.compile(
         r"(?im)^\s*(vmess|vless|trojan|ss|ssr|hysteria|hysteria2|hy2|tuic|wireguard)://"
     )
-    DEFAULT_UA_CLASH = "Clash-verge/1.3.8"
-    DEFAULT_UA_BROWSER = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+    DEFAULT_UA_POOL = (
+        "ClashforWindows/0.20.39",
+        "ClashForAndroid/2.5.12",
+        "Stash/1.0",
+        "QuantumultX",
+        "Surge/5.0.0",
+        "sing-box 1.10.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     )
-    DEFAULT_UA_STASH = "Stash/1.0"
 
     def __init__(
         self,
@@ -139,10 +142,7 @@ class SubscriptionParser:
     async def _download_subscription(self, url):
         from utils.retry_utils import async_retry_on_failure
 
-        ua_clash, ua_browser, ua_stash = self._resolve_subscription_user_agents()
-        clash_headers = {"User-Agent": ua_clash, "Accept": "*/*"}
-        browser_headers = {"User-Agent": ua_browser, "Accept": "*/*"}
-        stash_headers = {"User-Agent": ua_stash, "Accept": "*/*"}
+        ua_candidates = list(self._resolve_subscription_user_agents())
         session_to_use = self.session
         close_session = False
         if session_to_use is None:
@@ -165,37 +165,52 @@ class SubscriptionParser:
 
         @async_retry_on_failure(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
         async def _fetch():
-            status, text, response_headers = await _request_once(clash_headers)
-            if self._should_retry_with_browser_ua(status, text):
-                status, text, response_headers = await _request_once(browser_headers)
-            if status >= 400:
-                raise aiohttp.ClientError(f"HTTP {status}")
-            if self._should_probe_traffic_with_stash(
-                url=url,
-                status=status,
-                content=text,
-                headers=response_headers,
-            ):
-                stash_status, stash_text, stash_resp_headers = await _request_once(stash_headers)
-                if (
-                    stash_status < 400
-                    and self._looks_like_subscription_response_text(stash_text)
-                    and str(stash_resp_headers.get("subscription-userinfo", "")).strip()
-                    and not str(response_headers.get("subscription-userinfo", "")).strip()
-                ):
-                    merged_headers = dict(response_headers)
-                    merged_headers["subscription-userinfo"] = stash_resp_headers["subscription-userinfo"]
-                    for key in (
-                        "profile-title",
-                        "x-profile-title",
-                        "x-airport-name",
-                        "x-subscription-title",
-                        "content-disposition",
-                    ):
-                        if not merged_headers.get(key) and stash_resp_headers.get(key):
-                            merged_headers[key] = stash_resp_headers[key]
-                    response_headers = merged_headers
-            return text, response_headers
+            attempts: list[tuple[str, int, str, dict[str, str]]] = []
+            valid_content: tuple[str, dict[str, str]] | None = None
+            first_non_error: tuple[str, dict[str, str]] | None = None
+            first_http_status: int | None = None
+            should_probe_traffic = self._should_probe_traffic_headers(url)
+
+            for index, ua in enumerate(ua_candidates):
+                status, text, response_headers = await _request_once({"User-Agent": ua, "Accept": "*/*"})
+                attempts.append((ua, status, text, response_headers))
+                if first_http_status is None:
+                    first_http_status = status
+                if status >= 400:
+                    if index == 0 and not self._should_retry_with_browser_ua(status, text):
+                        break
+                    continue
+                if first_non_error is None:
+                    first_non_error = (text, response_headers)
+                if not self._looks_like_subscription_response_text(text):
+                    continue
+
+                if valid_content is None:
+                    valid_content = (text, dict(response_headers))
+                else:
+                    merged = self._merge_subscription_headers(valid_content[1], response_headers)
+                    valid_content = (valid_content[0], merged)
+
+                has_traffic = bool(str(valid_content[1].get("subscription-userinfo", "")).strip())
+                if has_traffic or not should_probe_traffic:
+                    break
+
+            if valid_content is not None:
+                text, headers = valid_content
+                if not str(headers.get("subscription-userinfo", "")).strip():
+                    headers = dict(headers)
+                    headers["x-traffic-warning"] = (
+                        "机场未返回 subscription-userinfo，已轮询多个客户端 UA 仍无法补齐流量信息。"
+                    )
+                return text, headers
+
+            if first_non_error is not None:
+                text, headers = first_non_error
+                headers = dict(headers)
+                headers.setdefault("x-traffic-warning", "订阅响应缺少可解析流量信息。")
+                return text, headers
+
+            raise aiohttp.ClientError(f"HTTP {first_http_status or 0}")
 
         try:
             return await _fetch()
@@ -214,25 +229,40 @@ class SubscriptionParser:
         return any(marker in content_lower for marker in waf_markers)
 
     @classmethod
-    def _resolve_subscription_user_agents(cls) -> tuple[str, str, str]:
-        try:
-            import config  # local import to avoid startup coupling
+    def _resolve_subscription_user_agents(cls) -> tuple[str, ...]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for ua in cls.DEFAULT_UA_POOL:
+            item = str(ua or "").strip()
+            if item and item not in seen:
+                result.append(item)
+                seen.add(item)
+        return tuple(result)
 
-            ua_clash = str(getattr(config, "UA_CLASH", "") or "").strip() or cls.DEFAULT_UA_CLASH
-            ua_browser = str(getattr(config, "UA_BROWSER", "") or "").strip() or cls.DEFAULT_UA_BROWSER
-            ua_stash = str(getattr(config, "UA_STASH", "") or "").strip() or cls.DEFAULT_UA_STASH
-            return ua_clash, ua_browser, ua_stash
-        except Exception:
-            return cls.DEFAULT_UA_CLASH, cls.DEFAULT_UA_BROWSER, cls.DEFAULT_UA_STASH
+    @staticmethod
+    def _should_probe_traffic_headers(url: str) -> bool:
+        lowered = str(url or "").lower()
+        if "/api/v1/client/subscribe" in lowered:
+            return True
+        return "token=" in lowered and ("subscribe" in lowered or "/sub" in lowered)
 
-    def _should_probe_traffic_with_stash(self, *, url: str, status: int, content: str, headers: dict[str, str]) -> bool:
-        if status >= 400:
-            return False
-        if str(headers.get("subscription-userinfo", "")).strip():
-            return False
-        if "/api/v1/client/subscribe" not in str(url).lower():
-            return False
-        return self._looks_like_subscription_response_text(content)
+    @staticmethod
+    def _merge_subscription_headers(base: dict[str, str], extra: dict[str, str]) -> dict[str, str]:
+        merged = dict(base)
+        if not str(merged.get("subscription-userinfo", "")).strip() and str(extra.get("subscription-userinfo", "")).strip():
+            merged["subscription-userinfo"] = extra["subscription-userinfo"]
+        for key in (
+            "profile-title",
+            "x-profile-title",
+            "x-airport-name",
+            "x-subscription-title",
+            "content-disposition",
+            "profile-web-page-url",
+            "x-profile-web-page-url",
+        ):
+            if not merged.get(key) and extra.get(key):
+                merged[key] = extra[key]
+        return merged
 
     def _looks_like_subscription_response_text(self, content: str) -> bool:
         normalized = self._normalize_subscription_text(content)
@@ -271,6 +301,9 @@ class SubscriptionParser:
         traffic_info = {}
         userinfo = headers.get("subscription-userinfo", "")
         if not userinfo:
+            warning = str(headers.get("x-traffic-warning", "")).strip()
+            if warning:
+                traffic_info["_traffic_warning"] = warning
             return traffic_info
 
         for part in userinfo.split(";"):

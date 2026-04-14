@@ -278,6 +278,17 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<b>已用 / 总量：</b> 未知 / 未知", text)
         self.assertIn("<b>剩余流量：</b> 未知", text)
 
+    def test_verbose_formatter_shows_traffic_warning_when_present(self):
+        text = format_subscription_info(
+            {
+                "name": "Demo",
+                "node_count": 3,
+                "_traffic_warning": "机场未返回 subscription-userinfo",
+            }
+        )
+        self.assertIn("<b>提示：</b>", text)
+        self.assertIn("subscription-userinfo", text)
+
     def test_get_country_flag_supports_english_names_and_iso2(self):
         self.assertEqual(get_country_flag("China"), "🇨🇳")
         self.assertEqual(get_country_flag("Japan"), "🇯🇵")
