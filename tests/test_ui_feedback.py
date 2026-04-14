@@ -216,7 +216,7 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("已折叠", text)
         self.assertLessEqual(len(text), 3900)
 
-    def test_subscription_url_is_in_header_card(self):
+    def test_subscription_url_and_airport_name_are_at_top(self):
         text = format_subscription_info(
             {
                 "name": "Demo",
@@ -230,8 +230,10 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("<blockquote>", text)
         self.assertIn("<blockquote expandable>", text)
-        self.assertIn("Demo", text)
+        self.assertIn("<b>机场名称：</b> Demo", text)
+        self.assertIn("<b>订阅链接：</b>", text)
         self.assertIn("<code>https://example.com/sub?token=abc</code>", text)
+        self.assertLess(text.index("<b>机场名称：</b> Demo"), text.index("<b>已用 / 总量：</b>"))
         self.assertLess(text.index("<code>https://example.com/sub?token=abc</code>"), text.index("<b>已用 / 总量：</b>"))
 
     def test_verbose_formatter_marks_exhausted_when_remaining_is_negative(self):

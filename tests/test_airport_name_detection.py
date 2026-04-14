@@ -49,6 +49,20 @@ class AirportNameDetectionTest(unittest.TestCase):
         name = self.parser._extract_airport_name(nodes, "https://example.com/sub", headers={}, content=None)
         self.assertEqual(name, "TigerCloud")
 
+    def test_generic_ai_brand_from_nodes_is_ignored(self) -> None:
+        nodes = [
+            {"name": "ChatGPT-HK-01"},
+            {"name": "ChatGPT-JP-02"},
+            {"name": "ChatGPT-US-03"},
+        ]
+        name = self.parser._extract_airport_name(
+            nodes,
+            "https://139.196.241.76:18181/api/v1/client/subscribe?token=abc",
+            headers={},
+            content=None,
+        )
+        self.assertEqual(name, "139.196.241.76")
+
     def test_x_subscription_title_is_supported(self) -> None:
         headers = {"x-subscription-title": "TigerCloud"}
         name = self.parser._extract_airport_name([], "https://example.com/sub", headers=headers, content=None)

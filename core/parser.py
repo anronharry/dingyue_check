@@ -481,6 +481,11 @@ class SubscriptionParser:
             "subscribe",
             "api",
             "sub",
+            "chatgpt",
+            "openai",
+            "claude",
+            "gemini",
+            "deepseek",
         ]
         common_tlds = ["com", "net", "org", "me", "io", "cc", "top", "xyz", "shop", "info", "site", "link", "cloud", "vip", "best"]
         known_airport_alias = {
@@ -511,6 +516,14 @@ class SubscriptionParser:
                 "v1",
                 "v2",
                 "v3",
+                "chatgpt",
+                "gpt",
+                "gpt4",
+                "gpt-4",
+                "openai",
+                "claude",
+                "gemini",
+                "deepseek",
             }:
                 return True
             if re.fullmatch(r"v\d+(\.\d+){0,2}", lowered):
@@ -762,6 +775,12 @@ class SubscriptionParser:
             "vless",
             "ss",
             "ssr",
+            "chatgpt",
+            "gpt",
+            "openai",
+            "claude",
+            "gemini",
+            "deepseek",
         }
         counter = Counter()
         casing: dict[str, str] = {}

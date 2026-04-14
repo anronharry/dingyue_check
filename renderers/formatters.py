@@ -14,24 +14,6 @@ from shared.format_helpers import (
 MAX_TELEGRAM_TEXT = 3900
 
 
-def _shorten_text(text: str, *, max_len: int) -> str:
-    raw = str(text or "").strip()
-    if not raw:
-        return ""
-    if len(raw) <= max_len:
-        return raw
-    return raw[: max(0, max_len - 3)] + "..."
-
-
-def _build_header_card(info: dict, url: str | None) -> str:
-    airport_name = html.escape(str(info.get("name") or "未知机场"))
-    lines = [airport_name]
-    if url:
-        preview = _shorten_text(url, max_len=56)
-        lines.append(f"<code>{html.escape(preview)}</code>")
-    return "<blockquote>\n" + "\n".join(lines) + "\n</blockquote>"
-
-
 def _format_skipped_protocols(quick_check: dict) -> str:
     skipped_protocols = quick_check.get("skipped_protocols") or {}
     if not skipped_protocols:
@@ -233,10 +215,22 @@ def format_subscription_info(info, url=None):
     expire_time = info.get("expire_time") or "未知"
 
     summary_lines = [
+        f"<b>机场名称：</b> {html.escape(str(info.get('name') or '未知机场'))}",
+    ]
+    if url:
+        summary_lines.extend(
+            [
+                "<b>订阅链接：</b>",
+                f"<code>{html.escape(url)}</code>",
+            ]
+        )
+    summary_lines.extend(
+        [
         f"<b>已用 / 总量：</b> {used} / {total}",
         f"<b>剩余流量：</b> {remaining}",
         f"<b>到期时间：</b> {html.escape(str(expire_time))}",
-    ]
+        ]
+    )
 
     if info.get("usage_percent") is not None:
         percent = float(info["usage_percent"])
@@ -248,17 +242,16 @@ def format_subscription_info(info, url=None):
     if remain_text:
         summary_lines.append(f"<b>剩余时间：</b> {html.escape(remain_text)}")
 
-    header_block = _build_header_card(info, url)
     summary_block = "<blockquote>\n" + "\n".join(summary_lines) + "\n</blockquote>"
     details = _build_details(info, node_limit=100, node_char_budget=1800)
-    message = header_block + "\n\n" + summary_block + ("\n\n" + details if details else "")
+    message = summary_block + ("\n\n" + details if details else "")
 
     if len(message) > MAX_TELEGRAM_TEXT:
         details = _build_details(info, node_limit=40, node_char_budget=1000)
-        message = header_block + "\n\n" + summary_block + ("\n\n" + details if details else "")
+        message = summary_block + ("\n\n" + details if details else "")
     if len(message) > MAX_TELEGRAM_TEXT:
         details = _build_details(info, node_limit=20, node_char_budget=650)
-        message = header_block + "\n\n" + summary_block + ("\n\n" + details if details else "")
+        message = summary_block + ("\n\n" + details if details else "")
 
     return message[:MAX_TELEGRAM_TEXT]
 
