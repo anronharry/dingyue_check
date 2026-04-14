@@ -29,6 +29,7 @@
   border: 1px solid var(--border);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
   overflow: hidden;
+  align-items: stretch;
 }
 
 .dashboard-main {
@@ -118,6 +119,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-danger:hover:not(:disabled) { background: #fee2e2; border-color: #ef4444; color: #7f1d1d; }
 
 .main-container {
+  width: 100%;
   max-width: 1400px;
   margin: 0 auto;
   padding: clamp(12px, 2vw, 22px);
@@ -125,13 +127,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 18px;
 }
 
 .view-tabs {
   display: grid;
+  width: 100%;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 16px;
@@ -170,8 +174,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .dashboard-layout {
   display: grid;
+  width: 100%;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 18px;
+  align-items: start;
 }
 
 .dashboard-layout.single-column {
@@ -182,7 +188,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   display: none !important;
 }
 
-.stack { display: flex; flex-direction: column; gap: 18px; }
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+}
 
 .stack.is-hidden-stack {
   display: none;
@@ -719,6 +731,7 @@ dialog {
 }
 
 @media (max-width: 1180px) {
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-layout { grid-template-columns: 1fr; }
   .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
