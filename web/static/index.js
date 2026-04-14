@@ -512,18 +512,22 @@ function applyView(view, options = {}) {
     node.classList.toggle("active", target === safeView);
   });
 
-  const layout = document.querySelector(".dashboard-layout");
-  if (layout instanceof HTMLElement) {
-    layout.classList.toggle("single-column", safeView !== "overview");
-  }
-
+  let visibleStackCount = 0;
   document.querySelectorAll(".dashboard-layout .stack").forEach((stack) => {
     if (!(stack instanceof HTMLElement)) return;
     const hasVisibleCard = Array.from(stack.querySelectorAll("[data-page]")).some((card) => {
       return card instanceof HTMLElement && !card.classList.contains("is-hidden");
     });
     stack.classList.toggle("is-hidden-stack", !hasVisibleCard);
+    if (hasVisibleCard) visibleStackCount += 1;
   });
+
+  const layout = document.querySelector(".dashboard-layout");
+  if (layout instanceof HTMLElement) {
+    const forceSingleColumn = safeView !== "overview" || visibleStackCount <= 1;
+    layout.classList.toggle("single-column", forceSingleColumn);
+    layout.classList.toggle("single-stack", visibleStackCount <= 1);
+  }
 }
 
 function updateAuditFilterMobileLabel() {
