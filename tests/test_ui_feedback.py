@@ -146,7 +146,7 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
             },
             url="https://example.com/sub?token=secret",
         )
-        self.assertIn("订阅摘要", text)
+        self.assertNotIn("订阅摘要", text)
         self.assertIn("缓存有效", text)
         self.assertIn("最近导出", text)
         self.assertIn("存活：28/40", text)
@@ -192,7 +192,8 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
                 ],
             }
         )
-        self.assertIn("订阅摘要", text)
+        self.assertNotIn("订阅摘要", text)
+        self.assertIn("<blockquote>", text)
         self.assertIn("<blockquote expandable>", text)
         self.assertIn("节点列表（共 3 个）", text)
         self.assertIn("快速检测", text)
@@ -215,7 +216,7 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("已折叠", text)
         self.assertLessEqual(len(text), 3900)
 
-    def test_subscription_url_is_outside_expandable_block(self):
+    def test_subscription_url_is_in_header_card(self):
         text = format_subscription_info(
             {
                 "name": "Demo",
@@ -227,10 +228,11 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
             },
             url="https://example.com/sub?token=abc",
         )
+        self.assertIn("<blockquote>", text)
         self.assertIn("<blockquote expandable>", text)
-        self.assertIn("</blockquote>", text)
-        self.assertIn("<b>原始订阅链接：</b>", text)
-        self.assertGreater(text.index("<b>原始订阅链接：</b>"), text.index("</blockquote>"))
+        self.assertIn("Demo", text)
+        self.assertIn("<code>https://example.com/sub?token=abc</code>", text)
+        self.assertLess(text.index("<code>https://example.com/sub?token=abc</code>"), text.index("<b>已用 / 总量：</b>"))
 
     def test_verbose_formatter_marks_exhausted_when_remaining_is_negative(self):
         text = format_subscription_info(
@@ -242,7 +244,27 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
                 "remaining": -1788804691331,
             }
         )
-        self.assertIn("<b>订阅状态：</b> 流量耗尽", text)
+        self.assertNotIn("<b>订阅状态：</b>", text)
+        self.assertIn("<b>剩余流量：</b>", text)
+
+    def test_verbose_formatter_hides_parse_notes(self):
+        text = format_subscription_info(
+            {
+                "name": "Demo",
+                "node_count": 2,
+                "_content_format": "text",
+                "_parse_notes": ["direct-protocol", "base64-decoded"],
+                "_raw_nodes": [
+                    {"protocol": "trojan", "name": "A01"},
+                    {"protocol": "trojan", "name": "A02"},
+                ],
+            }
+        )
+        self.assertNotIn("解析备注", text)
+        self.assertNotIn("格式=text", text)
+        self.assertNotIn("direct-protocol", text)
+        self.assertNotIn("协议分布", text)
+        self.assertNotIn("地区分布", text)
 
     def test_verbose_formatter_shows_unknown_usage_when_traffic_missing(self):
         text = format_subscription_info(

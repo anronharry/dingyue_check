@@ -14,6 +14,24 @@ from shared.format_helpers import (
 MAX_TELEGRAM_TEXT = 3900
 
 
+def _shorten_text(text: str, *, max_len: int) -> str:
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    if len(raw) <= max_len:
+        return raw
+    return raw[: max(0, max_len - 3)] + "..."
+
+
+def _build_header_card(info: dict, url: str | None) -> str:
+    airport_name = html.escape(str(info.get("name") or "未知机场"))
+    lines = [airport_name]
+    if url:
+        preview = _shorten_text(url, max_len=56)
+        lines.append(f"<code>{html.escape(preview)}</code>")
+    return "<blockquote>\n" + "\n".join(lines) + "\n</blockquote>"
+
+
 def _format_skipped_protocols(quick_check: dict) -> str:
     skipped_protocols = quick_check.get("skipped_protocols") or {}
     if not skipped_protocols:
@@ -204,16 +222,6 @@ def _build_details(info: dict, *, node_limit: int, node_char_budget: int) -> str
         lines.append(quick_check_text)
     lines.extend(_render_latency_top(info))
 
-    parse_notes = info.get("_parse_notes") or []
-    content_format = info.get("_content_format")
-    note_parts = []
-    if content_format:
-        note_parts.append(f"格式={html.escape(str(content_format))}")
-    if parse_notes:
-        note_parts.append("流程=" + html.escape(",".join(str(item) for item in parse_notes[:6])))
-    if note_parts:
-        lines.append(f"<b>解析备注：</b> {' | '.join(note_parts)}")
-
     if not lines:
         return ""
     return "<blockquote expandable>\n" + "\n".join(lines) + "\n</blockquote>"
@@ -223,24 +231,12 @@ def format_subscription_info(info, url=None):
     """Format subscription details as summary + native Telegram expandable details."""
     used, total, remaining = _format_usage(info)
     expire_time = info.get("expire_time") or "未知"
-    node_count = int(info.get("node_count") or 0)
 
     summary_lines = [
-        "<b>订阅摘要</b>",
-        f"<b>机场名称：</b> {html.escape(str(info.get('name') or '未知机场'))}",
-        f"<b>订阅状态：</b> {_status_text(info)}",
         f"<b>已用 / 总量：</b> {used} / {total}",
         f"<b>剩余流量：</b> {remaining}",
         f"<b>到期时间：</b> {html.escape(str(expire_time))}",
-        f"<b>节点总数：</b> {node_count}",
     ]
-
-    protocol_summary = _build_protocol_summary(info)
-    if protocol_summary:
-        summary_lines.append(f"<b>协议分布：</b> {protocol_summary}")
-    country_summary = _build_country_summary(info)
-    if country_summary:
-        summary_lines.append(f"<b>地区分布：</b> {country_summary}")
 
     if info.get("usage_percent") is not None:
         percent = float(info["usage_percent"])
@@ -252,21 +248,17 @@ def format_subscription_info(info, url=None):
     if remain_text:
         summary_lines.append(f"<b>剩余时间：</b> {html.escape(remain_text)}")
 
+    header_block = _build_header_card(info, url)
+    summary_block = "<blockquote>\n" + "\n".join(summary_lines) + "\n</blockquote>"
     details = _build_details(info, node_limit=100, node_char_budget=1800)
-    message = "\n".join(summary_lines) + ("\n\n" + details if details else "")
-    if url:
-        message += f"\n\n<b>原始订阅链接：</b>\n<code>{html.escape(url)}</code>"
+    message = header_block + "\n\n" + summary_block + ("\n\n" + details if details else "")
 
     if len(message) > MAX_TELEGRAM_TEXT:
         details = _build_details(info, node_limit=40, node_char_budget=1000)
-        message = "\n".join(summary_lines) + ("\n\n" + details if details else "")
-        if url:
-            message += f"\n\n<b>原始订阅链接：</b>\n<code>{html.escape(url)}</code>"
+        message = header_block + "\n\n" + summary_block + ("\n\n" + details if details else "")
     if len(message) > MAX_TELEGRAM_TEXT:
         details = _build_details(info, node_limit=20, node_char_budget=650)
-        message = "\n".join(summary_lines) + ("\n\n" + details if details else "")
-        if url:
-            message += f"\n\n<b>原始订阅链接：</b>\n<code>{html.escape(url)}</code>"
+        message = header_block + "\n\n" + summary_block + ("\n\n" + details if details else "")
 
     return message[:MAX_TELEGRAM_TEXT]
 
@@ -274,7 +266,7 @@ def format_subscription_info(info, url=None):
 def format_subscription_compact(info, url=None):
     """Keep compact formatter for compatibility in non-primary flows."""
     del url
-    lines = ["<b>订阅摘要</b>"]
+    lines = []
     if info.get("name"):
         lines.append(f"<b>名称：</b> {html.escape(str(info['name']))}")
     used, total, remaining = _format_usage(info)

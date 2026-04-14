@@ -26,6 +26,12 @@ class SubscriptionParser:
     DIRECT_PROTOCOL_PATTERN = re.compile(
         r"(?im)^\s*(vmess|vless|trojan|ss|ssr|hysteria|hysteria2|hy2|tuic|wireguard)://"
     )
+    DEFAULT_UA_CLASH = "Clash-verge/1.3.8"
+    DEFAULT_UA_BROWSER = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
 
     def __init__(
         self,
@@ -132,37 +138,64 @@ class SubscriptionParser:
     async def _download_subscription(self, url):
         from utils.retry_utils import async_retry_on_failure
 
-        headers = {
-            "User-Agent": "Clash-verge/1.3.8",
-            "Accept": "*/*",
-        }
+        ua_clash, ua_browser = self._resolve_subscription_user_agents()
+        clash_headers = {"User-Agent": ua_clash, "Accept": "*/*"}
+        browser_headers = {"User-Agent": ua_browser, "Accept": "*/*"}
         session_to_use = self.session
         close_session = False
         if session_to_use is None:
             session_to_use = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=10))
             close_session = True
 
-        @async_retry_on_failure(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
-        async def _fetch():
+        async def _request_once(request_headers: dict[str, str]) -> tuple[int, str, dict[str, str]]:
             request_kwargs = {
-                "headers": headers,
+                "headers": request_headers,
                 "proxy": self.proxy_url,
                 "timeout": aiohttp.ClientTimeout(total=30),
             }
             if not self.verify_ssl:
                 request_kwargs["ssl"] = False
-
             async with session_to_use.get(url, **request_kwargs) as response:
-                response.raise_for_status()
                 body = await response.read()
                 text = self._decode_response_body(body, response.charset)
-                return text, {k.lower(): v for k, v in response.headers.items()}
+                lowered_headers = {k.lower(): v for k, v in response.headers.items()}
+                return response.status, text, lowered_headers
+
+        @async_retry_on_failure(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
+        async def _fetch():
+            status, text, response_headers = await _request_once(clash_headers)
+            if self._should_retry_with_browser_ua(status, text):
+                status, text, response_headers = await _request_once(browser_headers)
+            if status >= 400:
+                raise aiohttp.ClientError(f"HTTP {status}")
+            return text, response_headers
 
         try:
             return await _fetch()
         finally:
             if close_session:
                 await session_to_use.close()
+
+    @staticmethod
+    def _should_retry_with_browser_ua(status: int, content: str) -> bool:
+        if status == 403:
+            return True
+        if not content:
+            return False
+        content_lower = content.lower()
+        waf_markers = ("safeline", "waf", "captcha", "access denied", "forbidden", "cloudflare")
+        return any(marker in content_lower for marker in waf_markers)
+
+    @classmethod
+    def _resolve_subscription_user_agents(cls) -> tuple[str, str]:
+        try:
+            import config  # local import to avoid startup coupling
+
+            ua_clash = str(getattr(config, "UA_CLASH", "") or "").strip() or cls.DEFAULT_UA_CLASH
+            ua_browser = str(getattr(config, "UA_BROWSER", "") or "").strip() or cls.DEFAULT_UA_BROWSER
+            return ua_clash, ua_browser
+        except Exception:
+            return cls.DEFAULT_UA_CLASH, cls.DEFAULT_UA_BROWSER
 
     def _shannon_entropy(self, data: str) -> float:
         if not data:

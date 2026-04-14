@@ -110,7 +110,13 @@ PROXY_TOP_N: int = int(os.getenv("PROXY_TOP_N", "10"))
 # Subscription parsing optimization settings
 SUB_TIMEOUT: int = int(os.getenv("SUB_TIMEOUT", str(_profile["timeout"])))
 SUB_DOWNLOAD_WORKERS: int = int(os.getenv("SUB_DOWNLOAD_WORKERS", "30"))
-UA_CLASH: str = "ClashForAndroid/2.5.12"
+UA_CLASH: str = os.getenv("UA_CLASH", "ClashForAndroid/2.5.12")
+UA_BROWSER: str = os.getenv(
+    "UA_BROWSER",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36",
+)
 
 LOG_KEEP_DAYS: int = int(os.getenv("LOG_KEEP_DAYS", "30"))
 NODE_TEST_VERBOSE: bool = _bool("NODE_TEST_VERBOSE", False)
