@@ -1,6 +1,7 @@
 const qs = (id) => document.getElementById(id);
 const statusText = qs("statusText");
 const AUTH_HEARTBEAT_MS = 10000;
+const DASHBOARD_VIEWS = ["overview", "users", "audit", "ops"];
 
 const state = {
   usersPage: 1,
@@ -9,6 +10,7 @@ const state = {
   limit: 10,
   exportsLimit: 10,
   auditSnapshot: null,
+  view: "overview",
 };
 
 let usersRequestToken = 0;
@@ -480,6 +482,42 @@ function writeAuditStateToUrl(snapshot, page) {
   history.replaceState(null, "", `${url.pathname}?${sp.toString()}`);
 }
 
+function resolveView(value) {
+  const candidate = String(value || "").trim().toLowerCase();
+  return DASHBOARD_VIEWS.includes(candidate) ? candidate : "overview";
+}
+
+function readViewFromHash() {
+  return resolveView((window.location.hash || "").replace(/^#/, ""));
+}
+
+function applyView(view, options = {}) {
+  const safeView = resolveView(view);
+  state.view = safeView;
+
+  const syncHash = options.syncHash !== false;
+  if (syncHash && window.location.hash !== `#${safeView}`) {
+    history.replaceState(null, "", `#${safeView}`);
+  }
+
+  document.querySelectorAll("[data-page]").forEach((node) => {
+    if (!(node instanceof HTMLElement)) return;
+    const page = resolveView(node.dataset.page || "overview");
+    node.classList.toggle("is-hidden", page !== safeView);
+  });
+
+  document.querySelectorAll("[data-view-target]").forEach((node) => {
+    if (!(node instanceof HTMLElement)) return;
+    const target = resolveView(node.dataset.viewTarget || "overview");
+    node.classList.toggle("active", target === safeView);
+  });
+
+  const layout = document.querySelector(".dashboard-layout");
+  if (layout instanceof HTMLElement) {
+    layout.classList.toggle("single-column", safeView !== "overview");
+  }
+}
+
 function buildAuditParams(snapshot, page) {
   const q = new URLSearchParams();
   q.set("mode", snapshot.mode || "others");
@@ -625,7 +663,7 @@ async function loadAlerts() {
       <div class="alert ${escapeHtml(String(a.severity || "low"))}">
         <div class="alert-content">
           <div class="alert-title">[${escapeHtml(String(a.severity || "").toUpperCase())}] ${escapeHtml(a.title || "")}</div>
-          <div class="alert-desc">${escapeHtml(a.detail || "")}</div>
+          <div class="alert-desc">${escapeHtml(normalizeIdentity(a.detail || ""))}</div>
         </div>
       </div>`
       )
@@ -1090,6 +1128,13 @@ function bindEvents() {
       return;
     }
 
+    const viewBtn = target.closest("[data-view-target]");
+    if (viewBtn) {
+      const view = viewBtn.getAttribute("data-view-target") || "overview";
+      applyView(view, { syncHash: true });
+      return;
+    }
+
     const panel = qs("quickAuthPanel");
     const trigger = qs("openQuickAuthBtn");
     if (panel && !panel.hidden && !panel.contains(target) && trigger && !trigger.contains(target)) {
@@ -1103,6 +1148,8 @@ function init() {
   state.auditSnapshot = restored.snapshot;
   state.auditPage = restored.page;
   applyAuditFilters(restored.snapshot);
+  applyView(readViewFromHash(), { syncHash: false });
+  window.addEventListener("hashchange", () => applyView(readViewFromHash(), { syncHash: false }));
   bindEvents();
   startAuthHeartbeat();
   window.addEventListener("beforeunload", () => {

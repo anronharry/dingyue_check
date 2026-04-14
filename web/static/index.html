@@ -35,16 +35,23 @@
       </nav>
 
       <main class="main-container">
-        <section class="metrics">
+        <section class="metrics" data-page="overview">
           <article class="metric"><p class="k">总订阅量</p><p class="v" id="mTotalSubs">-</p></article>
           <article class="metric"><p class="k">授权用户</p><p class="v" id="mUsers">-</p></article>
           <article class="metric"><p class="k">24h 活跃</p><p class="v" id="mActive">-</p></article>
           <article class="metric"><p class="k">24h 导出</p><p class="v" id="mExports">-</p></article>
         </section>
 
+        <section class="view-tabs" aria-label="控制台分区">
+          <button type="button" class="view-tab active" data-view-target="overview">概览</button>
+          <button type="button" class="view-tab" data-view-target="users">用户</button>
+          <button type="button" class="view-tab" data-view-target="audit">审计</button>
+          <button type="button" class="view-tab" data-view-target="ops">运维</button>
+        </section>
+
         <div class="dashboard-layout">
           <div class="stack">
-            <article class="card">
+            <article class="card" data-page="users">
               <div class="head">
                 <h2>授权用户管理</h2>
                 <div class="head-actions">
@@ -78,7 +85,7 @@
               </div>
             </article>
 
-            <article class="card">
+            <article class="card" data-page="audit">
               <div class="head">
                 <h2>检测审计记录</h2>
               </div>
@@ -120,7 +127,7 @@
           </div>
 
           <div class="stack">
-            <article class="card op-card">
+            <article class="card op-card" data-page="ops">
               <div class="head">
                 <h2>系统权限与运维</h2>
               </div>
@@ -157,7 +164,7 @@
               </div>
             </article>
 
-            <article class="card">
+            <article class="card" data-page="overview">
               <div class="head">
                 <h2>运行环境状态</h2>
                 <button id="loadRuntimeBtn" type="button">刷新</button>
@@ -167,7 +174,7 @@
               </div>
             </article>
 
-            <article class="card">
+            <article class="card" data-page="overview">
               <div class="head">
                 <h2>实时异常告警</h2>
                 <button id="loadAlertsBtn" type="button">刷新</button>
@@ -175,7 +182,7 @@
               <div class="body" id="alertsBody"></div>
             </article>
 
-            <article class="card">
+            <article class="card" data-page="overview">
               <div class="head">
                 <h2>审计统计摘要</h2>
                 <button id="loadAuditBtn" type="button">刷新</button>
@@ -185,7 +192,7 @@
               </div>
             </article>
 
-            <article class="card">
+            <article class="card" data-page="audit">
               <div class="head">
                 <h2>近期文件导出</h2>
                 <button id="loadExportsBtn" type="button">刷新</button>

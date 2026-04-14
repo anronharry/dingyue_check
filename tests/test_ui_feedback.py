@@ -287,8 +287,10 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
                 "_traffic_warning": "机场未返回 subscription-userinfo",
             }
         )
-        self.assertIn("<b>提示：</b>", text)
         self.assertIn("无流量信息", text)
+        self.assertNotIn("已用 / 总量", text)
+        self.assertNotIn("剩余流量", text)
+        self.assertNotIn("到期时间", text)
 
     def test_get_country_flag_supports_english_names_and_iso2(self):
         self.assertEqual(get_country_flag("China"), "🇨🇳")

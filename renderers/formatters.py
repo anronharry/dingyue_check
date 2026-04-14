@@ -219,13 +219,20 @@ def format_subscription_info(info, url=None):
         header_lines.extend(["<b>订阅链接：</b>", f"<code>{html.escape(url)}</code>"])
 
     summary_lines = []
-    summary_lines.extend(
-        [
-        f"<b>已用 / 总量：</b> {used} / {total}",
-        f"<b>剩余流量：</b> {remaining}",
-        f"<b>到期时间：</b> {html.escape(str(expire_time))}",
-        ]
+    traffic_warning = str(info.get("_traffic_warning") or "").strip()
+    has_traffic_payload = any(
+        key in info for key in ("upload", "download", "total", "used", "remaining", "expire_time")
     )
+    if traffic_warning and not has_traffic_payload:
+        summary_lines.append("无流量信息")
+    else:
+        summary_lines.extend(
+            [
+                f"<b>已用 / 总量：</b> {used} / {total}",
+                f"<b>剩余流量：</b> {remaining}",
+                f"<b>到期时间：</b> {html.escape(str(expire_time))}",
+            ]
+        )
 
     if info.get("usage_percent") is not None:
         percent = float(info["usage_percent"])
@@ -236,9 +243,6 @@ def format_subscription_info(info, url=None):
     remain_text = format_remaining_time(info.get("expire_time", ""), include_seconds=False) if info.get("expire_time") else ""
     if remain_text:
         summary_lines.append(f"<b>剩余时间：</b> {html.escape(remain_text)}")
-    traffic_warning = str(info.get("_traffic_warning") or "").strip()
-    if traffic_warning:
-        summary_lines.append("<b>提示：</b> 无流量信息")
 
     summary_block = "<blockquote>\n" + "\n".join(summary_lines) + "\n</blockquote>"
     details = _build_details(info, node_limit=100, node_char_budget=1800)

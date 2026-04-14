@@ -9,6 +9,8 @@ import json
 import logging
 import secrets
 import time
+import re
+import html as html_lib
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -397,6 +399,13 @@ def _format_identity(runtime: Any, uid: int | None) -> str:
     return runtime.user_profile_service.format_user_identity(uid)
 
 
+def _plain_identity_text(value: Any) -> str:
+    raw = html_lib.unescape(str(value or ""))
+    raw = re.sub(r"<[^>]+>", " ", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw or "-"
+
+
 async def _collect_check_rows_async(
     runtime: Any,
     *,
@@ -777,7 +786,7 @@ async def _audit_alerts(request: web.Request) -> web.Response:
         rows.append(
             {
                 "user_id": uid if isinstance(uid, int) else 0,
-                "identity": _format_identity(runtime, uid if isinstance(uid, int) else None),
+                "identity": _plain_identity_text(_format_identity(runtime, uid if isinstance(uid, int) else None)),
                 "url_count": len(row.get("urls") or []),
             }
         )

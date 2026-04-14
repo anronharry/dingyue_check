@@ -130,6 +130,30 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   margin-bottom: 18px;
 }
 
+.view-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.view-tab {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.95);
+  color: #334155;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.view-tab.active {
+  background: #0f172a;
+  color: #f8fafc;
+  border-color: #0f172a;
+}
+
 .metric {
   background: #ffffff;
   border-radius: 12px;
@@ -148,6 +172,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 18px;
+}
+
+.dashboard-layout.single-column {
+  grid-template-columns: 1fr;
+}
+
+[data-page].is-hidden {
+  display: none !important;
 }
 
 .stack { display: flex; flex-direction: column; gap: 18px; }
@@ -713,6 +745,14 @@ dialog {
     grid-column: 1 / -1;
   }
   .filters { grid-template-columns: 1fr; padding: 10px; }
+  .view-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .view-tab {
+    padding: 9px 10px;
+    font-size: 12px;
+  }
   .metrics { grid-template-columns: 1fr; gap: 10px; }
   .runtime-grid { grid-template-columns: 1fr; }
   th, td { padding: 10px; font-size: 12px; }
