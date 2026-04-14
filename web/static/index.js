@@ -42,19 +42,19 @@ async function authFetch(path, options = {}) {
 }
 
 async function readErrorMessage(resp) {
-  if (!resp) return "Request failed";
+  if (!resp) return "请求失败";
   try {
     const contentType = (resp.headers.get("content-type") || "").toLowerCase();
     if (contentType.includes("application/json")) {
       const data = await resp.json();
       if (data && typeof data === "object") {
-        return data.error || data.message || `Request failed (${resp.status})`;
+        return data.error || data.message || `请求失败（${resp.status}）`;
       }
     }
     const text = await resp.text();
-    return text || `Request failed (${resp.status})`;
+    return text || `请求失败（${resp.status}）`;
   } catch (_) {
-    return `Request failed (${resp.status})`;
+    return `请求失败（${resp.status}）`;
   }
 }
 
@@ -82,7 +82,7 @@ async function downloadWithBlob(path, fallbackName) {
 
   const blob = await resp.blob();
   if (!blob || blob.size <= 0) {
-    throw new Error("Empty download payload");
+    throw new Error("下载内容为空");
   }
 
   const filename = extractFilename(resp.headers.get("content-disposition"), fallbackName);
@@ -123,7 +123,7 @@ async function apiRequest(path, options = {}) {
     if (!resp) return null;
     const data = await resp.json();
     if (!resp.ok || !data.ok) {
-      throw new Error(data.error || "Request failed");
+      throw new Error(data.error || "请求失败");
     }
     return data.data;
   } catch (e) {
@@ -201,7 +201,7 @@ function buildAuditUrlCell(urls, rowIndex, extraClass = "") {
       const href = escapeHtml(raw);
       const full = escapeHtml(raw);
       const copyValue = encodeURIComponent(raw);
-      return `<li class="audit-url-item"><div class="audit-url-main"><a href="${href}" target="_blank" rel="noopener noreferrer" class="audit-url-link mono" title="${href}">${full}</a></div><div class="audit-url-actions"><span class="audit-url-tag">#${idx + 1}</span><button type="button" class="audit-copy-btn" data-copy="${copyValue}">Copy</button></div></li>`;
+      return `<li class="audit-url-item"><div class="audit-url-main"><a href="${href}" target="_blank" rel="noopener noreferrer" class="audit-url-link mono" title="${href}">${full}</a></div><div class="audit-url-actions"><span class="audit-url-tag">#${idx + 1}</span><button type="button" class="audit-copy-btn" data-copy="${copyValue}">复制</button></div></li>`;
     })
     .join("");
 
@@ -228,10 +228,10 @@ function renderPagination(containerId, current, total, pageType, totalItems = 0)
   container.dataset.pageType = pageType;
   let html = `<button class="page-btn" ${safeCurrent === 1 ? "disabled" : ""} data-page-target="1">&laquo;</button>`;
   html += `<button class="page-btn" ${safeCurrent === 1 ? "disabled" : ""} data-page-target="${safeCurrent - 1}">&larr;</button>`;
-  html += `<span class="page-info">Page ${safeCurrent}/${total}${totalItems ? ` (Total ${totalItems})` : ""}</span>`;
+  html += `<span class="page-info">第 ${safeCurrent}/${total} 页${totalItems ? `（共 ${totalItems} 条）` : ""}</span>`;
   html += '<span class="page-jump">';
-  html += `<input id="${containerId}JumpInput" class="page-jump-input" type="number" min="1" max="${total}" value="${safeCurrent}" data-page-total="${total}" aria-label="Jump page">`;
-  html += `<button class="page-btn page-jump-btn" type="button" data-page-go="${containerId}">Go</button>`;
+  html += `<input id="${containerId}JumpInput" class="page-jump-input" type="number" min="1" max="${total}" value="${safeCurrent}" data-page-total="${total}" aria-label="跳转页码">`;
+  html += `<button class="page-btn page-jump-btn" type="button" data-page-go="${containerId}">跳转</button>`;
   html += "</span>";
   html += `<button class="page-btn" ${safeCurrent === total ? "disabled" : ""} data-page-target="${safeCurrent + 1}">&rarr;</button>`;
   html += `<button class="page-btn" ${safeCurrent === total ? "disabled" : ""} data-page-target="${total}">&raquo;</button>`;
@@ -286,18 +286,18 @@ function patchAuthorizedUserRow(tr, r) {
   tr.innerHTML = `
     <td>
       <div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
-      <div class="mono u-text-muted">ID: ${escapeHtml(r.uid || "-")}</div>
+      <div class="mono u-text-muted">UID: ${escapeHtml(r.uid || "-")}</div>
     </td>
     <td>
-      ${r.is_owner ? '<span class="badge badge-primary">OWNER</span>' : '<span class="badge">USER</span>'}
-      ${r.is_authorized ? '<span class="badge badge-success">Authorized</span>' : '<span class="badge badge-danger">Unauthorized</span>'}
+      ${r.is_owner ? '<span class="badge badge-primary">管理员</span>' : '<span class="badge">用户</span>'}
+      ${r.is_authorized ? '<span class="badge badge-success">已授权</span>' : '<span class="badge badge-danger">未授权</span>'}
     </td>
     <td class="mono">${escapeHtml(formatLocalDateTime(r.last_seen || "-"))}</td>
     <td class="mono">${escapeHtml(r.source || "-")}</td>
     <td>
       <div class="u-flex-gap-6">
-        <button class="u-btn-compact" data-action="open-detail" data-uid="${escapeHtml(String(r.uid || ""))}">Details</button>
-        ${!r.is_owner ? `<button class="btn-danger u-btn-compact" data-action="set-access" data-enabled="0" data-uid="${escapeHtml(String(r.uid || ""))}">Revoke</button>` : ""}
+        <button class="u-btn-compact" data-action="open-detail" data-uid="${escapeHtml(String(r.uid || ""))}">详情</button>
+        ${!r.is_owner ? `<button class="btn-danger u-btn-compact" data-action="set-access" data-enabled="0" data-uid="${escapeHtml(String(r.uid || ""))}">撤销</button>` : ""}
       </div>
     </td>`;
 }
@@ -307,7 +307,7 @@ function renderAuthorizedUsersTable(users) {
   if (!body) return;
 
   if (!users.length) {
-    body.innerHTML = '<tr data-key="__empty"><td colspan="5" class="table-empty-cell">No matching authorized users</td></tr>';
+    body.innerHTML = '<tr data-key="__empty"><td colspan="5" class="table-empty-cell">没有匹配的授权用户</td></tr>';
     return;
   }
 
@@ -325,7 +325,7 @@ function renderAuthorizedUsersTable(users) {
     () => {
       const tr = document.createElement("tr");
       tr.dataset.key = "__empty";
-      tr.innerHTML = '<td colspan="5" class="table-empty-cell">No matching authorized users</td>';
+      tr.innerHTML = '<td colspan="5" class="table-empty-cell">没有匹配的授权用户</td>';
       return tr;
     }
   );
@@ -336,7 +336,7 @@ function renderAuthorizedUsersCards(users) {
   if (!cardRoot) return;
 
   if (!users.length) {
-    cardRoot.innerHTML = '<div class="mobile-empty-card">No matching authorized users</div>';
+    cardRoot.innerHTML = '<div class="mobile-empty-card">没有匹配的授权用户</div>';
     return;
   }
 
@@ -345,17 +345,17 @@ function renderAuthorizedUsersCards(users) {
       <div class="mobile-card-head">
         <div>
           <div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
-          <div class="mono u-text-muted">ID: ${escapeHtml(r.uid || "-")}</div>
+          <div class="mono u-text-muted">UID: ${escapeHtml(r.uid || "-")}</div>
         </div>
       </div>
       <div class="mobile-card-meta">
-        <div class="mobile-meta-row">${r.is_owner ? '<span class="badge badge-primary">OWNER</span>' : '<span class="badge">USER</span>'} ${r.is_authorized ? '<span class="badge badge-success">Authorized</span>' : '<span class="badge badge-danger">Unauthorized</span>'}</div>
-        <div class="mobile-meta-row mono">Active: ${escapeHtml(formatLocalDateTime(r.last_seen || "-"))}</div>
-        <div class="mobile-meta-row mono">Source: ${escapeHtml(r.source || "-")}</div>
+        <div class="mobile-meta-row">${r.is_owner ? '<span class="badge badge-primary">管理员</span>' : '<span class="badge">用户</span>'} ${r.is_authorized ? '<span class="badge badge-success">已授权</span>' : '<span class="badge badge-danger">未授权</span>'}</div>
+        <div class="mobile-meta-row mono">最近活跃：${escapeHtml(formatLocalDateTime(r.last_seen || "-"))}</div>
+        <div class="mobile-meta-row mono">访问来源：${escapeHtml(r.source || "-")}</div>
       </div>
       <div class="mobile-card-actions">
-        <button class="u-btn-compact" data-action="open-detail" data-uid="${escapeHtml(String(r.uid || ""))}">Details</button>
-        ${!r.is_owner ? `<button class="btn-danger u-btn-compact" data-action="set-access" data-enabled="0" data-uid="${escapeHtml(String(r.uid || ""))}">Revoke</button>` : ""}
+        <button class="u-btn-compact" data-action="open-detail" data-uid="${escapeHtml(String(r.uid || ""))}">详情</button>
+        ${!r.is_owner ? `<button class="btn-danger u-btn-compact" data-action="set-access" data-enabled="0" data-uid="${escapeHtml(String(r.uid || ""))}">撤销</button>` : ""}
       </div>
     </article>
   `).join("");
@@ -379,7 +379,7 @@ function renderRecentChecksTable(rows) {
   if (!body) return;
 
   if (!rows.length) {
-    body.innerHTML = '<tr data-key="__empty"><td colspan="4" class="table-empty-cell">No matching checks</td></tr>';
+    body.innerHTML = '<tr data-key="__empty"><td colspan="4" class="table-empty-cell">没有匹配的审计记录</td></tr>';
     return;
   }
 
@@ -397,7 +397,7 @@ function renderRecentChecksTable(rows) {
     () => {
       const tr = document.createElement("tr");
       tr.dataset.key = "__empty";
-      tr.innerHTML = '<td colspan="4" class="table-empty-cell">No matching checks</td>';
+      tr.innerHTML = '<td colspan="4" class="table-empty-cell">没有匹配的审计记录</td>';
       return tr;
     }
   );
@@ -408,7 +408,7 @@ function renderRecentChecksCards(rows) {
   if (!cardRoot) return;
 
   if (!rows.length) {
-    cardRoot.innerHTML = '<div class="mobile-empty-card">No matching checks</div>';
+    cardRoot.innerHTML = '<div class="mobile-empty-card">没有匹配的审计记录</div>';
     return;
   }
 
@@ -418,7 +418,7 @@ function renderRecentChecksCards(rows) {
         <div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
       </div>
       <div class="mobile-card-meta">
-        <div class="mobile-meta-row mono">Time: ${escapeHtml(formatLocalDateTime(r.ts || "-"))}</div>
+        <div class="mobile-meta-row mono">时间：${escapeHtml(formatLocalDateTime(r.ts || "-"))}</div>
         <div class="mobile-meta-row">${r.source ? `<span class="badge badge-primary audit-source-badge">${escapeHtml(r.source || "-")}</span>` : '<span class="audit-empty">-</span>'}</div>
       </div>
       <div class="mobile-card-urls">${buildAuditUrlCell(r.urls || [], `${auditRowKey(r, idx)}-mobile`, "audit-url-list-mobile")}</div>
@@ -516,6 +516,33 @@ function applyView(view, options = {}) {
   if (layout instanceof HTMLElement) {
     layout.classList.toggle("single-column", safeView !== "overview");
   }
+
+  document.querySelectorAll(".dashboard-layout .stack").forEach((stack) => {
+    if (!(stack instanceof HTMLElement)) return;
+    const hasVisibleCard = Array.from(stack.querySelectorAll("[data-page]")).some((card) => {
+      return card instanceof HTMLElement && !card.classList.contains("is-hidden");
+    });
+    stack.classList.toggle("is-hidden-stack", !hasVisibleCard);
+  });
+}
+
+function updateAuditFilterMobileLabel() {
+  const btn = qs("toggleAuditFiltersBtn");
+  const form = qs("auditFilterForm");
+  if (!btn || !form) return;
+  btn.textContent = form.classList.contains("collapsed") ? "展开筛选" : "收起筛选";
+}
+
+function syncResponsiveState() {
+  const form = qs("auditFilterForm");
+  if (!(form instanceof HTMLFormElement)) return;
+  const isMobile = window.matchMedia("(max-width: 700px)").matches;
+  if (isMobile) {
+    form.classList.add("collapsed");
+  } else {
+    form.classList.remove("collapsed");
+  }
+  updateAuditFilterMobileLabel();
 }
 
 function buildAuditParams(snapshot, page) {
@@ -580,7 +607,7 @@ async function loadAuthorizedUsers(page = 1, options = {}) {
   renderAuthorizedUsersCards(users);
   renderPagination("usersPagination", state.usersPage, data.total_pages || 1, "users", Number(data.total || 0));
 
-  qs("publicAccessDesc").innerHTML = `Current: ${data.allow_all_users ? '<span class="public-access-open">OPEN</span>' : '<span class="public-access-closed">RESTRICTED</span>'}`;
+  qs("publicAccessDesc").innerHTML = `当前：${data.allow_all_users ? '<span class="public-access-open">开启</span>' : '<span class="public-access-closed">受限</span>'}`;
   window.__allowAllUsers = !!data.allow_all_users;
 }
 
@@ -622,7 +649,7 @@ function fmtUptime(seconds) {
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
-  return d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m`;
+  return d > 0 ? `${d}天 ${h}小时 ${m}分` : `${h}小时 ${m}分`;
 }
 
 async function loadRuntime() {
@@ -630,12 +657,12 @@ async function loadRuntime() {
   const data = await apiRequest("/api/v1/system/runtime");
   if (!data) return;
   qs("runtimeBody").innerHTML = [
-    { k: "Run mode", v: data.run_mode },
-    { k: "Uptime", v: fmtUptime(data.uptime_seconds) },
-    { k: "Auth backend", v: data.auth_backend },
-    { k: "Public mode", v: data.allow_all_users ? "ON" : "OFF" },
-    { k: "Parser", v: data.parser_ready ? "Ready" : "Error" },
-    { k: "Storage", v: data.storage_ready ? "Ready" : "Error" },
+    { k: "运行模式", v: data.run_mode },
+    { k: "运行时长", v: fmtUptime(data.uptime_seconds) },
+    { k: "认证后端", v: data.auth_backend === "memory" ? "内存" : data.auth_backend },
+    { k: "公开模式", v: data.allow_all_users ? "开启" : "关闭" },
+    { k: "解析器", v: data.parser_ready ? "就绪" : "异常" },
+    { k: "存储", v: data.storage_ready ? "就绪" : "异常" },
   ]
     .map((i) => `<div class="runtime-item"><div class="k">${i.k}</div><div class="v">${i.v}</div></div>`)
     .join("");
@@ -649,12 +676,12 @@ async function loadAlerts() {
   const alerts = Array.isArray(data.alerts) ? data.alerts : [];
 
   if (!alerts.length) {
-    el.innerHTML = '<div class="panel-empty-hint">No alerts.</div>';
+    el.innerHTML = '<div class="panel-empty-hint">暂无告警。</div>';
     return;
   }
 
   const capped = alerts.slice(0, 50);
-  const note = alerts.length > capped.length ? `<div class="alert-limit-note">Showing first ${capped.length} alerts of ${alerts.length}.</div>` : "";
+  const note = alerts.length > capped.length ? `<div class="alert-limit-note">仅显示前 ${capped.length} 条，共 ${alerts.length} 条告警。</div>` : "";
   el.innerHTML =
     note +
     capped
@@ -676,10 +703,10 @@ async function loadAuditSummary() {
   const data = await apiRequest(`/api/v1/audit/summary?mode=${encodeURIComponent(mode)}`);
   if (!data) return;
   qs("auditSummaryBody").innerHTML = [
-    { l: "Mode", v: data.title },
-    { l: "24h checks", v: data.check_count },
-    { l: "24h users", v: data.user_count },
-    { l: "24h urls", v: data.url_count },
+    { l: "范围", v: data.title },
+    { l: "24h 检测", v: data.check_count },
+    { l: "24h 用户", v: data.user_count },
+    { l: "24h 链接", v: data.url_count },
   ]
     .map((i) => `<div class="audit-summary-item"><span class="audit-summary-label">${i.l}</span><span class="audit-summary-value">${i.v}</span></div>`)
     .join("");
@@ -697,7 +724,7 @@ async function loadRecentExports(page = 1) {
 
   const el = qs("recentExportsBody");
   if (!rows.length) {
-    el.innerHTML = '<div class="panel-empty-hint panel-empty-tight">No export records</div>';
+    el.innerHTML = '<div class="panel-empty-hint panel-empty-tight">暂无导出记录</div>';
   } else {
     el.innerHTML = rows
       .map(
@@ -717,7 +744,7 @@ async function loadRecentExports(page = 1) {
   renderPagination("exportsPagination", state.exportsPage, totalPages, "exports", Number(data.total || rows.length));
 }
 
-async function confirmAction(message, title = "Confirm Action", dangerLabel = "Confirm") {
+async function confirmAction(message, title = "确认操作", dangerLabel = "确认") {
   const modal = qs("confirmActionModal");
   const titleEl = qs("confirmActionTitle");
   const msgEl = qs("confirmActionMessage");
@@ -776,16 +803,16 @@ async function togglePublicAccess() {
     body: JSON.stringify({ enabled: !current }),
   });
   if (!data) return;
-  setStatus(`Public access ${data.enabled ? "enabled" : "disabled"}`, "ok");
+  setStatus(`公开访问已${data.enabled ? "开启" : "关闭"}`, "ok");
   await loadAuthorizedUsers(state.usersPage);
 }
 
 async function revokeAllSessions() {
-  const ok = await confirmAction("This will revoke all active admin sessions, including yours.", "Revoke Sessions", "Revoke");
+  const ok = await confirmAction("该操作会让所有已登录管理会话下线（包含当前会话）。", "强制下线", "确认下线");
   if (!ok) return;
   const data = await apiRequest("/api/v1/system/sessions/revoke-all", { method: "POST" });
   if (!data) return;
-  setStatus(`Revoked ${data.revoked} sessions`, "ok");
+  setStatus(`已下线 ${data.revoked} 个会话`, "ok");
   setTimeout(() => {
     window.location.href = "/admin/login";
   }, 1200);
@@ -794,7 +821,7 @@ async function revokeAllSessions() {
 async function setUserAccess(uid, enabled) {
   const safeUid = String(uid || "").trim();
   if (!safeUid) {
-    setStatus("Please input UID", "warn");
+    setStatus("请输入 UID", "warn");
     return;
   }
 
@@ -804,14 +831,14 @@ async function setUserAccess(uid, enabled) {
     body: JSON.stringify({ uid: safeUid, enabled }),
   });
 
-  setStatus(enabled ? "Granted" : "Revoked", "ok");
+  setStatus(enabled ? "授权成功" : "撤销成功", "ok");
   await Promise.all([loadAuthorizedUsers(state.usersPage, { adjustOnEmpty: !enabled }), loadOverview()]);
 }
 
 async function openUserDetail(uid) {
   const safeUid = String(uid || "").trim();
   if (!safeUid) {
-    setStatus("Please input UID", "warn");
+    setStatus("请输入 UID", "warn");
     return;
   }
 
@@ -821,19 +848,19 @@ async function openUserDetail(uid) {
   if (!modal || !body || !title) return;
 
   const token = ++detailRequestToken;
-  title.textContent = `User detail: ${safeUid}`;
-  body.innerHTML = '<div class="modal-skeleton">Loading...</div>';
+  title.textContent = `用户详情：${safeUid}`;
+  body.innerHTML = '<div class="modal-skeleton">加载中...</div>';
   modal.showModal();
 
   try {
     const data = await apiRequest(`/api/v1/users/detail?uid=${encodeURIComponent(safeUid)}`);
     if (!data || token !== detailRequestToken) return;
 
-    title.textContent = `User detail: ${escapeHtml(data.identity || safeUid)}`;
+    title.textContent = `用户详情：${escapeHtml(data.identity || safeUid)}`;
     const subs = Array.isArray(data.subscriptions) ? data.subscriptions : [];
     const truncated = Number(data.subscription_count || subs.length) > subs.length;
     const truncatedBlock = truncated
-      ? `<div class="modal-warning">Only ${subs.length} subscriptions are shown (server-side limited).</div>`
+      ? `<div class="modal-warning">当前仅展示 ${subs.length} 条订阅（服务端有数量限制）。</div>`
       : "";
 
     const subHtml = subs.length
@@ -843,30 +870,30 @@ async function openUserDetail(uid) {
           <div class="subscription-item">
             <div class="subscription-name">${escapeHtml(s.name || "-")}</div>
             <div class="mono subscription-url">${escapeHtml(s.url || "-")}</div>
-            <div class="subscription-meta">Updated: ${escapeHtml(formatLocalDateTime(s.updated_at || "-"))} | Expire: ${escapeHtml(formatLocalDateTime(s.expire_time || "-"))}</div>
+            <div class="subscription-meta">更新时间：${escapeHtml(formatLocalDateTime(s.updated_at || "-"))} | 到期：${escapeHtml(formatLocalDateTime(s.expire_time || "-"))}</div>
           </div>`
           )
           .join("")
-      : '<div class="panel-empty-hint panel-empty-tight">No subscription data</div>';
+      : '<div class="panel-empty-hint panel-empty-tight">暂无订阅数据</div>';
 
     const safeDetailUid = escapeHtml(String(data.uid || safeUid));
     body.innerHTML = `
       ${truncatedBlock}
       <div class="user-detail-actions">
-        <button type="button" class="btn-brand" data-action="set-access" data-enabled="1" data-uid="${safeDetailUid}">Grant</button>
-        ${data.is_owner ? '<button type="button" class="btn-danger" disabled>Owner cannot be revoked</button>' : `<button type="button" class="btn-danger" data-action="set-access" data-enabled="0" data-uid="${safeDetailUid}">Revoke</button>`}
+          <button type="button" class="btn-brand" data-action="set-access" data-enabled="1" data-uid="${safeDetailUid}">授权</button>
+          ${data.is_owner ? '<button type="button" class="btn-danger" disabled>管理员不可撤销</button>' : `<button type="button" class="btn-danger" data-action="set-access" data-enabled="0" data-uid="${safeDetailUid}">撤销</button>`}
       </div>
       <div class="user-detail-grid">
         <div class="runtime-item"><div class="k">UID</div><div class="v">${escapeHtml(data.uid || "-")}</div></div>
-        <div class="runtime-item"><div class="k">Role</div><div class="v">${data.is_owner ? "Owner" : "User"}</div></div>
-        <div class="runtime-item"><div class="k">Subscriptions</div><div class="v">${escapeHtml(String(data.subscription_count || 0))}</div></div>
-        <div class="runtime-item"><div class="k">Last Seen</div><div class="v">${escapeHtml(formatLocalDateTime(data.last_seen || "-"))}</div></div>
+        <div class="runtime-item"><div class="k">角色</div><div class="v">${data.is_owner ? "管理员" : "用户"}</div></div>
+        <div class="runtime-item"><div class="k">订阅数</div><div class="v">${escapeHtml(String(data.subscription_count || 0))}</div></div>
+        <div class="runtime-item"><div class="k">最近活跃</div><div class="v">${escapeHtml(formatLocalDateTime(data.last_seen || "-"))}</div></div>
       </div>
-      <h4>Subscriptions</h4>
+      <h4>订阅列表</h4>
       ${subHtml}
     `;
   } catch (e) {
-    body.innerHTML = `<div class="panel-empty-hint">${escapeHtml(e.message || "Load failed")}</div>`;
+    body.innerHTML = `<div class="panel-empty-hint">${escapeHtml(e.message || "加载失败")}</div>`;
   }
 }
 
@@ -879,7 +906,7 @@ async function uploadOwnerFile(path, file) {
   });
   if (!resp) return null;
   const data = await resp.json();
-  if (!resp.ok || !data.ok) throw new Error(data.error || "Request failed");
+  if (!resp.ok || !data.ok) throw new Error(data.error || "请求失败");
   return data.data;
 }
 
@@ -899,34 +926,34 @@ function startAuthHeartbeat() {
 async function runOwnerImport(file) {
   const data = await uploadOwnerFile("/api/v1/owner/import-json", file);
   if (!data) return;
-  setStatus(`Import done: ${data.imported}`, "ok");
+  setStatus(`导入完成：${data.imported}`, "ok");
   await refreshAll();
 }
 
 async function runOwnerRestore(file) {
-  const ok = await confirmAction("Restore may overwrite current data. Continue?", "Restore Backup", "Restore");
+  const ok = await confirmAction("恢复备份会覆盖当前数据，是否继续？", "恢复备份", "确认恢复");
   if (!ok) return;
   const data = await uploadOwnerFile("/api/v1/owner/restore", file);
   if (!data) return;
-  setStatus(`Restore done: ${data.restored_files}`, "ok");
+  setStatus(`恢复完成：${data.restored_files}`, "ok");
   await refreshAll();
 }
 
 async function runOwnerCheckAll() {
   if (ownerCheckAllRunning) {
-    setStatus("Full check is already running", "warn", { autoHideMs: 2200 });
+    setStatus("全量体检正在进行中", "warn", { autoHideMs: 2200 });
     return;
   }
-  const ok = await confirmAction("Run full check now? This may take a while.", "Full Check", "Run");
+  const ok = await confirmAction("现在执行全量体检吗？这可能需要一段时间。", "全量体检", "开始体检");
   if (!ok) return;
   const btn = qs("ownerCheckAllBtn");
   ownerCheckAllRunning = true;
   if (btn) btn.disabled = true;
-  setStatus("Running full check...", "", { sticky: true });
+  setStatus("全量体检执行中...", "", { sticky: true });
   try {
     const data = await apiRequest("/api/v1/owner/check-all", { method: "POST" });
     if (!data) return;
-    setStatus(`Full check finished: success ${data.success} / failed ${data.failed}`, "ok");
+    setStatus(`全量体检完成：成功 ${data.success} / 失败 ${data.failed}`, "ok");
     await refreshAll();
   } finally {
     ownerCheckAllRunning = false;
@@ -935,7 +962,7 @@ async function runOwnerCheckAll() {
 }
 
 async function refreshAll() {
-  setStatus("Refreshing...", "", { sticky: true });
+  setStatus("刷新中...", "", { sticky: true });
   try {
     await Promise.all([
       loadOverview(),
@@ -946,7 +973,7 @@ async function refreshAll() {
       loadAuditSummary(),
       loadRecentExports(state.exportsPage || 1),
     ]);
-    setStatus("Synced", "ok");
+    setStatus("已同步", "ok");
   } catch (_) {
     // handled in apiRequest
   }
@@ -961,19 +988,19 @@ function bindEvents() {
 
   qs("quickGrantBtn").onclick = () => {
     const uid = getQuickUid();
-    if (!uid) return setStatus("Please input UID", "warn");
+    if (!uid) return setStatus("请输入 UID", "warn");
     setUserAccess(uid, true);
     toggleQuickAuthPanel(false);
   };
   qs("quickRevokeBtn").onclick = () => {
     const uid = getQuickUid();
-    if (!uid) return setStatus("Please input UID", "warn");
+    if (!uid) return setStatus("请输入 UID", "warn");
     setUserAccess(uid, false);
     toggleQuickAuthPanel(false);
   };
   qs("quickDetailBtn").onclick = () => {
     const uid = getQuickUid();
-    if (!uid) return setStatus("Please input UID", "warn");
+    if (!uid) return setStatus("请输入 UID", "warn");
     openUserDetail(uid);
     toggleQuickAuthPanel(false);
   };
@@ -1000,25 +1027,31 @@ function bindEvents() {
     loadRecentChecks(1, { snapshot: state.auditSnapshot, syncUrl: true });
     loadAuditSummary();
   };
+  qs("toggleAuditFiltersBtn").onclick = () => {
+    const form = qs("auditFilterForm");
+    if (!(form instanceof HTMLFormElement)) return;
+    form.classList.toggle("collapsed");
+    updateAuditFilterMobileLabel();
+  };
 
   qs("exportCsvBtn").onclick = async () => {
     const snapshot = state.auditSnapshot || collectAuditFilters();
     try {
-      setStatus("Preparing CSV export...", "", { autoHideMs: 2000 });
+      setStatus("正在准备 CSV 导出...", "", { autoHideMs: 2000 });
       await downloadWithBlob(`/api/v1/audit/export?format=csv&${buildAuditExportQuery(snapshot)}`, "audit_checks.csv");
-      setStatus("CSV downloaded", "ok");
+      setStatus("CSV 已下载", "ok");
     } catch (e) {
-      setStatus(e.message || "CSV export failed", "warn");
+      setStatus(e.message || "CSV 导出失败", "warn");
     }
   };
   qs("exportJsonBtn").onclick = async () => {
     const snapshot = state.auditSnapshot || collectAuditFilters();
     try {
-      setStatus("Preparing JSON export...", "", { autoHideMs: 2000 });
+      setStatus("正在准备 JSON 导出...", "", { autoHideMs: 2000 });
       await downloadWithBlob(`/api/v1/audit/export?format=json&${buildAuditExportQuery(snapshot)}`, "audit_checks.json");
-      setStatus("JSON downloaded", "ok");
+      setStatus("JSON 已下载", "ok");
     } catch (e) {
-      setStatus(e.message || "JSON export failed", "warn");
+      setStatus(e.message || "JSON 导出失败", "warn");
     }
   };
 
@@ -1027,20 +1060,20 @@ function bindEvents() {
 
   qs("ownerExportJsonBtn").onclick = async () => {
     try {
-      setStatus("Downloading JSON export...", "", { autoHideMs: 2000 });
+      setStatus("正在下载 JSON 备份...", "", { autoHideMs: 2000 });
       await downloadWithBlob("/api/v1/owner/export-json", "subscriptions_export.json");
-      setStatus("JSON backup downloaded", "ok");
+      setStatus("JSON 备份已下载", "ok");
     } catch (e) {
-      setStatus(e.message || "JSON export failed", "warn");
+      setStatus(e.message || "JSON 导出失败", "warn");
     }
   };
   qs("ownerBackupBtn").onclick = async () => {
     try {
-      setStatus("Preparing ZIP backup...", "", { autoHideMs: 2000 });
+      setStatus("正在准备 ZIP 备份...", "", { autoHideMs: 2000 });
       await downloadWithBlob("/api/v1/owner/backup", "backup.zip");
-      setStatus("ZIP backup downloaded", "ok");
+      setStatus("ZIP 备份已下载", "ok");
     } catch (e) {
-      setStatus(e.message || "ZIP backup failed", "warn");
+      setStatus(e.message || "ZIP 备份失败", "warn");
     }
   };
   qs("ownerImportJsonBtn").onclick = () => qs("ownerImportFile").click();
@@ -1087,8 +1120,8 @@ function bindEvents() {
       let textToCopy = "";
       try { textToCopy = decodeURIComponent(encoded); } catch { textToCopy = encoded; }
       if (!textToCopy) return;
-      try { await navigator.clipboard.writeText(textToCopy); setStatus("Copied", "ok"); }
-      catch { setStatus("Copy failed", "warn"); }
+      try { await navigator.clipboard.writeText(textToCopy); setStatus("已复制", "ok"); }
+      catch { setStatus("复制失败", "warn"); }
       return;
     }
 
@@ -1150,6 +1183,8 @@ function init() {
   applyAuditFilters(restored.snapshot);
   applyView(readViewFromHash(), { syncHash: false });
   window.addEventListener("hashchange", () => applyView(readViewFromHash(), { syncHash: false }));
+  syncResponsiveState();
+  window.addEventListener("resize", () => syncResponsiveState());
   bindEvents();
   startAuthHeartbeat();
   window.addEventListener("beforeunload", () => {

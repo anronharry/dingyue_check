@@ -406,6 +406,14 @@ def _plain_identity_text(value: Any) -> str:
     return raw or "-"
 
 
+def _brief_identity_text(value: Any) -> str:
+    text = _plain_identity_text(value)
+    text = re.sub(r"\(\d{5,}\)", "", text).strip()
+    text = text.lstrip("@").strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or "-"
+
+
 async def _collect_check_rows_async(
     runtime: Any,
     *,
@@ -794,7 +802,7 @@ async def _audit_alerts(request: web.Request) -> web.Response:
     bucket: dict[int, dict[str, Any]] = {}
     for row in rows:
         uid = int(row.get("user_id", 0) or 0)
-        item = bucket.setdefault(uid, {"checks": 0, "urls": 0, "identity": row.get("identity", "-")})
+        item = bucket.setdefault(uid, {"checks": 0, "urls": 0, "identity": _brief_identity_text(row.get("identity", "-"))})
         item["checks"] += 1
         item["urls"] += int(row.get("url_count", 0) or 0)
 

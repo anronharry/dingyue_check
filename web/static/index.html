@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Owner 运维控制台</title>
+  <title>运维控制台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -24,7 +24,7 @@
         <div class="navbar-content">
           <div class="logo-area">
             <img src="/admin/static/logo.png" class="logo-img" alt="Logo">
-            <span class="brand-name">Owner 运维控制台</span>
+            <span class="brand-name">运维控制台</span>
             <span class="status" id="statusText">系统初始化...</span>
           </div>
           <div class="nav-actions">
@@ -55,15 +55,15 @@
               <div class="head">
                 <h2>授权用户管理</h2>
                 <div class="head-actions">
-                  <button id="openQuickAuthBtn" type="button" class="btn-brand">Authorize User</button>
-                  <button id="loadUsersTableBtn" type="button">Refresh</button>
+                  <button id="openQuickAuthBtn" type="button" class="btn-brand">快捷授权</button>
+                  <button id="loadUsersTableBtn" type="button">刷新</button>
                 </div>
               </div>
               <div id="quickAuthPanel" class="quick-auth-panel" hidden>
                 <input id="quickUidInput" type="text" placeholder="UID">
-                <button id="quickGrantBtn" class="btn-brand" type="button">Grant</button>
-                <button id="quickRevokeBtn" class="btn-danger" type="button">Revoke</button>
-                <button id="quickDetailBtn" type="button">Details</button>
+                <button id="quickGrantBtn" class="btn-brand" type="button">授权</button>
+                <button id="quickRevokeBtn" class="btn-danger" type="button">撤销</button>
+                <button id="quickDetailBtn" type="button">详情</button>
               </div>
               <div class="body">
                 <div class="table-wrap">
@@ -88,13 +88,16 @@
             <article class="card" data-page="audit">
               <div class="head">
                 <h2>检测审计记录</h2>
+                <div class="head-actions">
+                  <button id="toggleAuditFiltersBtn" type="button" class="mobile-only">筛选</button>
+                </div>
               </div>
               <div class="body">
                 <form id="auditFilterForm" class="filters">
                   <select id="auditMode">
-                    <option value="others" selected>过滤管理员 (Others)</option>
-                    <option value="owner">仅查看管理员 (Owner)</option>
-                    <option value="all">查看全部 (All)</option>
+                    <option value="others" selected>过滤管理员（其他用户）</option>
+                    <option value="owner">仅查看管理员</option>
+                    <option value="all">查看全部</option>
                   </select>
                   <input id="filterUserId" type="text" placeholder="UID: 123456">
                   <input id="filterSource" type="text" placeholder="来源关键词">
@@ -214,13 +217,13 @@
 
       <dialog id="confirmActionModal">
         <div class="modal-head">
-          <strong id="confirmActionTitle">Confirm Action</strong>
-          <button id="cancelConfirmBtn" type="button">Cancel</button>
+          <strong id="confirmActionTitle">确认操作</strong>
+          <button id="cancelConfirmBtn" type="button">取消</button>
         </div>
         <div class="modal-body">
-          <p id="confirmActionMessage" class="confirm-message">Are you sure you want to continue?</p>
+          <p id="confirmActionMessage" class="confirm-message">确认继续执行该操作吗？</p>
           <div class="confirm-actions">
-            <button id="confirmActionBtn" class="btn-danger" type="button">Confirm</button>
+            <button id="confirmActionBtn" class="btn-danger" type="button">确认</button>
           </div>
         </div>
       </dialog>
