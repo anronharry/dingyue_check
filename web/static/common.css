@@ -117,6 +117,110 @@ body::after {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.92' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
+.matrix-rain-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.28;
+  mix-blend-mode: screen;
+}
+
+.matrix-ghost-layer,
+.drift-grid-layer,
+.scan-beam-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.matrix-ghost-layer {
+  z-index: 1;
+  opacity: 0.16;
+  mix-blend-mode: screen;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 5.5%,
+      rgba(66, 255, 174, 0.22) 5.5% 6%,
+      transparent 6% 11.5%
+    );
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent 84%);
+  animation: ghost-fall 10s linear infinite;
+}
+
+.matrix-ghost-layer::before {
+  content: "0101 A9F3 SYS NET CORE ROOT HEX PID TRACE PORT NODE VEC IDX";
+  position: absolute;
+  inset: -20% 0 0 0;
+  color: rgba(90, 255, 186, 0.25);
+  font: 11px/1.45 "JetBrains Mono", monospace;
+  letter-spacing: 0.4em;
+  white-space: pre-wrap;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  animation: ghost-fall-text 16s linear infinite;
+}
+
+.drift-grid-layer {
+  z-index: 1;
+  opacity: 0.14;
+  background-image:
+    linear-gradient(rgba(67, 255, 185, 0.24) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(67, 255, 185, 0.2) 1px, transparent 1px);
+  background-size: 56px 56px, 56px 56px;
+  transform-origin: center;
+  animation: drift-grid 20s linear infinite;
+}
+
+.scan-beam-layer {
+  z-index: 1;
+  opacity: 0.22;
+  mix-blend-mode: screen;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    transparent 42%,
+    rgba(86, 255, 202, 0.08) 48%,
+    rgba(86, 255, 202, 0.2) 50%,
+    rgba(86, 255, 202, 0.08) 52%,
+    transparent 58%,
+    transparent 100%
+  );
+  background-size: 100% 200%;
+  animation: scan-sweep 6.5s ease-in-out infinite;
+}
+
+@keyframes ghost-fall {
+  from { background-position: 0 -90px; }
+  to { background-position: 0 120px; }
+}
+
+@keyframes ghost-fall-text {
+  from { transform: translateY(-5%); }
+  to { transform: translateY(15%); }
+}
+
+@keyframes drift-grid {
+  0% { transform: translate3d(0, 0, 0) scale(1.02); }
+  50% { transform: translate3d(-18px, 14px, 0) scale(1.05); }
+  100% { transform: translate3d(-36px, 28px, 0) scale(1.02); }
+}
+
+@keyframes scan-sweep {
+  0%, 100% { background-position: 0 -80%; }
+  50% { background-position: 0 120%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .matrix-ghost-layer,
+  .matrix-ghost-layer::before,
+  .drift-grid-layer,
+  .scan-beam-layer {
+    animation: none !important;
+  }
+}
+
 .visual-bg {
   position: absolute;
   inset: 0;
