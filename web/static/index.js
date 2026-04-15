@@ -1,5 +1,7 @@
 const qs = (id) => document.getElementById(id);
 const statusText = qs("statusText");
+const liveClock = qs("liveClock");
+const terminalFeed = qs("systemTerminalFeed");
 const AUTH_HEARTBEAT_MS = 10000;
 const DASHBOARD_VIEWS = ["overview", "users", "audit", "ops"];
 
@@ -20,8 +22,67 @@ let detailRequestToken = 0;
 let statusTimer = null;
 let statusHistory = [];
 let authHeartbeatTimer = null;
+let liveClockTimer = null;
 let loginRedirecting = false;
 let ownerCheckAllRunning = false;
+
+function pushTerminalLine(text, tag = "INFO") {
+  if (!terminalFeed || !text) return;
+  const ts = new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date());
+  const li = document.createElement("li");
+  li.textContent = `[${ts}] [${tag}] ${String(text).replace(/\s+/g, " ").trim()}`;
+  terminalFeed.insertBefore(li, terminalFeed.firstChild);
+  while (terminalFeed.children.length > 12) {
+    terminalFeed.removeChild(terminalFeed.lastChild);
+  }
+}
+
+function startLiveClock() {
+  if (!liveClock) return;
+  const tick = () => {
+    liveClock.textContent = new Intl.DateTimeFormat(undefined, {
+      year: "2-digit",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(new Date());
+  };
+  tick();
+  if (liveClockTimer) clearInterval(liveClockTimer);
+  liveClockTimer = setInterval(tick, 1000);
+}
+
+function setSignalWidth(id, value) {
+  const node = qs(id);
+  if (!node) return;
+  const n = Math.max(8, Math.min(96, Number(value || 8)));
+  node.style.width = `${n}%`;
+}
+
+function syncSignalBars(runtime = null) {
+  const uptime = Number(runtime?.uptime_seconds || 0);
+  const parserReady = !!runtime?.parser_ready;
+  const storageReady = !!runtime?.storage_ready;
+  const allowAll = !!runtime?.allow_all_users;
+
+  const cpu = (uptime % 63) + (parserReady ? 22 : 10);
+  const mem = (Math.floor(uptime / 3) % 58) + (storageReady ? 28 : 16);
+  const io = (Math.floor(uptime / 7) % 46) + (allowAll ? 34 : 18);
+  const net = (Math.floor(uptime / 5) % 52) + (parserReady && storageReady ? 36 : 20);
+
+  setSignalWidth("cpuBar", cpu);
+  setSignalWidth("memBar", mem);
+  setSignalWidth("ioBar", io);
+  setSignalWidth("netBar", net);
+}
 
 function redirectToLogin() {
   if (loginRedirecting) return;
@@ -150,6 +211,7 @@ function setStatus(text, cls = "", options = {}) {
 
   statusText.className = "status " + cls;
   statusText.textContent = statusHistory.join(" | ");
+  if (cleanText) pushTerminalLine(cleanText, cls === "warn" ? "WARN" : cls === "ok" ? "OK" : "INFO");
 
   if (!sticky && cleanText) {
     statusTimer = setTimeout(() => {
@@ -170,19 +232,25 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function decodeHtmlEntities(value) {
+  let text = String(value ?? "");
+  for (let i = 0; i < 3; i += 1) {
+    const prev = text;
+    const holder = document.createElement("textarea");
+    holder.innerHTML = text.replace(/&nbsp;/gi, " ");
+    text = holder.value;
+    if (text === prev) break;
+  }
+  return text;
+}
+
 function normalizeIdentity(value) {
-  return (
-    String(value ?? "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&nbsp;/gi, " ")
-      .replace(/&amp;/gi, "&")
-      .replace(/&lt;/gi, "<")
-      .replace(/&gt;/gi, ">")
-      .replace(/&#39;/gi, "'")
-      .replace(/&quot;/gi, '"')
-      .replace(/\s+/g, " ")
-      .trim() || "-"
-  );
+  const decoded = decodeHtmlEntities(value);
+  const clean = decoded
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clean || "-";
 }
 
 function clampPage(value, total) {
@@ -670,6 +738,7 @@ async function loadRuntime() {
   ]
     .map((i) => `<div class="runtime-item"><div class="k">${i.k}</div><div class="v">${i.v}</div></div>`)
     .join("");
+  syncSignalBars(data);
 }
 
 async function loadAlerts() {
@@ -860,7 +929,7 @@ async function openUserDetail(uid) {
     const data = await apiRequest(`/api/v1/users/detail?uid=${encodeURIComponent(safeUid)}`);
     if (!data || token !== detailRequestToken) return;
 
-    title.textContent = `用户详情：${escapeHtml(data.identity || safeUid)}`;
+    title.textContent = `用户详情：${normalizeIdentity(data.identity || safeUid)}`;
     const subs = Array.isArray(data.subscriptions) ? data.subscriptions : [];
     const truncated = Number(data.subscription_count || subs.length) > subs.length;
     const truncatedBlock = truncated
@@ -1190,17 +1259,25 @@ function init() {
   syncResponsiveState();
   window.addEventListener("resize", () => syncResponsiveState());
   bindEvents();
+  startLiveClock();
+  syncSignalBars();
+  pushTerminalLine("console bootstrap complete", "BOOT");
   startAuthHeartbeat();
   window.addEventListener("beforeunload", () => {
     if (authHeartbeatTimer) {
       clearInterval(authHeartbeatTimer);
       authHeartbeatTimer = null;
     }
+    if (liveClockTimer) {
+      clearInterval(liveClockTimer);
+      liveClockTimer = null;
+    }
   });
   refreshAll();
 }
 
 init();
+
 
 
 

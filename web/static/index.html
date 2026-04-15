@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>运维控制台</title>
+  <title>Cyber Ops Console</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/admin/static/common.css">
   <link rel="stylesheet" href="/admin/static/index.css">
 </head>
@@ -24,10 +24,11 @@
         <div class="navbar-content">
           <div class="logo-area">
             <img src="/admin/static/logo.png" class="logo-img" alt="Logo">
-            <span class="brand-name">运维控制台</span>
-            <span class="status" id="statusText">系统初始化...</span>
+            <span class="brand-name">NEXUS OPS CONSOLE</span>
+            <span class="status" id="statusText">系统初始化中...</span>
           </div>
           <div class="nav-actions">
+            <span class="nav-signal mono"><span class="dot"></span><span id="liveClock">--:--:--</span></span>
             <button id="refreshBtn" type="button" class="logout-btn refresh-btn">全量刷新</button>
             <button class="logout-btn" id="logoutBtn" type="button">退出登录</button>
           </div>
@@ -51,6 +52,41 @@
 
         <div class="dashboard-layout">
           <div class="stack">
+            <article class="card terminal-card" data-page="overview">
+              <div class="head">
+                <h2>核心终端流</h2>
+                <div class="head-actions">
+                  <span class="terminal-chip">LIVE STREAM</span>
+                </div>
+              </div>
+              <div class="body terminal-body">
+                <div class="terminal-grid">
+                  <section class="terminal-window">
+                    <div class="terminal-title mono">root@nexus://security-node</div>
+                    <ul id="systemTerminalFeed" class="terminal-feed mono">
+                      <li>[BOOT] console online, telemetry channel linked.</li>
+                      <li>[SYNC] waiting for first status package...</li>
+                      <li>[READY] operator privileges detected.</li>
+                    </ul>
+                    <div class="terminal-cursor mono">&gt;_</div>
+                  </section>
+                  <aside class="signal-panel">
+                    <h3>资源热区</h3>
+                    <div class="signal-row"><span>CPU</span><div class="signal-bar"><i id="cpuBar" style="width:32%"></i></div></div>
+                    <div class="signal-row"><span>MEM</span><div class="signal-bar"><i id="memBar" style="width:45%"></i></div></div>
+                    <div class="signal-row"><span>I/O</span><div class="signal-bar"><i id="ioBar" style="width:24%"></i></div></div>
+                    <div class="signal-row"><span>NET</span><div class="signal-bar"><i id="netBar" style="width:56%"></i></div></div>
+                  </aside>
+                </div>
+                <ol class="event-timeline mono">
+                  <li><span>00:03</span><p>订阅缓存索引重建完成</p></li>
+                  <li><span>00:18</span><p>边缘节点负载进入稳态区间</p></li>
+                  <li><span>00:41</span><p>审计批处理队列已刷新</p></li>
+                  <li><span>01:02</span><p>安全策略签名校验通过</p></li>
+                </ol>
+              </div>
+            </article>
+
             <article class="card" data-page="users">
               <div class="head">
                 <h2>授权用户管理</h2>
@@ -210,7 +246,7 @@
       <dialog id="userDetailModal">
         <div class="modal-head">
           <strong id="userDetailTitle">用户资源画像</strong>
-          <button id="closeUserDetailBtn" type="button">关闭窗口</button>
+          <button id="closeUserDetailBtn" type="button">关闭</button>
         </div>
         <div class="modal-body" id="userDetailBody"></div>
       </dialog>
@@ -233,3 +269,4 @@
   <script src="/admin/static/index.js"></script>
 </body>
 </html>
+

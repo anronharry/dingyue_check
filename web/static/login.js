@@ -19,7 +19,7 @@ function showError(message) {
 function setSubmitting(loading) {
   isSubmitting = !!loading;
   submitBtn.disabled = isSubmitting;
-  submitBtn.textContent = isSubmitting ? "Signing in..." : "Login";
+  submitBtn.textContent = isSubmitting ? "Authenticating..." : "Enter Console";
 }
 
 async function probeSessionAndRedirect() {
