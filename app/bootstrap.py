@@ -7,7 +7,7 @@ from typing import Callable
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, JobQueue, MessageHandler, filters
 
-import config
+from app import config
 from app.constants import APP_FEATURES, APP_STARTUP, APP_TITLE
 
 logger = logging.getLogger(__name__)

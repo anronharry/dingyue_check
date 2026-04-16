@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeDefault, Update
 from telegram.ext import Application
 
-import config
+from app import config
 from app.bootstrap import build_application, log_startup_banner, register_handlers, run_polling
 from app.runtime import build_handlers, create_runtime
 from app.settings import AppSettings

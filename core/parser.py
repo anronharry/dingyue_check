@@ -932,7 +932,7 @@ class SubscriptionParser:
 
     async def _analyze_nodes(self, nodes):
         import asyncio
-        import config
+        from app import config
         from core.geo_service import GeoLocationService
 
         protocols = [node.get("protocol", "unknown") for node in nodes]

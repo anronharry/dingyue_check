@@ -61,7 +61,7 @@ echo "==> syncing dependencies"
 pip install -r requirements.txt
 
 echo "==> compile check"
-python3 -m compileall app core handlers renderers services shared tests web bot_async.py main.py
+python3 -m compileall app core handlers renderers services shared tests web main.py
 
 echo "==> running tests"
 UPDATE_RUN_TESTS="${UPDATE_RUN_TESTS:-true}"

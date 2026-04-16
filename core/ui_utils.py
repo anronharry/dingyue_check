@@ -7,7 +7,7 @@ from colorama import Fore, Style, init
 
 init(autoreset=True)
 
-import config as _cfg
+from app import config as _cfg
 
 from rich.console import Console
 from rich.panel import Panel

@@ -15,7 +15,7 @@ import psutil
 import atexit
 from colorama import Fore, Style
 
-import config as _cfg
+from app import config as _cfg
 
 MIHOMO_DIR = os.path.join(str(_cfg.BASE_DIR), 'bin')
 MIHOMO_EXE = os.path.join(MIHOMO_DIR, 'mihomo.exe')

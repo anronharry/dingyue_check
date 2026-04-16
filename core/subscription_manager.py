@@ -15,7 +15,7 @@ import asyncio
 from typing import Tuple, List
 from colorama import Fore, Style, init
 
-import config as _cfg
+from app import config as _cfg
 from core.subscription_checker import try_decode_b64, PROXY_SCHEMES, is_pseudo_200_response
 from core.converters.ss_converter import SSNodeConverter
 from core.models import ProxyNode, SubFetchResult

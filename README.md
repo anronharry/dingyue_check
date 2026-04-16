@@ -104,7 +104,7 @@ bash update_bot.sh
 4. 停止旧进程（匹配 `python3 main.py`）
 5. `git pull --ff-only` 拉最新代码
 6. 安装依赖：`pip install -r requirements.txt`（失败会中断，不再吞错误）
-7. 编译检查：`python3 -m compileall app core handlers renderers services shared tests web bot_async.py main.py`
+7. 编译检查：`python3 -m compileall app core handlers renderers services shared tests web main.py`
 8. 跑测试：优先 `pytest -q`，若环境未安装 pytest 则自动回退 `unittest discover`
 9. Web 配置预检查与告警：
    - `ENABLE_WEB_ADMIN=true` 但 `APP_RUN_MODE!=unified_async` 会告警
@@ -285,6 +285,8 @@ scripts/     辅助脚本
 ## 12. License
 
 MIT License，见 [LICENSE](LICENSE)。
+
+
 
 
 

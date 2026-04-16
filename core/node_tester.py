@@ -20,7 +20,7 @@ from dataclasses import dataclass
 # from tqdm import tqdm
 from core.converters.ss_converter import SSNodeConverter
 from core.session_logger import get_logger
-import config as _cfg
+from app import config as _cfg
 
 # init(autoreset=True)
 

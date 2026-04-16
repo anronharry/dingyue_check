@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-import config
+from app import config
 from core.parser import SubscriptionParser
 from core.storage_enhanced import SubscriptionStorage
 from core.workspace_manager import WorkspaceManager

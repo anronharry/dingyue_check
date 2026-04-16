@@ -54,7 +54,7 @@ class ResultCollapseTest(unittest.IsolatedAsyncioTestCase):
                 nonlocal scheduled_job
                 scheduled_job = callback
 
-        from bot_async import schedule_result_collapse
+        from app.bot_async import schedule_result_collapse
 
         message = SimpleNamespace(edit_text=_edit_text)
         schedule_result_collapse(

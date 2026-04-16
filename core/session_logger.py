@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 from colorama import Fore, Style, init
-import config as _cfg
+from app import config as _cfg
 
 init(autoreset=True)
 

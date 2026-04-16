@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import os
 
-import config
+from app import config
 from app.runtime import Runtime
 from core.access_control import UserManager
 from core.access_state import AccessStateStore
