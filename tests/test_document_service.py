@@ -7,6 +7,19 @@ from services.document_service import DocumentService
 
 
 class DocumentServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_parse_subscription_urls_requires_unified_service(self):
+        service = DocumentService(
+            get_parser=lambda: None,
+            get_storage=lambda: None,
+            logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+            export_cache_service=None,
+            quick_ping_runner=None,
+            subscription_check_service=None,
+        )
+
+        with self.assertRaises(RuntimeError):
+            await service.parse_subscription_urls(subscription_urls=["https://example.com/sub"], owner_uid=1)
+
     async def test_analyze_node_text_attaches_quick_check_summary(self):
         async def analyze_nodes(nodes):
             return {

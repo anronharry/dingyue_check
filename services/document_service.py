@@ -42,33 +42,12 @@ class DocumentService:
                 self.logger.warning("删除导入临时文件失败: %s", import_file)
 
     async def parse_subscription_urls(self, *, subscription_urls: list[str], owner_uid: int) -> list[dict]:
-        if self.subscription_check_service:
-            return await self.subscription_check_service.parse_subscription_urls(
-                subscription_urls=subscription_urls,
-                owner_uid=owner_uid,
-            )
-
-        store = self.get_storage()
-        store.begin_batch()
-        semaphore = asyncio.Semaphore(20)
-
-        async def parse_one(index: int, url: str) -> dict:
-            async with semaphore:
-                try:
-                    parser_instance = await self.get_parser()
-                    result = await parser_instance.parse(url)
-                    store.add_or_update(url, result, user_id=owner_uid)
-                    if self.export_cache_service:
-                        self.export_cache_service.save_subscription_cache(owner_uid=owner_uid, source=url, result=result)
-                    return {"index": index, "url": url, "data": result, "status": "success"}
-                except Exception as exc:
-                    self.logger.error("订阅解析失败 %s: %s", url, exc)
-                    return {"index": index, "url": url, "error": str(exc), "status": "failed"}
-
-        try:
-            return await asyncio.gather(*[parse_one(index, url) for index, url in enumerate(subscription_urls, 1)])
-        finally:
-            store.end_batch(save=True)
+        if not self.subscription_check_service:
+            raise RuntimeError("subscription_check_service is required for parse_subscription_urls")
+        return await self.subscription_check_service.parse_subscription_urls(
+            subscription_urls=subscription_urls,
+            owner_uid=owner_uid,
+        )
 
     async def analyze_document_nodes(
         self,
@@ -164,7 +143,7 @@ class DocumentService:
         sampled_nodes = testable_nodes[:sample_limit]
         sampled = len(testable_nodes) > sample_limit
         try:
-            alive_count, tested_count, _alive_nodes = await self.quick_ping_runner(
+            alive_count, tested_count, alive_nodes = await self.quick_ping_runner(
                 sampled_nodes,
                 concurrency=20,
                 timeout=1.5,
@@ -180,14 +159,14 @@ class DocumentService:
             "skipped": skipped_count + max(0, len(testable_nodes) - tested_count),
             "sampled": sampled,
         }
-        if _alive_nodes:
+        if alive_nodes:
             result["quick_check"]["latency_top"] = [
                 {
                     "name": str(item.get("name", "Unknown")),
                     "latency": float(item.get("latency", 0.0)),
                     "type": str(item.get("type", "unknown")).lower(),
                 }
-                for item in _alive_nodes[:5]
+                for item in alive_nodes[:5]
             ]
         if skipped_protocols:
             result["quick_check"]["skipped_protocols"] = dict(skipped_protocols)
