@@ -11,7 +11,7 @@ def make_button_callback(*, is_authorized, no_permission_alert, subscription_cal
             await query.answer("数据异常", show_alert=True)
             return
         await query.answer()
-        if action not in {"audit", "audit_detail", "recent", "recent_detail", "panel"} and not is_authorized(update):
+        if action not in {"audit", "audit_detail", "recent", "recent_detail", "panel", "mute_alerts", "unmute_alerts"} and not is_authorized(update):
             await query.answer(no_permission_alert, show_alert=True)
             return
         handled = await subscription_callback_handler(update, context, action, hash_key)

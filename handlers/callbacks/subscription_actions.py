@@ -1,9 +1,7 @@
 """Subscription callback actions extracted from the legacy button handler."""
 from __future__ import annotations
 
-import hashlib
 import html
-import time
 
 from handlers.callbacks.audit_actions import make_audit_callback_handler
 from handlers.callbacks.cache_actions import make_cache_callback_handler
@@ -39,6 +37,7 @@ def make_subscription_callback_handler(
     user_manager=None,
     backup_service=None,
     subscription_check_service=None,
+    alert_preference_service=None,
 ):
     del format_subscription_compact, schedule_result_collapse
 
@@ -73,15 +72,10 @@ def make_subscription_callback_handler(
         return msg
 
     def _resolve_url(store, hash_key: str) -> str | None:
+        del store
         cleanup_url_cache()
         url = url_cache.get(hash_key, {}).get("url")
-        if url:
-            return url
-        for candidate in store.get_all().keys():
-            if hashlib.md5(candidate.encode("utf-8")).hexdigest()[:16] == hash_key:
-                url_cache[hash_key] = {"url": candidate, "ts": time.time()}
-                return candidate
-        return None
+        return url
 
     async def _handle_tag_apply(query, context, *, store, operator_uid: int, owner_mode: bool, hash_key: str) -> bool:
         del context
@@ -254,6 +248,38 @@ def make_subscription_callback_handler(
         context.user_data["pending_tag_url"] = url
         return True
 
+    async def _handle_mute_alerts(query, _context, *, operator_uid: int) -> bool:
+        if not alert_preference_service:
+            await query.answer("当前版本不支持该操作", show_alert=True)
+            return True
+        alert_preference_service.mute_user(operator_uid)
+        await query.answer("已关闭预警提醒")
+        try:
+            await query.edit_message_reply_markup(
+                reply_markup=inline_keyboard_markup(
+                    [[inline_keyboard_button("🔔 恢复预警提醒", callback_data="unmute_alerts:on")]]
+                )
+            )
+        except Exception:
+            pass
+        return True
+
+    async def _handle_unmute_alerts(query, _context, *, operator_uid: int) -> bool:
+        if not alert_preference_service:
+            await query.answer("当前版本不支持该操作", show_alert=True)
+            return True
+        alert_preference_service.unmute_user(operator_uid)
+        await query.answer("已恢复预警提醒")
+        try:
+            await query.edit_message_reply_markup(
+                reply_markup=inline_keyboard_markup(
+                    [[inline_keyboard_button("🔕 关闭预警提醒", callback_data="mute_alerts:off")]]
+                )
+            )
+        except Exception:
+            pass
+        return True
+
     async def handle_callback(update, context, action: str, hash_key: str) -> bool:
         query = update.callback_query
         store = get_storage()
@@ -295,6 +321,8 @@ def make_subscription_callback_handler(
             return True
 
         action_handlers = {
+            "mute_alerts": lambda: _handle_mute_alerts(query, context, operator_uid=operator_uid),
+            "unmute_alerts": lambda: _handle_unmute_alerts(query, context, operator_uid=operator_uid),
             "more_ops": lambda: _handle_more_ops(query, context, url=url, owner_mode=owner_mode),
             "basic_ops": lambda: _handle_basic_ops(query, context, url=url, owner_mode=owner_mode),
             "recheck": lambda: _handle_recheck(update, query, context, store=store, url=url, owner_mode=owner_mode),

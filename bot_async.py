@@ -59,6 +59,7 @@ async def _on_shutdown(application: Application):
     except Exception as exc:
         logger.warning("关闭时刷新订阅存储失败：%s", exc)
     runtime.user_profile_service.flush()
+    runtime.alert_preference_service.flush()
     logger.info("正在关闭共享 HTTP 会话池...")
     if runtime.parser and getattr(runtime.parser, "session", None):
         await runtime.parser.session.close()
@@ -94,7 +95,13 @@ async def post_init(application: Application):
         if config.ENABLE_MONITOR:
             from features import monitor
 
-            monitor.configure_monitor(application, runtime.get_storage(), runtime.get_parser, runtime.ws_manager)
+            monitor.configure_monitor(
+                application,
+                runtime.get_storage(),
+                runtime.get_parser,
+                runtime.ws_manager,
+                runtime.alert_preference_service,
+            )
         application.bot_data["build_usage_audit_keyboard"] = build_usage_audit_keyboard
         application.bot_data["build_recent_activity_keyboard"] = build_recent_activity_keyboard
         application.bot_data["build_owner_panel_keyboard"] = build_owner_panel_keyboard

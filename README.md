@@ -13,6 +13,11 @@
 - 支持 `/backup` 与 `/restore` 进行状态迁移
 - 内置测试用例，支持 `pytest`
 
+### 1.1 预警与提醒策略（新增）
+
+- 自动预警消息支持用户级提醒偏好：可在消息内点击 `🔕 关闭预警提醒`，后续不再推送同类预警。
+- 关闭后可通过 `🔔 恢复预警提醒`重新开启，状态会持久化保存，重启后仍生效。
+- 该策略用于降低重复告警打扰，避免用户因高频预警而忽略真正重要的风险信号。
 ## 2. 环境要求
 
 - Linux 云服务器（推荐 Ubuntu 22.04+）
@@ -259,24 +264,27 @@ scripts/     辅助脚本
 - 贡献指南：[CONTRIBUTING.md](CONTRIBUTING.md)
 - 安全策略：[SECURITY.md](SECURITY.md)
 
-## 11. Recent UX & Admin Updates
+## 11. 最近更新（UX 与管理能力）
 
-- Web admin is now available with a lightweight `aiohttp` server and native static page.
-- Web admin now includes a dedicated login page (`/admin/login`) and cookie session auth.
-- New startup mode switch:
-  - `APP_RUN_MODE=legacy_polling` (default, old behavior)
-  - `APP_RUN_MODE=unified_async` (Bot + Web in one event loop)
-- Web admin API supports cookie session, and can optionally accept `X-Admin-Token` when `WEB_ADMIN_ALLOW_HEADER_TOKEN=true`:
+- 已提供轻量级 `aiohttp` Web 管理后台，并采用原生静态页面渲染。
+- Web 后台已支持独立登录页（`/admin/login`）与基于 Cookie 的会话鉴权。
+- 新增启动模式切换：
+  - `APP_RUN_MODE=legacy_polling`：默认模式，保持历史行为。
+  - `APP_RUN_MODE=unified_async`：Bot 与 Web 在同一事件循环运行。
+- Web 管理 API 支持 Cookie 会话；当 `WEB_ADMIN_ALLOW_HEADER_TOKEN=true` 时可选支持 `X-Admin-Token`：
   - `/api/v1/system/overview`
   - `/api/v1/users/recent`
   - `/api/v1/exports/recent`
   - `/api/v1/audit/summary`
   - `/api/v1/subscriptions/global`
-- Owner read-style commands are soft-deprecated in Telegram and now return a Web migration notice:
-  - `/ownerpanel`, `/usageaudit`, `/recentusers`, `/recentexports`, `/globallist`
-- Migration notice URL is controlled by `WEB_ADMIN_PUBLIC_URL`.
-
+- Telegram 侧 Owner 查询类命令已软迁移到 Web，当前返回迁移提示：
+  - `/ownerpanel`、`/usageaudit`、`/recentusers`、`/recentexports`、`/globallist`
+- 迁移提示访问地址由 `WEB_ADMIN_PUBLIC_URL` 控制。
+- 回调路由安全加固：回调键由 URL 派生短哈希改为随机短期令牌，降低碰撞导致误操作的风险。
+- 预警提醒策略增强：支持用户级 `关闭提醒 / 恢复提醒`，并持久化保存偏好状态。
 ## 12. License
 
 MIT License，见 [LICENSE](LICENSE)。
+
+
 

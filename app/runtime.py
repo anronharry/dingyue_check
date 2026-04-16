@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import os
+import secrets
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -53,6 +53,7 @@ from renderers.formatters import format_node_analysis_compact, format_subscripti
 from renderers.telegram_keyboards import build_owner_panel_keyboard, build_recent_activity_keyboard, build_subscription_keyboard, build_usage_audit_keyboard
 from services.access_service import AccessService
 from services.admin_service import AdminService
+from services.alert_preference_service import AlertPreferenceService
 from services.backup_service import BackupService
 from services.conversion_service import ConversionService
 from services.document_service import DocumentService
@@ -74,6 +75,7 @@ class Runtime:
     access_state_store: AccessStateStore
     usage_audit_service: UsageAuditService
     user_profile_service: UserProfileService
+    alert_preference_service: AlertPreferenceService
     export_cache_service: ExportCacheService
     backup_service: BackupService
     user_manager: UserManager
@@ -130,10 +132,12 @@ class Runtime:
         )
 
     def get_short_callback_data(self, action: str, url: str) -> str:
-        hash_key = hashlib.md5(url.encode("utf-8")).hexdigest()[:16]
-        self.url_cache[hash_key] = {"url": url, "ts": time.time()}
-        self.url_cache.move_to_end(hash_key)
-        return f"{action}:{hash_key}"
+        token = secrets.token_hex(8)
+        while token in self.url_cache:
+            token = secrets.token_hex(8)
+        self.url_cache[token] = {"url": url, "ts": time.time()}
+        self.url_cache.move_to_end(token)
+        return f"{action}:{token}"
 
     def cleanup_url_cache(self) -> None:
         now = time.time()
@@ -147,6 +151,7 @@ class Runtime:
         def _cleanup_all():
             self.cleanup_url_cache()
             self.user_profile_service.flush()
+            self.alert_preference_service.flush()
             self.export_cache_service.cleanup_expired()
 
         await run_cache_cleanup(context, _cleanup_all)
@@ -233,6 +238,7 @@ def create_runtime(*, logger: logging.Logger, proxy_port: int, url_cache_max_siz
     access_state_store = AccessStateStore(os.path.join("data", "db", "access_state.json"))
     usage_audit_service = UsageAuditService(os.path.join("data", "logs", "usage_audit.jsonl"))
     user_profile_service = UserProfileService(os.path.join("data", "db", "user_profiles.json"))
+    alert_preference_service = AlertPreferenceService(os.path.join("data", "db", "alert_preferences.json"))
     export_cache_service = ExportCacheService(
         index_path=os.path.join("data", "db", "export_cache_index.json"),
         cache_dir=os.path.join("data", "cache_exports"),
@@ -250,6 +256,7 @@ def create_runtime(*, logger: logging.Logger, proxy_port: int, url_cache_max_siz
         access_state_store=access_state_store,
         usage_audit_service=usage_audit_service,
         user_profile_service=user_profile_service,
+        alert_preference_service=alert_preference_service,
         export_cache_service=export_cache_service,
         backup_service=backup_service,
         user_manager=user_manager,
@@ -440,6 +447,7 @@ def build_handlers(runtime: Runtime, *, post_init):
         user_manager=runtime.user_manager,
         backup_service=runtime.backup_service,
         subscription_check_service=runtime.subscription_check_service,
+        alert_preference_service=runtime.alert_preference_service,
     )
     handlers["button_callback"] = make_button_callback(is_authorized=runtime.is_authorized, no_permission_alert=runtime.access_service.get_no_permission_alert(), subscription_callback_handler=subscription_callback_handler)
 

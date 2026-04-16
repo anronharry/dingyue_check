@@ -1,10 +1,5 @@
-"""
-后台定时巡检与预警模块。
-
-负责定期检测订阅状态，并向对应订阅 owner 推送预警。
-"""
+"""后台定时巡检与预警模块。"""
 from __future__ import annotations
-
 
 import logging
 from collections import defaultdict
@@ -12,6 +7,7 @@ from datetime import datetime
 from typing import Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 
 logger = logging.getLogger(__name__)
@@ -24,6 +20,7 @@ async def check_subscriptions_job(
     storage,
     get_parser_fn: Callable,
     ws_manager=None,
+    alert_preference_service=None,
 ):
     """定时检查所有订阅，并按 owner 分组发送预警。"""
     from utils.utils import format_traffic
@@ -82,17 +79,25 @@ async def check_subscriptions_job(
             logger.error("定时巡检失败 %s: %s", url, exc)
 
     total_alerts = sum(len(items) for items in alerts_by_user.values())
+    mute_keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🔕 关闭预警提醒", callback_data="mute_alerts:off")]]
+    )
+    pushed_users = 0
     for user_id, messages in alerts_by_user.items():
+        if alert_preference_service and alert_preference_service.is_muted(user_id):
+            continue
         try:
             await app.bot.send_message(
                 chat_id=user_id,
                 text="\n\n".join(messages),
                 parse_mode="HTML",
+                reply_markup=mute_keyboard,
             )
+            pushed_users += 1
         except Exception as exc:
             logger.error("推送预警失败 user_id=%s: %s", user_id, exc)
 
-    logger.info("巡检完成，共发现 %s 条预警，涉及 %s 个用户。", total_alerts, len(alerts_by_user))
+    logger.info("巡检完成，共发现 %s 条预警，涉及 %s 个用户，成功推送 %s 个用户。", total_alerts, len(alerts_by_user), pushed_users)
 
 
 def configure_monitor(
@@ -100,6 +105,7 @@ def configure_monitor(
     storage,
     get_parser_fn: Callable,
     ws_manager=None,
+    alert_preference_service=None,
 ):
     """向调度器注册巡检任务，不覆盖 Application.post_init。"""
     scheduler.add_job(
@@ -107,7 +113,7 @@ def configure_monitor(
         "cron",
         hour="12,20",
         minute=0,
-        args=[app, storage, get_parser_fn, ws_manager],
+        args=[app, storage, get_parser_fn, ws_manager, alert_preference_service],
         id="sub_monitor",
         replace_existing=True,
     )

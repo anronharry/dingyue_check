@@ -22,13 +22,21 @@ class _FakeBot:
     def __init__(self):
         self.sent = []
 
-    async def send_message(self, chat_id, text, parse_mode=None):
-        self.sent.append((chat_id, text, parse_mode))
+    async def send_message(self, chat_id, text, parse_mode=None, reply_markup=None):
+        self.sent.append((chat_id, text, parse_mode, reply_markup))
 
 
 class _FakeApp:
     def __init__(self):
         self.bot = _FakeBot()
+
+
+class _FakeAlertPreferenceService:
+    def __init__(self, muted_users=None):
+        self.muted_users = set(muted_users or [])
+
+    def is_muted(self, user_id):
+        return user_id in self.muted_users
 
 
 class MonitorTest(unittest.IsolatedAsyncioTestCase):
@@ -74,6 +82,34 @@ class MonitorTest(unittest.IsolatedAsyncioTestCase):
         sent_to = {item[0] for item in app.bot.sent}
         self.assertEqual(sent_to, {1001, 1002})
         self.assertEqual(len(app.bot.sent), 2)
+        self.assertTrue(all(item[3] is not None for item in app.bot.sent))
+
+    async def test_check_subscriptions_job_skips_muted_users(self):
+        storage = _FakeStorage(
+            {
+                "https://example.com/sub1": {"owner_uid": 1001},
+                "https://example.com/sub2": {"owner_uid": 1002},
+            }
+        )
+
+        class _Parser:
+            async def parse(self, url):
+                return {
+                    "name": url.rsplit("/", 1)[-1],
+                    "total": 10 * 1024 * 1024 * 1024,
+                    "remaining": 1 * 1024 * 1024 * 1024,
+                    "expire_time": None,
+                }
+
+        async def get_parser():
+            return _Parser()
+
+        app = _FakeApp()
+        prefs = _FakeAlertPreferenceService(muted_users={1002})
+        await monitor.check_subscriptions_job(app, storage, get_parser, None, prefs)
+
+        sent_to = {item[0] for item in app.bot.sent}
+        self.assertEqual(sent_to, {1001})
 
 
 if __name__ == "__main__":

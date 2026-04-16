@@ -823,3 +823,54 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[0][0][0]["server"], "1.1.1.1")
         self.assertEqual(calls[0][0][0]["port"], 443)
 
+    async def test_mute_alerts_callback_persists_preference(self):
+        class _Prefs:
+            def __init__(self):
+                self.muted = set()
+
+            def mute_user(self, user_id):
+                self.muted.add(user_id)
+
+            def unmute_user(self, user_id):
+                self.muted.discard(user_id)
+
+        prefs = _Prefs()
+        query = _FakeQuery()
+        handler = make_subscription_callback_handler(
+            get_storage=lambda: SimpleNamespace(get_all=lambda: {}, get_by_user=lambda uid: {}),
+            is_owner=lambda update: False,
+            get_parser=None,
+            format_subscription_info=None,
+            make_sub_keyboard=None,
+            cleanup_url_cache=lambda: None,
+            url_cache={},
+            tag_forbidden_msg="forbidden",
+            tag_exists_alert="exists",
+            confirm_delete_label="confirm",
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_markup=lambda rows: rows,
+            get_short_callback_data=lambda action, url: f"{action}:{url}",
+            latency_tester=None,
+            admin_service=_admin_ns(),
+            export_cache_service=None,
+            usage_audit_service=SimpleNamespace(log_check=lambda **kwargs: None),
+            build_usage_audit_keyboard=lambda **kwargs: kwargs,
+            build_recent_activity_keyboard=lambda **kwargs: kwargs,
+            build_owner_panel_keyboard=lambda **kwargs: kwargs,
+            format_subscription_compact=lambda *args, **kwargs: "",
+            schedule_result_collapse=lambda **kwargs: None,
+            logger=SimpleNamespace(error=lambda *a, **k: None, warning=lambda *a, **k: None),
+            alert_preference_service=prefs,
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=321))
+        context = SimpleNamespace(user_data={})
+
+        handled = await handler(update, context, "mute_alerts", "off")
+
+        self.assertTrue(handled)
+        self.assertIn(321, prefs.muted)
+
+        handled = await handler(update, context, "unmute_alerts", "on")
+        self.assertTrue(handled)
+        self.assertNotIn(321, prefs.muted)
+
