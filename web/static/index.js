@@ -3,6 +3,10 @@ const statusText = qs("statusText");
 const liveClock = qs("liveClock");
 const terminalFeed = qs("systemTerminalFeed");
 const AUTH_HEARTBEAT_MS = 10000;
+const AUTH_HEARTBEAT_MOBILE_MS = 20000;
+const MOBILE_MEDIA_QUERY = "(max-width: 700px)";
+const COARSE_POINTER_QUERY = "(pointer: coarse)";
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 const DASHBOARD_VIEWS = ["overview", "users", "audit", "ops"];
 
 const state = {
@@ -25,6 +29,28 @@ let authHeartbeatTimer = null;
 let liveClockTimer = null;
 let loginRedirecting = false;
 let ownerCheckAllRunning = false;
+let heartbeatInFlight = false;
+let perfMode = "full";
+const loadedViews = new Set();
+const viewLoadPromises = new Map();
+let fullRefreshController = null;
+const viewRefreshControllers = new Map();
+
+function isMobileLikeDevice() {
+  return window.matchMedia(MOBILE_MEDIA_QUERY).matches || window.matchMedia(COARSE_POINTER_QUERY).matches;
+}
+
+function detectPerfMode() {
+  if (window.matchMedia(REDUCED_MOTION_QUERY).matches) return "lite";
+  if (isMobileLikeDevice()) return "lite";
+  return "full";
+}
+
+function applyPerfMode(mode) {
+  const safeMode = mode === "lite" ? "lite" : "full";
+  perfMode = safeMode;
+  document.body.dataset.perfMode = safeMode;
+}
 
 function ensureCyberBackdropLayers(host) {
   const classNames = ["drift-grid-layer", "matrix-ghost-layer", "scan-beam-layer"];
@@ -38,6 +64,7 @@ function ensureCyberBackdropLayers(host) {
 }
 
 function initMatrixRain() {
+  if (perfMode !== "full") return;
   const host = document.querySelector(".page-container");
   if (!(host instanceof HTMLElement)) return;
   ensureCyberBackdropLayers(host);
@@ -50,8 +77,8 @@ function initMatrixRain() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const isMobile = window.matchMedia("(max-width: 700px)").matches;
+  const prefersReduced = window.matchMedia(REDUCED_MOTION_QUERY).matches;
+  const isMobile = window.matchMedia(MOBILE_MEDIA_QUERY).matches;
   const fontSize = isMobile ? 14 : 16;
   const step = isMobile ? 18 : 20;
   const frameInterval = prefersReduced ? 140 : (isMobile ? 70 : 45);
@@ -124,6 +151,7 @@ function pushTerminalLine(text, tag = "INFO") {
 
 function startLiveClock() {
   if (!liveClock) return;
+  const tickMs = perfMode === "lite" ? 5000 : 1000;
   const tick = () => {
     liveClock.textContent = new Intl.DateTimeFormat(undefined, {
       year: "2-digit",
@@ -137,7 +165,7 @@ function startLiveClock() {
   };
   tick();
   if (liveClockTimer) clearInterval(liveClockTimer);
-  liveClockTimer = setInterval(tick, 1000);
+  liveClockTimer = setInterval(tick, tickMs);
 }
 
 function setSignalWidth(id, value) {
@@ -268,6 +296,9 @@ async function apiRequest(path, options = {}) {
     }
     return data.data;
   } catch (e) {
+    if (e && e.name === "AbortError") {
+      throw e;
+    }
     setStatus(e.message || String(e), "warn", { autoHideMs: 4500, merge: true });
     throw e;
   }
@@ -676,6 +707,10 @@ function applyView(view, options = {}) {
     layout.classList.toggle("single-column", forceSingleColumn);
     layout.classList.toggle("single-stack", visibleStackCount <= 1);
   }
+
+  if (options.loadData !== false) {
+    void refreshByView(safeView);
+  }
 }
 
 function updateAuditFilterMobileLabel() {
@@ -721,12 +756,12 @@ function skeletonLines(count = 3) {
   return Array.from({ length: count }).map(() => '<div class="skeleton-line"></div>').join("");
 }
 
-async function loadOverview() {
+async function loadOverview(requestOptions = {}) {
   ["mTotalSubs", "mUsers", "mActive", "mExports"].forEach((id) => {
     const el = qs(id);
     if (el) el.textContent = "...";
   });
-  const data = await apiRequest("/api/v1/system/overview");
+  const data = await apiRequest("/api/v1/system/overview", requestOptions);
   if (!data) return;
   qs("mTotalSubs").textContent = data.total_subs ?? "-";
   qs("mUsers").textContent = data.authorized_users ?? "-";
@@ -735,6 +770,7 @@ async function loadOverview() {
 }
 
 async function loadAuthorizedUsers(page = 1, options = {}) {
+  const requestOptions = options.requestOptions || {};
   const usersBody = qs("authorizedUsersBody");
   const usersCards = qs("authorizedUsersCards");
   if (usersBody) {
@@ -744,7 +780,7 @@ async function loadAuthorizedUsers(page = 1, options = {}) {
     usersCards.innerHTML = '<div class="mobile-empty-card"><div class="skeleton-line"></div></div>';
   }
   const token = ++usersRequestToken;
-  const data = await apiRequest(`/api/v1/users/authorized?page=${page}&limit=${state.limit}`);
+  const data = await apiRequest(`/api/v1/users/authorized?page=${page}&limit=${state.limit}`, requestOptions);
   if (!data || token !== usersRequestToken) return;
 
   state.usersPage = clampPage(data.page || page, data.total_pages || 1);
@@ -765,6 +801,7 @@ async function loadAuthorizedUsers(page = 1, options = {}) {
 
 
 async function loadRecentChecks(page = 1, options = {}) {
+  const requestOptions = options.requestOptions || {};
   const checksBody = qs("recentChecksBody");
   const checksCards = qs("recentChecksCards");
   if (checksBody) {
@@ -779,7 +816,7 @@ async function loadRecentChecks(page = 1, options = {}) {
 
   const token = ++auditRequestToken;
   const params = buildAuditParams(snapshot, page);
-  const data = await apiRequest(`/api/v1/audit/recent-checks?${params.toString()}`);
+  const data = await apiRequest(`/api/v1/audit/recent-checks?${params.toString()}`, requestOptions);
   if (!data || token !== auditRequestToken) return;
 
   const rows = Array.isArray(data.rows) ? data.rows : [];
@@ -804,9 +841,9 @@ function fmtUptime(seconds) {
   return d > 0 ? `${d}天 ${h}小时 ${m}分` : `${h}小时 ${m}分`;
 }
 
-async function loadRuntime() {
+async function loadRuntime(requestOptions = {}) {
   qs("runtimeBody").innerHTML = '<div class="skeleton-block"></div><div class="skeleton-block"></div><div class="skeleton-block"></div><div class="skeleton-block"></div>';
-  const data = await apiRequest("/api/v1/system/runtime");
+  const data = await apiRequest("/api/v1/system/runtime", requestOptions);
   if (!data) return;
   qs("runtimeBody").innerHTML = [
     { k: "运行模式", v: data.run_mode },
@@ -821,9 +858,9 @@ async function loadRuntime() {
   syncSignalBars(data);
 }
 
-async function loadAlerts() {
+async function loadAlerts(requestOptions = {}) {
   qs("alertsBody").innerHTML = `<div class="skeleton-block">${skeletonLines(2)}</div><div class="skeleton-block">${skeletonLines(2)}</div>`;
-  const data = await apiRequest("/api/v1/audit/alerts");
+  const data = await apiRequest("/api/v1/audit/alerts", requestOptions);
   if (!data) return;
   const el = qs("alertsBody");
   const alerts = Array.isArray(data.alerts) ? data.alerts : [];
@@ -850,10 +887,10 @@ async function loadAlerts() {
       .join("");
 }
 
-async function loadAuditSummary() {
+async function loadAuditSummary(requestOptions = {}) {
   qs("auditSummaryBody").innerHTML = '<div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div>';
   const mode = qs("auditMode")?.value || "others";
-  const data = await apiRequest(`/api/v1/audit/summary?mode=${encodeURIComponent(mode)}`);
+  const data = await apiRequest(`/api/v1/audit/summary?mode=${encodeURIComponent(mode)}`, requestOptions);
   if (!data) return;
   qs("auditSummaryBody").innerHTML = [
     { l: "范围", v: data.title },
@@ -865,10 +902,11 @@ async function loadAuditSummary() {
     .join("");
 }
 
-async function loadRecentExports(page = 1) {
+async function loadRecentExports(page = 1, options = {}) {
+  const requestOptions = options.requestOptions || {};
   qs("recentExportsBody").innerHTML = `<div class="skeleton-block">${skeletonLines(2)}</div><div class="skeleton-block">${skeletonLines(2)}</div>`;
   const token = ++exportsRequestToken;
-  const data = await apiRequest(`/api/v1/exports/recent?scope=others&limit=${state.exportsLimit}&page=${page}`);
+  const data = await apiRequest(`/api/v1/exports/recent?scope=others&limit=${state.exportsLimit}&page=${page}`, requestOptions);
   if (!data || token !== exportsRequestToken) return;
 
   const rows = Array.isArray(data.rows) ? data.rows : [];
@@ -1065,15 +1103,20 @@ async function uploadOwnerFile(path, file) {
 
 function startAuthHeartbeat() {
   if (authHeartbeatTimer) clearInterval(authHeartbeatTimer);
+  const heartbeatMs = perfMode === "lite" ? AUTH_HEARTBEAT_MOBILE_MS : AUTH_HEARTBEAT_MS;
   authHeartbeatTimer = setInterval(async () => {
+    if (document.visibilityState !== "visible" || heartbeatInFlight) return;
+    heartbeatInFlight = true;
     try {
       const probeUrl = `/healthz?probe_ts=${Date.now()}`;
       const resp = await authFetch(probeUrl, { method: "GET", cache: "no-store" });
       if (!resp) return;
     } catch (_) {
       // Ignore transient network errors and keep heartbeat alive.
+    } finally {
+      heartbeatInFlight = false;
     }
-  }, AUTH_HEARTBEAT_MS);
+  }, heartbeatMs);
 }
 
 async function runOwnerImport(file) {
@@ -1114,24 +1157,104 @@ async function runOwnerCheckAll() {
   }
 }
 
-async function refreshAll() {
-  setStatus("刷新中...", "", { sticky: true });
-  try {
-    await Promise.all([
-      loadOverview(),
-      loadRuntime(),
-      loadAuthorizedUsers(state.usersPage || 1),
-      loadRecentChecks(state.auditPage || 1, { syncUrl: false }),
-      loadAlerts(),
-      loadAuditSummary(),
-      loadRecentExports(state.exportsPage || 1),
-    ]);
-    setStatus("已同步", "ok");
-  } catch (_) {
-    // handled in apiRequest
-  }
+function resetViewRefreshControllers() {
+  viewRefreshControllers.forEach((controller) => controller.abort());
+  viewRefreshControllers.clear();
 }
 
+function nextViewRefreshSignal(view) {
+  const prev = viewRefreshControllers.get(view);
+  if (prev) prev.abort();
+  const controller = new AbortController();
+  viewRefreshControllers.set(view, controller);
+  return { signal: controller.signal, controller };
+}
+
+function nextFullRefreshSignal() {
+  if (fullRefreshController) fullRefreshController.abort();
+  fullRefreshController = new AbortController();
+  return { signal: fullRefreshController.signal, controller: fullRefreshController };
+}
+
+function getViewLoaders(view, requestOptions = {}) {
+  const safeView = resolveView(view);
+  if (safeView === "users") {
+    return [() => loadAuthorizedUsers(state.usersPage || 1, { requestOptions })];
+  }
+  if (safeView === "audit") {
+    return [
+      () => loadRecentChecks(state.auditPage || 1, { syncUrl: false, requestOptions }),
+      () => loadRecentExports(state.exportsPage || 1, { requestOptions }),
+      () => loadAuditSummary(requestOptions),
+    ];
+  }
+  if (safeView === "ops") {
+    return [() => loadAuthorizedUsers(state.usersPage || 1, { requestOptions }), () => loadRuntime(requestOptions)];
+  }
+  return [() => loadOverview(requestOptions), () => loadRuntime(requestOptions), () => loadAlerts(requestOptions), () => loadAuditSummary(requestOptions)];
+}
+
+async function refreshByView(view, options = {}) {
+  const safeView = resolveView(view);
+  const force = !!options.force;
+  if (!force && loadedViews.has(safeView)) return;
+  if (!force && viewLoadPromises.has(safeView)) {
+    await viewLoadPromises.get(safeView);
+    return;
+  }
+
+  const refreshContext = nextViewRefreshSignal(safeView);
+  const run = (async () => {
+    if (options.showStatus !== false) {
+      setStatus("刷新中...", "", { sticky: true });
+    }
+    try {
+      const requestOptions = { signal: refreshContext.signal };
+      await Promise.all(getViewLoaders(safeView, requestOptions).map((loader) => loader()));
+      loadedViews.add(safeView);
+      if (options.showStatus !== false) {
+        setStatus("已同步", "ok");
+      }
+    } catch (e) {
+      if (!(e && e.name === "AbortError")) {
+        // handled in apiRequest
+      }
+    } finally {
+      const latest = viewRefreshControllers.get(safeView);
+      if (latest === refreshContext.controller) {
+        viewRefreshControllers.delete(safeView);
+      }
+      viewLoadPromises.delete(safeView);
+    }
+  })();
+
+  viewLoadPromises.set(safeView, run);
+  await run;
+}
+
+async function refreshAll() {
+  resetViewRefreshControllers();
+  loadedViews.clear();
+  setStatus("刷新中...", "", { sticky: true });
+  const refreshContext = nextFullRefreshSignal();
+  try {
+    await Promise.all([
+      loadOverview({ signal: refreshContext.signal }),
+      loadRuntime({ signal: refreshContext.signal }),
+      loadAuthorizedUsers(state.usersPage || 1, { requestOptions: { signal: refreshContext.signal } }),
+      loadRecentChecks(state.auditPage || 1, { syncUrl: false, requestOptions: { signal: refreshContext.signal } }),
+      loadAlerts({ signal: refreshContext.signal }),
+      loadAuditSummary({ signal: refreshContext.signal }),
+      loadRecentExports(state.exportsPage || 1, { requestOptions: { signal: refreshContext.signal } }),
+    ]);
+    DASHBOARD_VIEWS.forEach((view) => loadedViews.add(view));
+    setStatus("已同步", "ok");
+  } catch (e) {
+    if (!(e && e.name === "AbortError")) {
+      // handled in apiRequest
+    }
+  }
+}
 function bindEvents() {
   qs("refreshBtn").onclick = refreshAll;
   qs("logoutBtn").onclick = () => apiRequest("/admin/logout", { method: "POST" }).then(() => (window.location.href = "/admin/login"));
@@ -1330,11 +1453,12 @@ function bindEvents() {
 }
 
 function init() {
+  applyPerfMode(detectPerfMode());
   const restored = readAuditStateFromUrl();
   state.auditSnapshot = restored.snapshot;
   state.auditPage = restored.page;
   applyAuditFilters(restored.snapshot);
-  applyView(readViewFromHash(), { syncHash: false });
+  applyView(readViewFromHash(), { syncHash: false, loadData: false });
   initMatrixRain();
   window.addEventListener("hashchange", () => applyView(readViewFromHash(), { syncHash: false }));
   syncResponsiveState();
@@ -1345,6 +1469,11 @@ function init() {
   pushTerminalLine("console bootstrap complete", "BOOT");
   startAuthHeartbeat();
   window.addEventListener("beforeunload", () => {
+    if (fullRefreshController) {
+      fullRefreshController.abort();
+      fullRefreshController = null;
+    }
+    resetViewRefreshControllers();
     if (authHeartbeatTimer) {
       clearInterval(authHeartbeatTimer);
       authHeartbeatTimer = null;
@@ -1354,10 +1483,14 @@ function init() {
       liveClockTimer = null;
     }
   });
-  refreshAll();
+  refreshByView(state.view, { force: true, showStatus: true });
 }
 
 init();
+
+
+
+
 
 
 

@@ -2,12 +2,18 @@
 from __future__ import annotations
 
 import os
+import threading
 from datetime import datetime, timedelta
+from time import monotonic
 
 from core.models import BatchCheckResult, SubscriptionEntity
 
 
 EXPORT_AUDIT_PREFIX = "导出缓存:"
+
+
+AUDIT_RECORDS_CACHE_TTL_SECONDS = 3.0
+DASHBOARD_SUMMARY_CACHE_TTL_SECONDS = 5.0
 
 
 class AdminService:
@@ -31,6 +37,25 @@ class AdminService:
         self.usage_audit_service = usage_audit_service
         self.user_profile_service = user_profile_service
         self.export_cache_service = export_cache_service
+        self._cache_lock = threading.Lock()
+        self._audit_cache: dict[str, object] = {"ts": 0.0, "limit": 0, "records": []}
+        self._summary_cache: dict[str, tuple[float, dict]] = {}
+
+    def _cache_get(self, key: str, ttl_seconds: float) -> dict | None:
+        now = monotonic()
+        with self._cache_lock:
+            item = self._summary_cache.get(key)
+        if not item:
+            return None
+        ts, payload = item
+        if now - ts > ttl_seconds:
+            return None
+        return payload
+
+    def _cache_set(self, key: str, payload: dict) -> dict:
+        with self._cache_lock:
+            self._summary_cache[key] = (monotonic(), payload)
+        return payload
 
     @staticmethod
     def _parse_dt(value: str | None) -> datetime | None:
@@ -93,7 +118,18 @@ class AdminService:
         return {"total": total, "expired": 0, "active": total, "total_remaining": 0}
 
     def _get_audit_records(self, *, limit: int = 1000) -> list[dict]:
-        return list(reversed(self.usage_audit_service.get_recent_records(limit=limit)))
+        safe_limit = max(1, int(limit or 1))
+        now = monotonic()
+        with self._cache_lock:
+            cached_ts = float(self._audit_cache.get("ts", 0.0) or 0.0)
+            cached_limit = int(self._audit_cache.get("limit", 0) or 0)
+            cached_records = list(self._audit_cache.get("records", []))
+        if (now - cached_ts) <= AUDIT_RECORDS_CACHE_TTL_SECONDS and cached_limit >= safe_limit and cached_records:
+            return cached_records[:safe_limit]
+        records = list(reversed(self.usage_audit_service.get_recent_records(limit=safe_limit)))
+        with self._cache_lock:
+            self._audit_cache = {"ts": now, "limit": safe_limit, "records": records}
+        return records
 
     def _get_recent_export_records(
         self,
@@ -238,20 +274,25 @@ class AdminService:
         return BatchCheckResult(entries=entries)
 
     def get_usage_audit_summary(self, *, mode: str = "others") -> dict:
+        cache_key = f"audit_summary:{mode}"
+        cached = self._cache_get(cache_key, DASHBOARD_SUMMARY_CACHE_TTL_SECONDS)
+        if cached is not None:
+            return cached
+        mode_safe = mode if mode in {"others", "owner", "all"} else "others"
         records = self._get_audit_records(limit=self.usage_audit_service.max_read_records)
-        counts = {
-            "others": self.usage_audit_service.query_records(owner_id=self.owner_id, mode="others", page=1, page_size=1, records=records)["total"],
-            "owner": self.usage_audit_service.query_records(owner_id=self.owner_id, mode="owner", page=1, page_size=1, records=records)["total"],
-            "all": self.usage_audit_service.query_records(owner_id=self.owner_id, mode="all", page=1, page_size=1, records=records)["total"],
-        }
-        title = {"others": "其他用户", "owner": "管理员", "all": "全部用户"}.get(mode, "其他用户")
-        filtered = self.usage_audit_service.query_records(
-            owner_id=self.owner_id,
-            mode=mode,
-            page=1,
-            page_size=max(1, len(records)),
-            records=records,
-        )["records"]
+        counts = {"others": 0, "owner": 0, "all": 0}
+        filtered = []
+        for row in records:
+            uid = row.get("user_id")
+            is_owner = uid == self.owner_id
+            counts["all"] += 1
+            if is_owner:
+                counts["owner"] += 1
+            else:
+                counts["others"] += 1
+            if mode_safe == "all" or (mode_safe == "owner" and is_owner) or (mode_safe == "others" and not is_owner):
+                filtered.append(row)
+        title = {"others": "其他用户", "owner": "管理员", "all": "全部用户"}.get(mode_safe, "其他用户")
         threshold = datetime.now() - timedelta(hours=24)
         recent = [row for row in filtered if (self._parse_dt(row.get("ts")) or datetime.min) >= threshold]
         grouped: dict[int, dict] = {}
@@ -261,8 +302,8 @@ class AdminService:
             item["checks"] += 1
             item["urls"] += len(row.get("urls", []) or [])
         top_users = sorted(grouped.values(), key=lambda x: (-x["checks"], x["uid"]))[:8]
-        return {
-            "mode": mode,
+        payload = {
+            "mode": mode_safe,
             "title": title,
             "check_count": len(recent),
             "user_count": len(grouped),
@@ -279,6 +320,7 @@ class AdminService:
                 for item in top_users
             ],
         }
+        return self._cache_set(cache_key, payload)
 
     def get_recent_users_summary(self, *, include_owner: bool = False, limit: int = 10) -> dict:
         profiles = self.user_profile_service.get_recent_profiles(limit=1000, include_owner=include_owner)
@@ -302,6 +344,10 @@ class AdminService:
         }
 
     def get_recent_exports_summary(self, *, include_owner: bool = False, page: int = 1, limit: int = 10) -> dict:
+        cache_key = f"recent_exports:{int(include_owner)}:{int(page or 1)}:{int(limit or 10)}"
+        cached = self._cache_get(cache_key, DASHBOARD_SUMMARY_CACHE_TTL_SECONDS)
+        if cached is not None:
+            return cached
         audit_records = self._get_audit_records(limit=self.usage_audit_service.max_read_records)
         records = self._get_recent_export_records(include_owner=include_owner, limit=1000, records=audit_records)
         yaml_count = sum(1 for row in records if row.get("source") == f"{EXPORT_AUDIT_PREFIX}yaml")
@@ -324,7 +370,7 @@ class AdminService:
                     "target": first_url[:80] + ("..." if len(first_url) > 80 else ""),
                 }
             )
-        return {
+        payload = {
             "scope": "all" if include_owner else "others",
             "scope_title": "全部用户" if include_owner else "非管理员用户",
             "exports_24h": self._count_recent_records(records),
@@ -334,15 +380,20 @@ class AdminService:
             "page": safe_page,
             "total_pages": total_pages,
         }
+        return self._cache_set(cache_key, payload)
 
     def get_owner_panel_data(self) -> dict:
+        cache_key = "owner_panel_data"
+        cached = self._cache_get(cache_key, DASHBOARD_SUMMARY_CACHE_TTL_SECONDS)
+        if cached is not None:
+            return cached
         stats = self._get_storage_stats()
         recent_profiles = self.user_profile_service.get_recent_profiles(limit=1000, include_owner=False)
         audit_records = self._get_audit_records(limit=self.usage_audit_service.max_read_records)
         recent_exports = self._get_recent_export_records(include_owner=False, limit=1000, records=audit_records)
         cache_summary = self._summarize_cache_entries()
         public_mode = "开启" if self.access_service.is_allow_all_users_enabled() else "关闭"
-        return {
+        payload = {
             "total_subs": stats.get("total", 0),
             "expired_subs": stats.get("expired", 0),
             "authorized_users": len(self.user_manager.get_all()),
@@ -354,6 +405,7 @@ class AdminService:
             "exports_24h": self._count_recent_records(recent_exports),
             "recent_exports": len(recent_exports),
         }
+        return self._cache_set(cache_key, payload)
 
     def get_owner_panel_section_data(self, section: str) -> dict:
         if section == "overview":
@@ -428,3 +480,6 @@ class AdminService:
             f"授权用户: {len(self.user_manager.get_all())}\n"
             f"缓存条目: {len(self.export_cache_service.get_index_snapshot())}"
         )
+
+
+

@@ -19,6 +19,39 @@ class UsageAuditService:
         self._lock = threading.Lock()
         self._async_lock = asyncio.Lock()
         self._record_count: int | None = None
+        self._records_cache: deque[dict] | None = None
+
+    @staticmethod
+    def _safe_parse_line(line: str) -> dict | None:
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            return None
+
+    def _ensure_records_cache_locked(self) -> None:
+        if self._records_cache is not None:
+            return
+        cache = deque(maxlen=max(1, self.max_records))
+        if os.path.exists(self.path):
+            with open(self.path, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    text = line.strip()
+                    if not text:
+                        continue
+                    parsed = self._safe_parse_line(text)
+                    if parsed is not None:
+                        cache.append(parsed)
+        self._records_cache = cache
+        self._record_count = len(cache)
+
+    def _set_records_cache_from_lines_locked(self, lines: list[str]) -> None:
+        cache = deque(maxlen=max(1, self.max_records))
+        for line in lines:
+            parsed = self._safe_parse_line(line.strip())
+            if parsed is not None:
+                cache.append(parsed)
+        self._records_cache = cache
+        self._record_count = len(cache)
 
     def log_check(self, *, user, urls: list[str], source: str) -> None:
         if not user or not urls:
@@ -51,34 +84,44 @@ class UsageAuditService:
         with self._lock:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             count = self._get_record_count_locked()
+            self._ensure_records_cache_locked()
             if count < self.max_records:
                 with open(self.path, "a", encoding="utf-8") as handle:
                     handle.write(serialized)
                 self._record_count = count + 1
+                self._records_cache.append(dict(record))
                 return
 
             retained = self._read_recent_lines_locked(limit=max(0, self.max_records - 1))
             retained.append(serialized)
             self._write_lines_locked(retained[-self.max_records :])
-            self._record_count = min(self.max_records, len(retained))
+            self._set_records_cache_from_lines_locked(retained[-self.max_records :])
 
     async def _append_record_async(self, record: dict) -> None:
         serialized = json.dumps(record, ensure_ascii=False) + "\n"
         async with self._async_lock:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             count = await self._aget_record_count_locked()
+            with self._lock:
+                self._ensure_records_cache_locked()
             if count < self.max_records:
                 async with aiofiles.open(self.path, "a", encoding="utf-8") as handle:
                     await handle.write(serialized)
                 self._record_count = count + 1
+                with self._lock:
+                    self._records_cache.append(dict(record))
                 return
 
             retained = await self._aread_recent_lines_locked(limit=max(0, self.max_records - 1))
             retained.append(serialized)
             await self._awrite_lines_locked(retained[-self.max_records :])
-            self._record_count = min(self.max_records, len(retained))
+            with self._lock:
+                self._set_records_cache_from_lines_locked(retained[-self.max_records :])
 
     def _get_record_count_locked(self) -> int:
+        if self._records_cache is not None:
+            self._record_count = len(self._records_cache)
+            return self._record_count
         if self._record_count is not None:
             return self._record_count
         if not os.path.exists(self.path):
@@ -139,31 +182,32 @@ class UsageAuditService:
         if safe_limit == 0 or not os.path.exists(self.path):
             return []
         with self._lock:
-            lines = self._read_recent_lines_locked(limit=safe_limit)
-        records = []
-        for line in lines:
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        return records
+            self._ensure_records_cache_locked()
+            rows = list(self._records_cache)[-safe_limit:]
+        return [dict(row) for row in rows]
 
     async def aget_recent_records(self, limit: int = 20) -> list[dict]:
         safe_limit = max(0, min(limit, self.max_read_records))
         if safe_limit == 0 or not os.path.exists(self.path):
             return []
         async with self._async_lock:
-            lines = await self._aread_recent_lines_locked(limit=safe_limit)
-        records = []
-        for line in lines:
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        return records
+            with self._lock:
+                self._ensure_records_cache_locked()
+                rows = list(self._records_cache)[-safe_limit:]
+        return [dict(row) for row in rows]
 
     async def _yield_records_reverse(self):
         """Yields records from the file in reverse order (newest first)."""
+        with self._lock:
+            if self._records_cache is not None:
+                snapshot = list(self._records_cache)
+            else:
+                snapshot = None
+        if snapshot is not None:
+            for row in reversed(snapshot):
+                yield dict(row)
+            return
+
         if not os.path.exists(self.path):
             return
         

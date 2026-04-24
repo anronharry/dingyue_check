@@ -221,6 +221,23 @@ body::after {
   }
 }
 
+body[data-perf-mode="lite"]::before,
+body[data-perf-mode="lite"] .noise-overlay,
+body[data-perf-mode="lite"] .aurora-bg::before,
+body[data-perf-mode="lite"] .matrix-rain-canvas,
+body[data-perf-mode="lite"] .matrix-ghost-layer,
+body[data-perf-mode="lite"] .drift-grid-layer,
+body[data-perf-mode="lite"] .scan-beam-layer,
+body[data-perf-mode="lite"] .trajectories {
+  display: none !important;
+}
+
+body[data-perf-mode="lite"] .aurora-blob {
+  animation: none !important;
+  filter: blur(40px);
+  opacity: 0.14;
+}
+
 .visual-bg {
   position: absolute;
   inset: 0;
@@ -297,6 +314,26 @@ body::after {
 .avatar:nth-child(3) { background: #c16dff; }
 
 @media (max-width: 700px) {
+  .noise-overlay,
+  .matrix-rain-canvas,
+  .matrix-ghost-layer,
+  .drift-grid-layer,
+  .scan-beam-layer,
+  .trajectories {
+    display: none !important;
+  }
+
+  .aurora-bg::before {
+    animation: none !important;
+    opacity: 0.16;
+  }
+
+  .aurora-blob {
+    animation: none !important;
+    filter: blur(48px);
+    opacity: 0.16;
+  }
+
   body::after {
     right: 8px;
     font-size: 8px;

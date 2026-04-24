@@ -61,6 +61,10 @@
   backdrop-filter: blur(8px);
 }
 
+body[data-perf-mode="lite"] .navbar {
+  backdrop-filter: none;
+}
+
 .navbar-content {
   display: flex;
   justify-content: space-between;
@@ -774,6 +778,23 @@ dialog::backdrop { background: rgba(2, 8, 12, 0.68); backdrop-filter: blur(2px);
   100% { transform: translateX(100%); }
 }
 
+body[data-perf-mode="lite"] .status::after,
+body[data-perf-mode="lite"] .nav-signal .dot,
+body[data-perf-mode="lite"] .terminal-cursor,
+body[data-perf-mode="lite"] .skeleton-line::after,
+body[data-perf-mode="lite"] .skeleton-block::after {
+  animation: none !important;
+}
+
+body[data-perf-mode="lite"] .status::after,
+body[data-perf-mode="lite"] .nav-signal .dot {
+  box-shadow: none;
+}
+
+body[data-perf-mode="lite"] dialog::backdrop {
+  backdrop-filter: none;
+}
+
 @media (max-width: 1180px) {
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-layout { grid-template-columns: 1fr; }
@@ -808,7 +829,7 @@ dialog::backdrop { background: rgba(2, 8, 12, 0.68); backdrop-filter: blur(2px);
     position: sticky;
     top: 8px;
     z-index: 6;
-    backdrop-filter: blur(8px);
+    backdrop-filter: none;
   }
   .view-tab { padding: 9px 10px; font-size: 11px; }
   .metrics { grid-template-columns: 1fr; gap: 10px; }
@@ -828,6 +849,7 @@ dialog::backdrop { background: rgba(2, 8, 12, 0.68); backdrop-filter: blur(2px);
   .audit-url-actions { justify-content: space-between; }
   .audit-url-link { width: 100%; }
   dialog { width: min(96vw, 620px); max-height: 88vh; }
+  dialog::backdrop { backdrop-filter: none; }
   .modal-head {
     position: sticky;
     top: 0;
