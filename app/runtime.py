@@ -84,23 +84,33 @@ class Runtime:
         self,
         url: str,
         *,
+        operator_uid: int | None = None,
         owner_mode: bool = False,
         user_actions_expanded: bool = False,
     ) -> InlineKeyboardMarkup:
+        callback_builder = lambda action, target_url: self.get_short_callback_data(
+            action,
+            target_url,
+            operator_uid=operator_uid,
+        )
         return build_subscription_keyboard(
             url,
-            self.get_short_callback_data,
+            callback_builder,
             enable_latency_tester=config.ENABLE_LATENCY_TESTER,
             owner_mode=owner_mode,
             compact_user_mode=config.ENABLE_USER_COMPACT_SUB_BUTTONS,
             user_actions_expanded=user_actions_expanded,
         )
 
-    def get_short_callback_data(self, action: str, url: str) -> str:
+    def get_short_callback_data(self, action: str, url: str, *, operator_uid: int | None = None) -> str:
         token = secrets.token_hex(8)
         while token in self.url_cache:
             token = secrets.token_hex(8)
-        self.url_cache[token] = {"url": url, "ts": time.time()}
+        self.url_cache[token] = {
+            "url": url,
+            "ts": time.time(),
+            "uid": int(operator_uid or 0),
+        }
         self.url_cache.move_to_end(token)
         return f"{action}:{token}"
 

@@ -12,6 +12,12 @@ def make_subscription_handler(
     usage_audit_service,
     logger,
 ):
+    def _make_sub_keyboard_safe(*, url: str, owner_mode: bool, operator_uid: int):
+        try:
+            return make_sub_keyboard(url, operator_uid=operator_uid, owner_mode=owner_mode)
+        except TypeError:
+            return make_sub_keyboard(url, owner_mode=owner_mode)
+
     async def handle_subscription(update, context):
         del context
         reply_to_message_id = getattr(update.message, "message_id", None)
@@ -47,7 +53,11 @@ def make_subscription_handler(
 
             for item in results:
                 if item["status"] == "success":
-                    reply_markup = make_sub_keyboard(item["url"], owner_mode=is_owner(update))
+                    reply_markup = _make_sub_keyboard_safe(
+                        url=item["url"],
+                        operator_uid=update.effective_user.id,
+                        owner_mode=is_owner(update),
+                    )
                     await update.message.reply_text(
                         format_subscription_info(item["data"], item["url"]),
                         parse_mode="HTML",

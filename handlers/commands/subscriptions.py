@@ -9,6 +9,24 @@ from core.models import BatchCheckResult, SubscriptionEntity
 from renderers.messages.admin_reports import render_subscription_check_report
 
 
+AUTO_REMOVE_ERROR_CODES = {"auth_error", "not_found", "invalid_content"}
+AUTO_REMOVE_ERROR_SNIPPETS = (
+    "已失效",
+    "不存在",
+    "无法识别订阅内容",
+    "流量已完全耗尽",
+    "剩余 0 B",
+)
+
+
+def _should_auto_remove_failed_subscription(exc: Exception) -> bool:
+    code = str(getattr(exc, "code", "") or "").strip().lower()
+    if code in AUTO_REMOVE_ERROR_CODES:
+        return True
+    error_text = str(exc or "")
+    return any(token in error_text for token in AUTO_REMOVE_ERROR_SNIPPETS)
+
+
 def make_check_command(
     *,
     is_authorized,
@@ -58,9 +76,10 @@ def make_check_command(
         total_count = len(subscriptions)
         completed_count = 0
         last_update_time = time.time()
+        auto_removed_count = 0
 
         async def check_one(url, data):
-            nonlocal completed_count, last_update_time
+            nonlocal completed_count, last_update_time, auto_removed_count
             async with semaphore:
                 try:
                     if subscription_check_service:
@@ -84,6 +103,10 @@ def make_check_command(
                 except Exception as exc:
                     logger.error("检测失败 %s: %s", url, exc)
                     store.mark_check_failed(url, str(exc), operator_uid=uid, require_owner=True)
+                    if _should_auto_remove_failed_subscription(exc):
+                        removed = store.remove(url, operator_uid=uid, require_owner=True)
+                        if removed:
+                            auto_removed_count += 1
                     res = SubscriptionEntity.from_failure(
                         url=url,
                         name=data.get("name", "未知"),
@@ -107,6 +130,8 @@ def make_check_command(
 
         batch = BatchCheckResult(entries=results)
         final_report = render_subscription_check_report(batch=batch, format_traffic=format_traffic)
+        if auto_removed_count > 0:
+            final_report += f"\n\n已自动清理失效订阅: {auto_removed_count} 条。"
         try:
             await progress_msg.edit_text(final_report, parse_mode="HTML")
         except Exception:
@@ -126,6 +151,12 @@ def make_list_command(
     telegram_inline_markup,
     schedule_auto_delete,
 ):
+    def _build_callback(action: str, url: str, operator_uid: int) -> str:
+        try:
+            return get_short_callback_data(action, url, operator_uid=operator_uid)
+        except TypeError:
+            return get_short_callback_data(action, url)
+
     async def list_command(update, context):
         if not is_authorized(update):
             await send_no_permission_msg(update)
@@ -148,9 +179,18 @@ def make_list_command(
             label = f"{tag_label}" if tag_label else "📦 未分组"
             msg = f"{label} — <b>{html.escape(data.get('name', '未命名'))}</b>\n<code>{html.escape(url)}</code>"
             keyboard = [[
-                telegram_inline_button(button_labels["recheck"], callback_data=get_short_callback_data("recheck", url)),
-                telegram_inline_button(button_labels["tag"], callback_data=get_short_callback_data("tag", url)),
-                telegram_inline_button(button_labels["delete"], callback_data=get_short_callback_data("delete", url)),
+                telegram_inline_button(
+                    button_labels["recheck"],
+                    callback_data=_build_callback("recheck", url, uid),
+                ),
+                telegram_inline_button(
+                    button_labels["tag"],
+                    callback_data=_build_callback("tag", url, uid),
+                ),
+                telegram_inline_button(
+                    button_labels["delete"],
+                    callback_data=_build_callback("delete", url, uid),
+                ),
             ]]
             await update.message.reply_text(
                 msg,

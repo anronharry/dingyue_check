@@ -24,10 +24,6 @@ init(autoreset=True)
 if not _cfg.VERIFY_SSL:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# #6 修复：导入 node_tester 中共享的 print_lock，不再单独定义
-from core.node_tester import print_lock
-
-
 async def async_fetch_nodes_from_subscriptions(target_file: str, client_session: aiohttp.ClientSession = None, status_callback=None) -> Tuple[List[ProxyNode], List[str], List[str]]:
     """
     从文件中的 HTTP/HTTPS 订阅 URL 批量下载并提取节点（单次请求版）
@@ -35,8 +31,17 @@ async def async_fetch_nodes_from_subscriptions(target_file: str, client_session:
     Returns:
         (all_nodes, invalid_urls, valid_urls)
     """
-    HEADERS_CLASH   = {"User-Agent": _cfg.get("UA_CLASH")}
-    HEADERS_BROWSER = {"User-Agent": _cfg.get("UA_BROWSER")}
+    headers_clash = {"User-Agent": str(getattr(_cfg, "UA_CLASH", "ClashForAndroid/2.5.12"))}
+    headers_browser = {
+        "User-Agent": str(
+            getattr(
+                _cfg,
+                "UA_BROWSER",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+        )
+    }
 
     try:
         with open(target_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -55,8 +60,10 @@ async def async_fetch_nodes_from_subscriptions(target_file: str, client_session:
     own_session = False
 
     if client_session is None:
-        conn = aiohttp.TCPConnector(ssl=_cfg.VERIFY_SSL, limit=_cfg.get("SUB_DOWNLOAD_WORKERS", 30))
-        timeout = aiohttp.ClientTimeout(total=_cfg.get("SUB_TIMEOUT", 12))
+        sub_download_workers = int(getattr(_cfg, "SUB_DOWNLOAD_WORKERS", 30))
+        sub_timeout = int(getattr(_cfg, "SUB_TIMEOUT", 12))
+        conn = aiohttp.TCPConnector(ssl=_cfg.VERIFY_SSL, limit=sub_download_workers)
+        timeout = aiohttp.ClientTimeout(total=sub_timeout)
         client_session = aiohttp.ClientSession(connector=conn, timeout=timeout)
         own_session = True
 
@@ -64,14 +71,14 @@ async def async_fetch_nodes_from_subscriptions(target_file: str, client_session:
         async with sem:
             try:
                 # 初始请求
-                async with client_session.get(url, headers=HEADERS_CLASH) as resp:
+                async with client_session.get(url, headers=headers_clash) as resp:
                     resp_status = resp.status
                     text = await resp.text()
                     headers = resp.headers
 
                 # 若遭拦截，则换浏览器 UA 降级重试 (简易重试)
                 if resp_status == 403 or "safeline" in text.lower() or "waf" in text.lower():
-                    async with client_session.get(url, headers=HEADERS_BROWSER) as resp2:
+                    async with client_session.get(url, headers=headers_browser) as resp2:
                         resp_status = resp2.status
                         text = await resp2.text()
                         headers = resp2.headers
@@ -138,7 +145,7 @@ async def async_fetch_nodes_from_subscriptions(target_file: str, client_session:
     invalid_urls:  list = []
     valid_urls:    list = []
 
-    max_concurrent = _cfg.get("SUB_DOWNLOAD_WORKERS", 8)
+    max_concurrent = int(getattr(_cfg, "SUB_DOWNLOAD_WORKERS", 8))
     sem = asyncio.Semaphore(max_concurrent)
 
     # #15 修复：抽取公共收集协程，消除 own_session 两分支的重复代码

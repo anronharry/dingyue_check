@@ -244,6 +244,55 @@ class AdminService:
             "users": rows,
         }
 
+    def _is_subscription_available(self, data: dict, *, now: datetime) -> tuple[bool, datetime | None, int | None]:
+        if str(data.get("last_check_status", "success")).lower() == "failed":
+            return False, None, None
+        expire_time = self._parse_dt(data.get("expire_time"))
+        if expire_time is None or expire_time <= now:
+            return False, None, None
+        remaining_raw = data.get("remaining")
+        try:
+            remaining = int(remaining_raw)
+        except (TypeError, ValueError):
+            return False, None, None
+        if remaining <= 0:
+            return False, None, None
+        return True, expire_time, remaining
+
+    def get_available_subscriptions_data(self, *, page: int = 1, limit: int = 20) -> dict:
+        store = self.get_storage()
+        all_subs = store.get_all() if store and hasattr(store, "get_all") else {}
+        now = datetime.now()
+        rows: list[dict] = []
+        for url, data in all_subs.items():
+            available, expire_time, remaining = self._is_subscription_available(data, now=now)
+            if not available or expire_time is None or remaining is None:
+                continue
+            uid = int(data.get("owner_uid", 0) or 0)
+            rows.append(
+                {
+                    "uid": uid,
+                    "identity": self.user_profile_service.format_user_identity(uid),
+                    "name": str(data.get("name", "未命名")),
+                    "url": str(url),
+                    "remaining": self.format_traffic(remaining),
+                    "expire_time": expire_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "updated_at": str(data.get("updated_at", "-")),
+                }
+            )
+        rows.sort(key=lambda item: (item["expire_time"], item["uid"], item["name"]))
+        total = len(rows)
+        safe_limit = max(1, int(limit or 1))
+        total_pages = max(1, (total + safe_limit - 1) // safe_limit)
+        safe_page = max(1, min(int(page or 1), total_pages))
+        start = (safe_page - 1) * safe_limit
+        return {
+            "total": total,
+            "page": safe_page,
+            "total_pages": total_pages,
+            "rows": rows[start: start + safe_limit],
+        }
+
     def to_batch_result(self, results: list[SubscriptionEntity | dict]) -> BatchCheckResult:
         entries: list[SubscriptionEntity] = []
         for row in results:

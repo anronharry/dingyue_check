@@ -18,6 +18,7 @@ import importlib
 from pathlib import Path
 from dataclasses import dataclass
 # from tqdm import tqdm
+from colorama import Fore, Style
 from core.converters.ss_converter import SSNodeConverter
 from core.session_logger import get_logger
 from app import config as _cfg
@@ -105,7 +106,7 @@ def auto_detect_file_mode(filepath: str) -> str:
         'direct' — 文件直接包含节点协议链接 (ss/vmess/trojan 等)
         'url'    — 文件主要包含 http/https 订阅链接
     """
-    from conf.config import DETECT_READ_BYTES
+    detect_read_bytes = int(getattr(_cfg, "DETECT_READ_BYTES", 8192))
     PROXY_SCHEMES = ('ss://', 'vmess://', 'trojan://', 'vless://', 'ssr://', 'hysteria://', 'tuic://')
 
     # YAML/YML 文件必定是 Clash 配置格式，强制 direct
@@ -126,7 +127,7 @@ def auto_detect_file_mode(filepath: str) -> str:
 
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read(DETECT_READ_BYTES)
+            content = f.read(detect_read_bytes)
 
         node_lines = sum(1 for line in content.splitlines()
                          if any(line.strip().startswith(s) for s in PROXY_SCHEMES))
@@ -520,8 +521,10 @@ async def _async_run_node_latency_test(target_files, mode: str = 'auto', clean_p
     export_policy = 'no' if export_policy in ('ask', None) else export_policy
     sub_clean_policy = 'no' if sub_clean_policy in ('ask', None) else sub_clean_policy
 
-    sub_conn = aiohttp.TCPConnector(ssl=_cfg.VERIFY_SSL, limit=_cfg.get("SUB_DOWNLOAD_WORKERS", 30))
-    sub_timeout = aiohttp.ClientTimeout(total=_cfg.get("SUB_TIMEOUT", 12))
+    sub_download_workers = int(getattr(_cfg, "SUB_DOWNLOAD_WORKERS", 30))
+    sub_timeout_seconds = int(getattr(_cfg, "SUB_TIMEOUT", 12))
+    sub_conn = aiohttp.TCPConnector(ssl=_cfg.VERIFY_SSL, limit=sub_download_workers)
+    sub_timeout = aiohttp.ClientTimeout(total=sub_timeout_seconds)
     test_conn = aiohttp.TCPConnector(ssl=_cfg.VERIFY_SSL, limit=_cfg.NODE_TEST_WORKERS)
     test_timeout = aiohttp.ClientTimeout(total=max(30, _cfg.TIMEOUT_MS / 1000 + 10))
 

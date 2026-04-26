@@ -566,6 +566,21 @@ async def _subscriptions_global(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
 
 
+async def _subscriptions_available(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    page, err = _parse_positive_int(request, "page", 1, 1, 10000)
+    if err is not None:
+        return err
+    limit, err = _parse_limit(request, default=20, minimum=1, maximum=200)
+    if err is not None:
+        return err
+    try:
+        data = await asyncio.to_thread(runtime.admin_service.get_available_subscriptions_data, page=page, limit=limit)
+        return web.json_response({"ok": True, "data": data})
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
 async def _authorized_users(request: web.Request) -> web.Response:
     runtime = request.app[RUNTIME_KEY]
     page, err = _parse_positive_int(request, "page", 1, 1, 10000)
@@ -746,8 +761,11 @@ async def _set_public_access(request: web.Request) -> web.Response:
     except Exception:
         return _json_error("invalid_payload", status=400)
     enabled = bool(payload.get("enabled"))
-    changed, current = await asyncio.to_thread(runtime.access_service.set_allow_all_users, enabled)
-    return web.json_response({"ok": True, "data": {"changed": bool(changed), "enabled": bool(current)}})
+    changed, saved = await asyncio.to_thread(runtime.access_service.set_allow_all_users, enabled)
+    if not saved:
+        return _json_error("save_failed", status=500)
+    current_enabled = await asyncio.to_thread(runtime.access_service.is_allow_all_users_enabled)
+    return web.json_response({"ok": True, "data": {"changed": bool(changed), "enabled": bool(current_enabled)}})
 
 
 async def _revoke_all_sessions(request: web.Request) -> web.Response:
@@ -1120,6 +1138,7 @@ def build_web_app(
     app.router.add_get(f"{API_PREFIX}/exports/recent", _recent_exports)
     app.router.add_get(f"{API_PREFIX}/audit/summary", _audit_summary)
     app.router.add_get(f"{API_PREFIX}/subscriptions/global", _subscriptions_global)
+    app.router.add_get(f"{API_PREFIX}/subscriptions/available", _subscriptions_available)
     app.router.add_get(f"{API_PREFIX}/users/authorized", _authorized_users)
     app.router.add_get(f"{API_PREFIX}/audit/recent-checks", _recent_checks)
     app.router.add_get(f"{API_PREFIX}/system/runtime", _runtime_status)

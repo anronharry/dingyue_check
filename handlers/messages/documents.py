@@ -24,12 +24,19 @@ def make_document_handler(
     usage_audit_service,
     logger,
 ):
+    def _make_sub_keyboard_safe(*, url: str, owner_mode: bool, operator_uid: int):
+        try:
+            return make_sub_keyboard(url, operator_uid=operator_uid, owner_mode=owner_mode)
+        except TypeError:
+            return make_sub_keyboard(url, owner_mode=owner_mode)
+
     async def handle_document(update, context):
         document = update.message.document
+        file_name = (getattr(document, "file_name", "") or "").strip()
         reply_to_message_id = getattr(update.message, "message_id", None)
         reply_kwargs = {"reply_to_message_id": reply_to_message_id} if reply_to_message_id else {}
 
-        if context.user_data.get("awaiting_restore") and document.file_name.lower().endswith(".zip"):
+        if context.user_data.get("awaiting_restore") and file_name.lower().endswith(".zip"):
             if document.file_size and document.file_size > MAX_RESTORE_ZIP_SIZE_BYTES:
                 await update.message.reply_text("备份 ZIP 过大（最大 20MB），已拒绝恢复。", **reply_kwargs)
                 return
@@ -73,7 +80,7 @@ def make_document_handler(
             await send_no_permission_msg(update)
             return
 
-        file_type = input_detector.detect_file_type(document.file_name)
+        file_type = input_detector.detect_file_type(file_name)
         if file_type == "unknown":
             await update.message.reply_text("暂不支持该文件类型。请上传 TXT/YAML；导入 JSON 请先执行 /import。", **reply_kwargs)
             return
@@ -111,7 +118,7 @@ def make_document_handler(
                         usage_audit_service.log_check(
                             user=update.effective_user,
                             urls=subscription_urls,
-                            source=f"document_import:{document.file_name}",
+                            source=f"document_import:{file_name or 'unknown'}",
                         )
                     await processing_msg.edit_text(
                         f"🚀 识别到 {len(subscription_urls)} 个订阅链接，正在检测并保存..."
@@ -131,7 +138,11 @@ def make_document_handler(
                                 f"<b>🔎 订阅 {item['index']} 检测结果</b>\n\n"
                                 f"{format_subscription_info(item['data'], item['url'])}"
                             )
-                            reply_markup = make_sub_keyboard(item["url"], owner_mode=is_owner(update))
+                            reply_markup = _make_sub_keyboard_safe(
+                                url=item["url"],
+                                operator_uid=update.effective_user.id,
+                                owner_mode=is_owner(update),
+                            )
                             await update.message.reply_text(
                                 message,
                                 parse_mode="HTML",
@@ -157,7 +168,7 @@ def make_document_handler(
                     return
 
             result = await document_service.analyze_document_nodes(
-                file_name=document.file_name,
+                file_name=file_name or "unknown",
                 file_type=file_type,
                 content_bytes=content_bytes,
                 owner_uid=update.effective_user.id,

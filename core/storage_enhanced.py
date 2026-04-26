@@ -321,6 +321,7 @@ class SubscriptionStorage:
         expired = 0
         total_traffic = 0
         total_remaining = 0
+        tags = set()
         now = datetime.now()
 
         for data in subs.values():
@@ -334,6 +335,7 @@ class SubscriptionStorage:
                     pass
             total_traffic += data.get("total", 0)
             total_remaining += data.get("remaining", 0)
+            tags.update(data.get("tags", []))
 
         return {
             "total": total,
@@ -341,5 +343,5 @@ class SubscriptionStorage:
             "active": total - expired,
             "total_traffic": total_traffic,
             "total_remaining": total_remaining,
-            "tags": self.get_all_tags(),
+            "tags": sorted(tags),
         }

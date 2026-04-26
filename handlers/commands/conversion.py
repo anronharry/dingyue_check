@@ -4,6 +4,7 @@ from __future__ import annotations
 
 def make_to_yaml_command(*, is_authorized, send_no_permission_msg, conversion_service):
     async def to_yaml_command(update, context):
+        del context
         if not is_authorized(update):
             await send_no_permission_msg(update)
             return
@@ -11,7 +12,11 @@ def make_to_yaml_command(*, is_authorized, send_no_permission_msg, conversion_se
             await update.message.reply_text("❌ 请回复包含节点列表的 TXT 文件消息使用此命令")
             return
         document = update.message.reply_to_message.document
-        if not document.file_name.lower().endswith(".txt"):
+        file_name = (document.file_name or "").strip()
+        if not file_name:
+            await update.message.reply_text("❌ 文件名为空，无法判断文件类型")
+            return
+        if not file_name.lower().endswith(".txt"):
             await update.message.reply_text("❌ 仅支持对 .txt 文件进行转换")
             return
         processing_msg = await update.message.reply_text("⏳ 正在转换文件格式（TXT → YAML）...")
@@ -19,7 +24,7 @@ def make_to_yaml_command(*, is_authorized, send_no_permission_msg, conversion_se
             telegram_file = await document.get_file()
             content_bytes = bytes(await telegram_file.download_as_bytearray())
             result = conversion_service.convert_txt_bytes_to_yaml(
-                file_name=document.file_name,
+                file_name=file_name,
                 content_bytes=content_bytes,
                 owner_uid=update.effective_user.id,
             )
@@ -37,6 +42,7 @@ def make_to_yaml_command(*, is_authorized, send_no_permission_msg, conversion_se
 
 def make_to_txt_command(*, is_authorized, send_no_permission_msg, conversion_service):
     async def to_txt_command(update, context):
+        del context
         if not is_authorized(update):
             await send_no_permission_msg(update)
             return
@@ -44,7 +50,11 @@ def make_to_txt_command(*, is_authorized, send_no_permission_msg, conversion_ser
             await update.message.reply_text("❌ 请回复包含 Clash 配置的 YAML 文件消息使用此命令")
             return
         document = update.message.reply_to_message.document
-        if not document.file_name.lower().endswith((".yaml", ".yml")):
+        file_name = (document.file_name or "").strip()
+        if not file_name:
+            await update.message.reply_text("❌ 文件名为空，无法判断文件类型")
+            return
+        if not file_name.lower().endswith((".yaml", ".yml")):
             await update.message.reply_text("❌ 仅支持对 .yaml/.yml 文件进行转换")
             return
         processing_msg = await update.message.reply_text("⏳ 正在转换文件格式（YAML → TXT）...")
@@ -52,7 +62,7 @@ def make_to_txt_command(*, is_authorized, send_no_permission_msg, conversion_ser
             telegram_file = await document.get_file()
             content_bytes = bytes(await telegram_file.download_as_bytearray())
             result = conversion_service.convert_yaml_bytes_to_txt(
-                file_name=document.file_name,
+                file_name=file_name,
                 content_bytes=content_bytes,
                 owner_uid=update.effective_user.id,
             )
@@ -70,6 +80,7 @@ def make_to_txt_command(*, is_authorized, send_no_permission_msg, conversion_ser
 
 def make_deepcheck_command(*, is_authorized, send_no_permission_msg, conversion_service, logger):
     async def deepcheck_command(update, context):
+        del context
         if not is_authorized(update):
             await send_no_permission_msg(update)
             return
@@ -77,6 +88,10 @@ def make_deepcheck_command(*, is_authorized, send_no_permission_msg, conversion_
             await update.message.reply_text("❌ 请回复包含节点或订阅的 TXT/YAML 文件消息使用此命令")
             return
         document = update.message.reply_to_message.document
+        file_name = (document.file_name or "").strip()
+        if not file_name:
+            await update.message.reply_text("❌ 文件名为空，无法执行深度检测")
+            return
         telegram_file = await document.get_file()
         content_bytes = bytes(await telegram_file.download_as_bytearray())
         processing_msg = await update.message.reply_text("⏳ 正在初始化深度检测引擎 (Mihomo)...")
@@ -91,7 +106,7 @@ def make_deepcheck_command(*, is_authorized, send_no_permission_msg, conversion_
 
         try:
             result = await conversion_service.run_deepcheck(
-                file_name=document.file_name,
+                file_name=file_name,
                 content_bytes=content_bytes,
                 status_callback=status_callback,
                 owner_uid=update.effective_user.id,

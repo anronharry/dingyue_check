@@ -7,19 +7,22 @@ const AUTH_HEARTBEAT_MOBILE_MS = 20000;
 const MOBILE_MEDIA_QUERY = "(max-width: 700px)";
 const COARSE_POINTER_QUERY = "(pointer: coarse)";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-const DASHBOARD_VIEWS = ["overview", "users", "audit", "ops"];
+const DASHBOARD_VIEWS = ["overview", "users", "subscriptions", "audit", "ops"];
 
 const state = {
   usersPage: 1,
+  subscriptionsPage: 1,
   auditPage: 1,
   exportsPage: 1,
   limit: 10,
+  subscriptionsLimit: 20,
   exportsLimit: 10,
   auditSnapshot: null,
   view: "overview",
 };
 
 let usersRequestToken = 0;
+let subscriptionsRequestToken = 0;
 let auditRequestToken = 0;
 let exportsRequestToken = 0;
 let detailRequestToken = 0;
@@ -390,6 +393,7 @@ function buildAuditUrlCell(urls, rowIndex, extraClass = "") {
 function goPage(pageType, page) {
   const safePage = Math.max(1, Number(page || 1));
   if (pageType === "users") return loadAuthorizedUsers(safePage);
+  if (pageType === "subscriptions") return loadAvailableSubscriptions(safePage);
   if (pageType === "audit") return loadRecentChecks(safePage, { syncUrl: true });
   if (pageType === "exports") return loadRecentExports(safePage);
 }
@@ -417,6 +421,49 @@ function renderPagination(containerId, current, total, pageType, totalItems = 0)
 
   container.innerHTML = html;
 }
+
+function ensureAvailableSubscriptionsView() {
+  const tabs = document.querySelector(".view-tabs");
+  if (tabs && !tabs.querySelector('[data-view-target="subscriptions"]')) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "view-tab";
+    btn.dataset.viewTarget = "subscriptions";
+    btn.textContent = "订阅池";
+    const auditBtn = tabs.querySelector('[data-view-target="audit"]');
+    if (auditBtn) tabs.insertBefore(btn, auditBtn);
+    else tabs.appendChild(btn);
+  }
+
+  const stack = document.querySelector(".dashboard-layout .stack");
+  if (!(stack instanceof HTMLElement) || stack.querySelector('[data-page="subscriptions"]')) return;
+  const card = document.createElement("article");
+  card.className = "card";
+  card.dataset.page = "subscriptions";
+  card.innerHTML = `
+    <div class="head">
+      <h2>可用订阅池</h2>
+      <div class="head-actions">
+        <button id="loadAvailableSubsBtn" type="button">刷新</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>用户</th><th>订阅</th><th>剩余流量</th><th>到期时间</th><th>最近更新</th></tr>
+          </thead>
+          <tbody id="availableSubsBody"></tbody>
+        </table>
+      </div>
+      <div id="availableSubsCards" class="mobile-card-list"></div>
+      <div id="availableSubsPagination" class="pagination"></div>
+    </div>`;
+  const auditCard = stack.querySelector('[data-page="audit"]');
+  if (auditCard) stack.insertBefore(card, auditCard);
+  else stack.appendChild(card);
+}
+
 function syncList(container, items, keyFn, createFn, updateFn, emptyFactory) {
   if (!container) return;
 
@@ -465,7 +512,6 @@ function patchAuthorizedUserRow(tr, r) {
   tr.innerHTML = `
     <td>
       <div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
-      <div class="mono u-text-muted">UID: ${escapeHtml(r.uid || "-")}</div>
     </td>
     <td>
       ${r.is_owner ? '<span class="badge badge-primary">管理员</span>' : '<span class="badge">用户</span>'}
@@ -524,7 +570,6 @@ function renderAuthorizedUsersCards(users) {
       <div class="mobile-card-head">
         <div>
           <div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
-          <div class="mono u-text-muted">UID: ${escapeHtml(r.uid || "-")}</div>
         </div>
       </div>
       <div class="mobile-card-meta">
@@ -538,6 +583,58 @@ function renderAuthorizedUsersCards(users) {
       </div>
     </article>
   `).join("");
+}
+
+function renderAvailableSubscriptionsTable(rows) {
+  const body = qs("availableSubsBody");
+  if (!body) return;
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="5" class="table-empty-cell">暂无可用订阅</td></tr>';
+    return;
+  }
+  body.innerHTML = rows
+    .map(
+      (r) => `
+    <tr>
+      <td><div class="u-fw-700">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div></td>
+      <td>
+        <div class="u-fw-700">${escapeHtml(r.name || "-")}</div>
+        <a class="audit-url-link mono" href="${escapeHtml(r.url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(r.url || "-")}</a>
+      </td>
+      <td class="mono">${escapeHtml(r.remaining || "-")}</td>
+      <td class="mono">${escapeHtml(formatLocalDateTime(r.expire_time || "-"))}</td>
+      <td class="mono">${escapeHtml(formatLocalDateTime(r.updated_at || "-"))}</td>
+    </tr>`
+    )
+    .join("");
+}
+
+function renderAvailableSubscriptionsCards(rows) {
+  const root = qs("availableSubsCards");
+  if (!root) return;
+  if (!rows.length) {
+    root.innerHTML = '<div class="mobile-empty-card">暂无可用订阅</div>';
+    return;
+  }
+  root.innerHTML = rows
+    .map(
+      (r) => `
+    <article class="mobile-card">
+      <div class="mobile-card-head">
+        <div>
+          <div class="u-fw-700">${escapeHtml(r.name || "-")}</div>
+          <div class="mono u-text-muted">${escapeHtml(normalizeIdentity(r.identity || "-"))}</div>
+        </div>
+      </div>
+      <div class="mobile-card-meta">
+        <div class="mobile-meta-row mono">剩余流量：${escapeHtml(r.remaining || "-")}</div>
+        <div class="mobile-meta-row mono">到期时间：${escapeHtml(formatLocalDateTime(r.expire_time || "-"))}</div>
+        <div class="mobile-meta-row mono">最近更新：${escapeHtml(formatLocalDateTime(r.updated_at || "-"))}</div>
+        <div class="mobile-meta-row"><a class="audit-url-link mono" href="${escapeHtml(r.url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(r.url || "-")}</a></div>
+      </div>
+    </article>`
+    )
+    .join("");
 }
 
 function auditRowKey(r, idx) {
@@ -797,6 +894,27 @@ async function loadAuthorizedUsers(page = 1, options = {}) {
 
   qs("publicAccessDesc").innerHTML = `当前：${data.allow_all_users ? '<span class="public-access-open">开启</span>' : '<span class="public-access-closed">受限</span>'}`;
   window.__allowAllUsers = !!data.allow_all_users;
+}
+
+async function loadAvailableSubscriptions(page = 1, options = {}) {
+  const requestOptions = options.requestOptions || {};
+  const body = qs("availableSubsBody");
+  const cards = qs("availableSubsCards");
+  if (body) body.innerHTML = '<tr><td colspan="5"><div class="skeleton-line"></div><div class="skeleton-line"></div></td></tr>';
+  if (cards) cards.innerHTML = '<div class="mobile-empty-card"><div class="skeleton-line"></div></div>';
+  const token = ++subscriptionsRequestToken;
+  const data = await apiRequest(`/api/v1/subscriptions/available?page=${page}&limit=${state.subscriptionsLimit}`, requestOptions);
+  if (!data || token !== subscriptionsRequestToken) return;
+  const rows = Array.isArray(data.rows) ? data.rows : [];
+  const totalPages = data.total_pages || Math.max(1, Math.ceil(Number(data.total || rows.length) / state.subscriptionsLimit));
+  state.subscriptionsPage = clampPage(data.page || page, totalPages);
+  if (state.subscriptionsPage !== page) {
+    await loadAvailableSubscriptions(state.subscriptionsPage, options);
+    return;
+  }
+  renderAvailableSubscriptionsTable(rows);
+  renderAvailableSubscriptionsCards(rows);
+  renderPagination("availableSubsPagination", state.subscriptionsPage, totalPages, "subscriptions", Number(data.total || rows.length));
 }
 
 
@@ -1075,7 +1193,6 @@ async function openUserDetail(uid) {
           ${data.is_owner ? '<button type="button" class="btn-danger" disabled>管理员不可撤销</button>' : `<button type="button" class="btn-danger" data-action="set-access" data-enabled="0" data-uid="${safeDetailUid}">撤销</button>`}
       </div>
       <div class="user-detail-grid">
-        <div class="runtime-item"><div class="k">UID</div><div class="v">${escapeHtml(data.uid || "-")}</div></div>
         <div class="runtime-item"><div class="k">角色</div><div class="v">${data.is_owner ? "管理员" : "用户"}</div></div>
         <div class="runtime-item"><div class="k">订阅数</div><div class="v">${escapeHtml(String(data.subscription_count || 0))}</div></div>
         <div class="runtime-item"><div class="k">最近活跃</div><div class="v">${escapeHtml(formatLocalDateTime(data.last_seen || "-"))}</div></div>
@@ -1181,6 +1298,9 @@ function getViewLoaders(view, requestOptions = {}) {
   if (safeView === "users") {
     return [() => loadAuthorizedUsers(state.usersPage || 1, { requestOptions })];
   }
+  if (safeView === "subscriptions") {
+    return [() => loadAvailableSubscriptions(state.subscriptionsPage || 1, { requestOptions })];
+  }
   if (safeView === "audit") {
     return [
       () => loadRecentChecks(state.auditPage || 1, { syncUrl: false, requestOptions }),
@@ -1242,6 +1362,7 @@ async function refreshAll() {
       loadOverview({ signal: refreshContext.signal }),
       loadRuntime({ signal: refreshContext.signal }),
       loadAuthorizedUsers(state.usersPage || 1, { requestOptions: { signal: refreshContext.signal } }),
+      loadAvailableSubscriptions(state.subscriptionsPage || 1, { requestOptions: { signal: refreshContext.signal } }),
       loadRecentChecks(state.auditPage || 1, { syncUrl: false, requestOptions: { signal: refreshContext.signal } }),
       loadAlerts({ signal: refreshContext.signal }),
       loadAuditSummary({ signal: refreshContext.signal }),
@@ -1261,6 +1382,7 @@ function bindEvents() {
 
   qs("openQuickAuthBtn").onclick = () => toggleQuickAuthPanel();
   qs("loadUsersTableBtn").onclick = () => loadAuthorizedUsers(state.usersPage || 1);
+  qs("loadAvailableSubsBtn").onclick = () => loadAvailableSubscriptions(state.subscriptionsPage || 1);
 
   qs("quickGrantBtn").onclick = () => {
     const uid = getQuickUid();
@@ -1454,6 +1576,7 @@ function bindEvents() {
 
 function init() {
   applyPerfMode(detectPerfMode());
+  ensureAvailableSubscriptionsView();
   const restored = readAuditStateFromUrl();
   state.auditSnapshot = restored.snapshot;
   state.auditPage = restored.page;

@@ -71,11 +71,47 @@ def make_subscription_callback_handler(
             msg = msg[:120] + "..."
         return msg
 
-    def _resolve_url(store, hash_key: str) -> str | None:
-        del store
+    def _build_callback(action: str, url: str, operator_uid: int) -> str:
+        try:
+            return get_short_callback_data(action, url, operator_uid=operator_uid)
+        except TypeError:
+            return get_short_callback_data(action, url)
+
+    def _make_sub_keyboard_safe(
+        *,
+        url: str,
+        operator_uid: int,
+        owner_mode: bool,
+        user_actions_expanded: bool = False,
+    ):
+        try:
+            return make_sub_keyboard(
+                url,
+                operator_uid=operator_uid,
+                owner_mode=owner_mode,
+                user_actions_expanded=user_actions_expanded,
+            )
+        except TypeError:
+            try:
+                return make_sub_keyboard(url, owner_mode=owner_mode, user_actions_expanded=user_actions_expanded)
+            except TypeError:
+                return make_sub_keyboard(url, owner_mode=owner_mode)
+
+    def _resolve_url(hash_key: str, *, operator_uid: int) -> str | None:
         cleanup_url_cache()
-        url = url_cache.get(hash_key, {}).get("url")
+        cache_entry = url_cache.get(hash_key, {})
+        cache_uid = int(cache_entry.get("uid", 0) or 0)
+        if cache_uid and cache_uid != operator_uid:
+            return None
+        url = cache_entry.get("url")
         return url
+
+    def _has_subscription_access(*, sub_owner_uid: int, operator_uid: int, owner_mode: bool) -> bool:
+        if owner_mode:
+            return True
+        if sub_owner_uid <= 0:
+            return True
+        return sub_owner_uid == operator_uid
 
     async def _handle_tag_apply(query, context, *, store, operator_uid: int, owner_mode: bool, hash_key: str) -> bool:
         del context
@@ -87,6 +123,10 @@ def make_subscription_callback_handler(
         url_hash, tag = parts
         cleanup_url_cache()
         cache_entry = url_cache.get(url_hash)
+        cache_uid = int(cache_entry.get("uid", 0) or 0) if cache_entry else 0
+        if cache_uid and cache_uid != operator_uid:
+            await query.answer("操作已过期，请重新发起。", show_alert=True)
+            return True
         url = cache_entry.get("url") if cache_entry else None
         if not url:
             await query.answer("操作已过期，请重新发起。", show_alert=True)
@@ -110,6 +150,10 @@ def make_subscription_callback_handler(
         await query.answer("准备新建标签...")
         cleanup_url_cache()
         cache_entry = url_cache.get(hash_key)
+        cache_uid = int(cache_entry.get("uid", 0) or 0) if cache_entry else 0
+        if cache_uid and cache_uid != operator_uid:
+            await query.answer("操作已过期，请重新发起。", show_alert=True)
+            return True
         url = cache_entry.get("url") if cache_entry else None
         if not url:
             await query.answer("操作已过期，请重新发起。", show_alert=True)
@@ -122,25 +166,43 @@ def make_subscription_callback_handler(
         context.user_data["pending_tag_url"] = url
         return True
 
-    async def _handle_more_ops(query, _context, *, url: str, owner_mode: bool) -> bool:
+    async def _handle_more_ops(query, _context, *, url: str, owner_mode: bool, operator_uid: int) -> bool:
         await query.answer("已展开导出功能，可下载 YAML/TXT")
         await query.edit_message_reply_markup(
-            reply_markup=make_sub_keyboard(url, owner_mode=owner_mode, user_actions_expanded=True)
+            reply_markup=_make_sub_keyboard_safe(
+                url=url,
+                operator_uid=operator_uid,
+                owner_mode=owner_mode,
+                user_actions_expanded=True,
+            )
         )
         return True
 
-    async def _handle_basic_ops(query, _context, *, url: str, owner_mode: bool) -> bool:
+    async def _handle_basic_ops(query, _context, *, url: str, owner_mode: bool, operator_uid: int) -> bool:
         await query.answer("已收起，仅保留核心操作")
         await query.edit_message_reply_markup(
-            reply_markup=make_sub_keyboard(url, owner_mode=owner_mode, user_actions_expanded=False)
+            reply_markup=_make_sub_keyboard_safe(
+                url=url,
+                operator_uid=operator_uid,
+                owner_mode=owner_mode,
+                user_actions_expanded=False,
+            )
         )
         return True
 
-    async def _handle_recheck(update, query, _context, *, store, url: str, owner_mode: bool) -> bool:
+    async def _handle_recheck(update, query, _context, *, store, url: str, owner_mode: bool, operator_uid: int) -> bool:
         await query.answer("🔄 正在重新检测，请稍候...")
         await query.edit_message_text("🔄 正在重新检测，请稍候...")
         try:
-            owner_uid = store.get_all().get(url, {}).get("owner_uid", 0)
+            sub = store.get_all().get(url, {})
+            owner_uid = int(sub.get("owner_uid", 0) or 0)
+            if not _has_subscription_access(
+                sub_owner_uid=owner_uid,
+                operator_uid=operator_uid,
+                owner_mode=owner_mode,
+            ):
+                await query.edit_message_text("无权操作他人的订阅。")
+                return True
             if subscription_check_service:
                 result = await subscription_check_service.parse_and_store(
                     url=url,
@@ -155,18 +217,45 @@ def make_subscription_callback_handler(
             await query.edit_message_text(
                 format_subscription_info(result, url),
                 parse_mode="HTML",
-                reply_markup=make_sub_keyboard(url, owner_mode=owner_mode),
+                reply_markup=_make_sub_keyboard_safe(
+                    url=url,
+                    operator_uid=operator_uid,
+                    owner_mode=owner_mode,
+                ),
             )
         except Exception as exc:
             await query.edit_message_text(f"❌ 重新检测失败：{_safe_user_error(exc)}")
         return True
 
-    async def _handle_delete_prompt(query, _context, *, store, url: str) -> bool:
+    async def _handle_delete_prompt(
+        query,
+        _context,
+        *,
+        store,
+        url: str,
+        operator_uid: int,
+        owner_mode: bool,
+    ) -> bool:
         await query.answer("请确认是否删除")
-        sub_name = store.get_all().get(url, {}).get("name", url)
+        sub = store.get_all().get(url, {})
+        sub_owner = int(sub.get("owner_uid", 0) or 0)
+        if not _has_subscription_access(
+            sub_owner_uid=sub_owner,
+            operator_uid=operator_uid,
+            owner_mode=owner_mode,
+        ):
+            await query.edit_message_text("无权操作他人的订阅。")
+            return True
+        sub_name = sub.get("name", url)
         keyboard = [[
-            inline_keyboard_button(confirm_delete_label, callback_data=get_short_callback_data("del_confirm", url)),
-            inline_keyboard_button("返回", callback_data=get_short_callback_data("recheck", url)),
+            inline_keyboard_button(
+                confirm_delete_label,
+                callback_data=_build_callback("del_confirm", url, operator_uid),
+            ),
+            inline_keyboard_button(
+                "返回",
+                callback_data=_build_callback("recheck", url, operator_uid),
+            ),
         ]]
         await query.edit_message_text(
             f"<b>确定删除这个订阅吗？</b>\n\n名称：{html.escape(sub_name)}\n此操作不可撤销。",
@@ -188,10 +277,19 @@ def make_subscription_callback_handler(
         await query.edit_message_text("<b>已取消删除操作</b>", parse_mode="HTML")
         return True
 
-    async def _handle_ping(query, _context, *, url: str) -> bool:
+    async def _handle_ping(query, _context, *, store, url: str, operator_uid: int, owner_mode: bool) -> bool:
         await query.answer("🚀 开始连通性测试，请稍候...")
         await query.edit_message_text("🚀 正在执行并发测速，请稍候...")
         try:
+            sub = store.get_all().get(url, {})
+            sub_owner = int(sub.get("owner_uid", 0) or 0)
+            if not _has_subscription_access(
+                sub_owner_uid=sub_owner,
+                operator_uid=operator_uid,
+                owner_mode=owner_mode,
+            ):
+                await query.edit_message_text("无权操作他人的订阅。")
+                return True
             parser_instance = await get_parser()
             result = await parser_instance.parse(url)
             nodes = result.get("_normalized_nodes") or result.get("_raw_nodes", [])
@@ -237,7 +335,12 @@ def make_subscription_callback_handler(
                     row = []
             if row:
                 tag_buttons.append(row)
-            tag_buttons.append([inline_keyboard_button("新建标签", callback_data=get_short_callback_data("tag_new", url))])
+            tag_buttons.append([
+                inline_keyboard_button(
+                    "新建标签",
+                    callback_data=_build_callback("tag_new", url, operator_uid),
+                )
+            ])
             await query.edit_message_text(
                 f"为 <b>{html.escape(sub_name)}</b> 选择或新建标签：",
                 parse_mode="HTML",
@@ -309,7 +412,7 @@ def make_subscription_callback_handler(
                 hash_key=hash_key,
             )
 
-        url = _resolve_url(store, hash_key)
+        url = _resolve_url(hash_key, operator_uid=operator_uid)
 
         handled = await cache_callback_handler(update, context, action, url)
         if handled:
@@ -323,10 +426,37 @@ def make_subscription_callback_handler(
         action_handlers = {
             "mute_alerts": lambda: _handle_mute_alerts(query, context, operator_uid=operator_uid),
             "unmute_alerts": lambda: _handle_unmute_alerts(query, context, operator_uid=operator_uid),
-            "more_ops": lambda: _handle_more_ops(query, context, url=url, owner_mode=owner_mode),
-            "basic_ops": lambda: _handle_basic_ops(query, context, url=url, owner_mode=owner_mode),
-            "recheck": lambda: _handle_recheck(update, query, context, store=store, url=url, owner_mode=owner_mode),
-            "delete": lambda: _handle_delete_prompt(query, context, store=store, url=url),
+            "more_ops": lambda: _handle_more_ops(
+                query,
+                context,
+                url=url,
+                owner_mode=owner_mode,
+                operator_uid=operator_uid,
+            ),
+            "basic_ops": lambda: _handle_basic_ops(
+                query,
+                context,
+                url=url,
+                owner_mode=owner_mode,
+                operator_uid=operator_uid,
+            ),
+            "recheck": lambda: _handle_recheck(
+                update,
+                query,
+                context,
+                store=store,
+                url=url,
+                owner_mode=owner_mode,
+                operator_uid=operator_uid,
+            ),
+            "delete": lambda: _handle_delete_prompt(
+                query,
+                context,
+                store=store,
+                url=url,
+                operator_uid=operator_uid,
+                owner_mode=owner_mode,
+            ),
             "del_confirm": lambda: _handle_delete_confirm(
                 query,
                 context,
@@ -336,7 +466,14 @@ def make_subscription_callback_handler(
                 owner_mode=owner_mode,
             ),
             "del_cancel": lambda: _handle_delete_cancel(query, context),
-            "ping": lambda: _handle_ping(query, context, url=url),
+            "ping": lambda: _handle_ping(
+                query,
+                context,
+                store=store,
+                url=url,
+                operator_uid=operator_uid,
+                owner_mode=owner_mode,
+            ),
             "tag": lambda: _handle_tag_select(
                 query,
                 context,

@@ -50,17 +50,18 @@ def render_subscription_check_report(*, batch: BatchCheckResult, format_traffic)
         lines.append("")
         lines.append("全部订阅状态正常。")
     lines.append("")
-    lines.append("管理操作请使用 /list。")
+    lines.append("可使用 /list 查看当前剩余订阅。")
     return "\n".join(lines).strip()
 
 
 def render_checkall_report(*, batch: BatchCheckResult, viewer_uid: int, format_user_identity) -> str:
     others_success = [row for row in batch.success if row.owner_uid != viewer_uid]
     others_failed = [row for row in batch.failed if row.owner_uid != viewer_uid]
+    others_total = len(others_success) + len(others_failed)
     lines = [
         "<b>全局检测结果</b>",
         "",
-        f"总计: {batch.total}",
+        f"总计: {others_total}",
         f"正常: {len(others_success)}",
         f"失效: {len(others_failed)}",
         "--------------------",
@@ -74,7 +75,7 @@ def render_checkall_report(*, batch: BatchCheckResult, viewer_uid: int, format_u
             lines.append(f"<code>{html.escape(item.url)}</code>")
             lines.append("")
     if others_failed:
-        lines.append("<b>失效并已清理</b>")
+        lines.append("<b>失效订阅</b>")
         for item in sorted(others_failed, key=lambda row: (row.owner_uid or 0, row.name)):
             lines.append(f"<b>{html.escape(item.name)}</b>")
             lines.append(f"用户: {format_user_identity(item.owner_uid or 0)}")

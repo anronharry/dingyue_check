@@ -23,6 +23,16 @@ WEB_MIGRATION_NOTICE = (
     "如未配置访问地址，请设置环境变量 WEB_ADMIN_PUBLIC_URL。"
 )
 
+AUTO_REMOVE_ERROR_CODES = {"auth_error", "not_found", "invalid_content"}
+AUTO_REMOVE_ERROR_SNIPPETS = (
+    "已失效",
+    "不存在",
+    "无法识别订阅内容",
+    "流量已耗尽",
+    "流量已完全耗尽",
+    "剩余 0 B",
+)
+
 
 def _web_admin_public_url() -> str:
     return os.getenv("WEB_ADMIN_PUBLIC_URL", "").strip() or "（未配置 WEB_ADMIN_PUBLIC_URL）"
@@ -30,6 +40,14 @@ def _web_admin_public_url() -> str:
 
 def _build_web_migration_notice() -> str:
     return WEB_MIGRATION_NOTICE.format(url=_web_admin_public_url())
+
+
+def _should_auto_remove_failed_subscription(exc: Exception) -> bool:
+    code = str(getattr(exc, "code", "") or "").strip().lower()
+    if code in AUTO_REMOVE_ERROR_CODES:
+        return True
+    error_text = str(exc or "")
+    return any(token in error_text for token in AUTO_REMOVE_ERROR_SNIPPETS)
 
 
 async def deliver_broadcast(*, bot, user_ids, content: str, logger, title: str = "系统广播（管理员）") -> tuple[int, int]:
@@ -176,6 +194,12 @@ def make_delete_command(
     inline_keyboard_markup,
     schedule_auto_delete,
 ):
+    def _build_callback(action: str, url: str, operator_uid: int) -> str:
+        try:
+            return get_short_callback_data(action, url, operator_uid=operator_uid)
+        except TypeError:
+            return get_short_callback_data(action, url)
+
     async def delete_command(update, context):
         if not is_authorized(update):
             await send_no_permission_msg(update)
@@ -201,7 +225,10 @@ def make_delete_command(
             schedule_auto_delete(context, update.message, reply_msg, delay=30)
             return
         keyboard = [[
-            inline_keyboard_button(confirm_delete_label, callback_data=get_short_callback_data("del_confirm", url)),
+            inline_keyboard_button(
+                confirm_delete_label,
+                callback_data=_build_callback("del_confirm", url, update.effective_user.id),
+            ),
             inline_keyboard_button("取消", callback_data="del_cancel"),
         ]]
         reply_msg = await update.message.reply_text(
@@ -420,9 +447,10 @@ def make_checkall_command(
         total_count = len(subscriptions)
         completed_count = 0
         last_update_time = time.time()
+        auto_removed_count = 0
 
         async def check_one_global(url, data):
-            nonlocal completed_count, last_update_time
+            nonlocal completed_count, last_update_time, auto_removed_count
             async with semaphore:
                 try:
                     original_owner = data.get("owner_uid", 0)
@@ -435,7 +463,8 @@ def make_checkall_command(
                         parser_instance = await get_parser()
                         result = await parser_instance.parse(url)
                         store.add_or_update(url, result, user_id=original_owner)
-                    if result.get("remaining", 1) <= 0:
+                    remaining = result.get("remaining")
+                    if remaining is not None and remaining <= 0:
                         raise Exception("流量已耗尽")
                     res = SubscriptionEntity.from_parse_result(
                         url=url,
@@ -444,6 +473,10 @@ def make_checkall_command(
                     )
                 except Exception as exc:
                     store.mark_check_failed(url, str(exc))
+                    if _should_auto_remove_failed_subscription(exc):
+                        removed = store.remove(url)
+                        if removed:
+                            auto_removed_count += 1
                     res = SubscriptionEntity.from_failure(
                         url=url,
                         name=data.get("name", "未知"),
@@ -470,6 +503,8 @@ def make_checkall_command(
             viewer_uid=update.effective_user.id,
             format_user_identity=admin_service.user_profile_service.format_user_identity,
         )
+        if auto_removed_count > 0:
+            report += f"\n\n已自动清理失效订阅: {auto_removed_count} 条。"
         try:
             await progress_msg.edit_text(report, parse_mode="HTML")
         except Exception:
