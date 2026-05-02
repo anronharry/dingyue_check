@@ -519,7 +519,13 @@ async def _collect_owner_eligible_links(runtime: Any) -> tuple[list[str], dict[s
                 result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
                 parse_ok += 1
                 raw_text = str(result.get("_raw_content", "") or "")
-                for item in _extract_protocol_links_from_text(raw_text):
+                extracted = _extract_protocol_links_from_text(raw_text)
+                if not extracted:
+                    nodes = result.get("_normalized_nodes") or result.get("_raw_nodes") or []
+                    if isinstance(nodes, list) and nodes:
+                        fallback_text, _ = _render_raw_lines([node for node in nodes if isinstance(node, dict)])
+                        extracted = [line.strip() for line in fallback_text.splitlines() if line.strip()]
+                for item in extracted:
                     if item not in seen:
                         seen.add(item)
                         links.append(item)
