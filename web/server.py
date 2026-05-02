@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 import csv
 from types import SimpleNamespace
+from urllib.parse import urlparse
 
 from aiohttp import web
 import yaml
@@ -433,6 +434,26 @@ def _nodes_from_parse_result(result: dict[str, Any]) -> list[dict[str, Any]]:
     return [node for node in primary if isinstance(node, dict)]
 
 
+def _source_label_from_url(url: str) -> str:
+    try:
+        parsed = urlparse(url)
+        host = (parsed.netloc or parsed.path or "").strip()
+    except Exception:
+        host = ""
+    host = host or "unknown"
+    host = host.split("@")[-1].split(":")[0].strip() or "unknown"
+    return host[:36]
+
+
+def _apply_source_label_to_node(node: dict[str, Any], source_url: str) -> dict[str, Any]:
+    row = dict(node)
+    base_name = str(row.get("name", "") or "").strip() or "unnamed"
+    tag = f"[src:{_source_label_from_url(source_url)}]"
+    if tag not in base_name:
+        row["name"] = f"{base_name} {tag}"
+    return row
+
+
 async def _build_owner_aggregate_content(runtime: Any) -> tuple[str, int, dict[str, Any]]:
     owner_id = int(runtime.admin_service.owner_id)
     subs = await asyncio.to_thread(runtime.get_storage().get_by_user, owner_id)
@@ -457,7 +478,7 @@ async def _build_owner_aggregate_content(runtime: Any) -> tuple[str, int, dict[s
             try:
                 result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
                 for node in _nodes_from_parse_result(result):
-                    collected_nodes.append(node)
+                    collected_nodes.append(_apply_source_label_to_node(node, url))
                 parse_ok += 1
             except asyncio.TimeoutError:
                 timed_out += 1
@@ -497,7 +518,7 @@ async def _collect_owner_eligible_nodes(runtime: Any) -> tuple[list[dict[str, An
             try:
                 result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
                 for node in _nodes_from_parse_result(result):
-                    collected_nodes.append(node)
+                    collected_nodes.append(_apply_source_label_to_node(node, url))
                 parse_ok += 1
             except asyncio.TimeoutError:
                 timed_out += 1
@@ -535,13 +556,15 @@ async def _collect_owner_eligible_links(runtime: Any) -> tuple[list[str], dict[s
             try:
                 result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
                 parse_ok += 1
-                raw_text = str(result.get("_raw_content", "") or "")
-                extracted = _extract_protocol_links_from_text(raw_text)
+                extracted: list[str] = []
+                nodes = _nodes_from_parse_result(result)
+                if nodes:
+                    tagged_nodes = [_apply_source_label_to_node(node, url) for node in nodes]
+                    raw_from_nodes, _ = _render_raw_lines(tagged_nodes)
+                    extracted = [line.strip() for line in raw_from_nodes.splitlines() if line.strip()]
                 if not extracted:
-                    nodes = _nodes_from_parse_result(result)
-                    if nodes:
-                        fallback_text, _ = _render_raw_lines(nodes)
-                        extracted = [line.strip() for line in fallback_text.splitlines() if line.strip()]
+                    raw_text = str(result.get("_raw_content", "") or "")
+                    extracted = _extract_protocol_links_from_text(raw_text)
                 for item in extracted:
                     if item not in seen:
                         seen.add(item)
