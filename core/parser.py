@@ -334,7 +334,7 @@ class SubscriptionParser:
         parse_notes: list[str] = []
         normalized_original = self._normalize_subscription_text(content)
 
-        yaml_nodes = self._parse_yaml_nodes(normalized_original, max_nodes=max_nodes)
+        yaml_nodes = self._parse_yaml_nodes_preserve_fields(normalized_original, max_nodes=max_nodes)
         if yaml_nodes is not None:
             parse_notes.append("direct-yaml")
             return yaml_nodes, "yaml", list(yaml_nodes), normalized_original, parse_notes
@@ -347,7 +347,7 @@ class SubscriptionParser:
         decoded_content = self._try_decode_subscription_base64(normalized_original)
         if decoded_content:
             parse_notes.append("base64-decoded")
-            yaml_nodes = self._parse_yaml_nodes(decoded_content, max_nodes=max_nodes)
+            yaml_nodes = self._parse_yaml_nodes_preserve_fields(decoded_content, max_nodes=max_nodes)
             if yaml_nodes is not None:
                 parse_notes.append("decoded-yaml")
                 return yaml_nodes, "yaml", list(yaml_nodes), decoded_content, parse_notes
@@ -497,6 +497,40 @@ class SubscriptionParser:
                         "port": proxy.get("port", 0),
                     }
                 )
+        return nodes
+
+    @staticmethod
+    def _parse_yaml_nodes_preserve_fields(content: str, *, max_nodes: int) -> list[dict] | None:
+        if not (content.strip().startswith("#") or "proxies:" in content[:5000] or "proxy-groups:" in content[:5000]):
+            return None
+
+        yaml_content = content
+        if len(yaml_content) > 300 * 1024:
+            truncate_idx = yaml_content.rfind("\n", 0, 300 * 1024)
+            yaml_content = yaml_content[: truncate_idx if truncate_idx != -1 else 300 * 1024]
+
+        try:
+            config = yaml.safe_load(yaml_content)
+        except Exception:
+            return None
+
+        if not isinstance(config, dict) or "proxies" not in config:
+            return None
+
+        nodes: list[dict] = []
+        for proxy in config["proxies"]:
+            if len(nodes) >= max_nodes:
+                break
+            if not isinstance(proxy, dict):
+                continue
+            row = dict(proxy)
+            ptype = str(row.get("type", row.get("protocol", "unknown")) or "unknown").lower()
+            row["type"] = ptype
+            row["protocol"] = ptype
+            row["name"] = row.get("name", "unnamed")
+            row["server"] = row.get("server", "")
+            row["port"] = row.get("port", 0)
+            nodes.append(row)
         return nodes
 
     def _parse_node_line(self, line):
