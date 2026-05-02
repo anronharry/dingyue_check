@@ -342,6 +342,15 @@ def _node_quality_key(node: dict[str, Any]) -> tuple[float, str]:
 
 
 def _render_clash_yaml(nodes: list[dict[str, Any]]) -> tuple[str, int]:
+    required_keys: dict[str, tuple[str, ...]] = {
+        "vmess": ("uuid",),
+        "vless": ("uuid",),
+        "trojan": ("password",),
+        "ss": ("cipher", "password"),
+        "ssr": ("cipher", "password", "protocol", "obfs"),
+        "hysteria2": ("password",),
+        "tuic": ("uuid", "password"),
+    }
     proxies: list[dict[str, Any]] = []
     seen: set[tuple[str, str, int, str]] = set()
     for row in nodes:
@@ -354,6 +363,13 @@ def _render_clash_yaml(nodes: list[dict[str, Any]]) -> tuple[str, int]:
             port = 0
         name = str(row.get("name", "")).strip() or f"{ptype}-{server}:{port}"
         if not ptype or not server or port <= 0:
+            continue
+        missing_required = False
+        for key_name in required_keys.get(ptype, ()):
+            if str(row.get(key_name, "") or "").strip() == "":
+                missing_required = True
+                break
+        if missing_required:
             continue
         key = (ptype, server, port, str(row.get("uuid") or row.get("password") or ""))
         if key in seen:
@@ -410,6 +426,13 @@ def _render_base64(nodes: list[dict[str, Any]]) -> tuple[str, int]:
     return payload, count
 
 
+def _nodes_from_parse_result(result: dict[str, Any]) -> list[dict[str, Any]]:
+    primary = result.get("_raw_nodes") or result.get("_normalized_nodes") or []
+    if not isinstance(primary, list):
+        return []
+    return [node for node in primary if isinstance(node, dict)]
+
+
 async def _build_owner_aggregate_content(runtime: Any) -> tuple[str, int, dict[str, Any]]:
     owner_id = int(runtime.admin_service.owner_id)
     subs = await asyncio.to_thread(runtime.get_storage().get_by_user, owner_id)
@@ -433,11 +456,8 @@ async def _build_owner_aggregate_content(runtime: Any) -> tuple[str, int, dict[s
         async with semaphore:
             try:
                 result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
-                nodes = result.get("_normalized_nodes") or result.get("_raw_nodes") or []
-                if isinstance(nodes, list):
-                    for node in nodes:
-                        if isinstance(node, dict):
-                            collected_nodes.append(node)
+                for node in _nodes_from_parse_result(result):
+                    collected_nodes.append(node)
                 parse_ok += 1
             except asyncio.TimeoutError:
                 timed_out += 1
@@ -476,11 +496,8 @@ async def _collect_owner_eligible_nodes(runtime: Any) -> tuple[list[dict[str, An
         async with semaphore:
             try:
                 result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
-                nodes = result.get("_normalized_nodes") or result.get("_raw_nodes") or []
-                if isinstance(nodes, list):
-                    for node in nodes:
-                        if isinstance(node, dict):
-                            collected_nodes.append(node)
+                for node in _nodes_from_parse_result(result):
+                    collected_nodes.append(node)
                 parse_ok += 1
             except asyncio.TimeoutError:
                 timed_out += 1
@@ -521,9 +538,9 @@ async def _collect_owner_eligible_links(runtime: Any) -> tuple[list[str], dict[s
                 raw_text = str(result.get("_raw_content", "") or "")
                 extracted = _extract_protocol_links_from_text(raw_text)
                 if not extracted:
-                    nodes = result.get("_normalized_nodes") or result.get("_raw_nodes") or []
-                    if isinstance(nodes, list) and nodes:
-                        fallback_text, _ = _render_raw_lines([node for node in nodes if isinstance(node, dict)])
+                    nodes = _nodes_from_parse_result(result)
+                    if nodes:
+                        fallback_text, _ = _render_raw_lines(nodes)
                         extracted = [line.strip() for line in fallback_text.splitlines() if line.strip()]
                 for item in extracted:
                     if item not in seen:
