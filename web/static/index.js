@@ -1274,6 +1274,75 @@ async function runOwnerCheckAll() {
   }
 }
 
+async function loadOwnerAggregateInfo() {
+  const data = await apiRequest("/api/v1/owner/aggregate-subscription");
+  if (!data) return null;
+  const urlInput = qs("ownerAggregateUrl");
+  const meta = qs("ownerAggregateMeta");
+  const historyBox = qs("ownerAggregateHistory");
+  if (urlInput) urlInput.value = data.url || "";
+  if (meta) {
+    const ts = data.generated_at ? formatLocalDateTime(new Date(Number(data.generated_at) * 1000).toISOString().slice(0, 19).replace("T", " ")) : "-";
+    const ver = data.version || "-";
+    let text = `节点数: ${Number(data.node_count || 0)} | 最近生成: ${ts} | 版本: ${ver}`;
+    if (data.last_error) {
+      const errTs = data.last_error_at
+        ? formatLocalDateTime(new Date(Number(data.last_error_at) * 1000).toISOString().slice(0, 19).replace("T", " "))
+        : "-";
+      text += ` | 最近失败: ${data.last_error} (${errTs})`;
+    }
+    if (data.build_stats) {
+      const s = data.build_stats;
+      text += ` | 构建: 总${Number(s.total_subscriptions || 0)} 合格${Number(s.eligible_subscriptions || 0)} 成功${Number(s.parsed_ok || 0)} 超时${Number(s.timed_out || 0)}`;
+    }
+    meta.textContent = text;
+  }
+  if (historyBox) {
+    const rows = Array.isArray(data.build_history) ? data.build_history.slice(-8).reverse() : [];
+    if (!rows.length) {
+      historyBox.textContent = "最近构建：暂无";
+    } else {
+      historyBox.innerHTML = rows
+        .map((r) => {
+          const ts = r.ts
+            ? formatLocalDateTime(new Date(Number(r.ts) * 1000).toISOString().slice(0, 19).replace("T", " "))
+            : "-";
+          return `• ${ts} | 总${Number(r.total_subscriptions || 0)} 合格${Number(r.eligible_subscriptions || 0)} 成功${Number(r.parsed_ok || 0)} 失败${Number(r.parsed_failed || 0)} 超时${Number(r.timed_out || 0)}`;
+        })
+        .join("<br>");
+    }
+  }
+  return data;
+}
+
+async function refreshOwnerAggregate() {
+  const data = await apiRequest("/api/v1/owner/aggregate-subscription/refresh", { method: "POST" });
+  if (!data) return;
+  setStatus(`聚合订阅已刷新，节点 ${Number(data.node_count || 0)} 条`, "ok");
+  await loadOwnerAggregateInfo();
+}
+
+async function rotateOwnerAggregateUrl() {
+  const ok = await confirmAction("刷新URL后，旧URL会立即作废，是否继续？", "刷新聚合URL", "确认刷新");
+  if (!ok) return;
+  let data = null;
+  try {
+    data = await apiRequest("/api/v1/owner/aggregate-subscription/rotate", { method: "POST" });
+  } catch (e) {
+    const msg = String((e && e.message) || "");
+    if (msg.includes("rotate_cooldown")) {
+      setStatus("操作过快，请稍后再刷新URL", "warn");
+      return;
+    }
+    throw e;
+  }
+  if (!data) return;
+  const urlInput = qs("ownerAggregateUrl");
+  if (urlInput) urlInput.value = data.url || "";
+  setStatus("聚合URL已刷新，旧URL已作废", "ok");
+  await refreshOwnerAggregate();
+}
+
 function resetViewRefreshControllers() {
   viewRefreshControllers.forEach((controller) => controller.abort());
   viewRefreshControllers.clear();
@@ -1477,6 +1546,19 @@ function bindEvents() {
   qs("ownerImportJsonBtn").onclick = () => qs("ownerImportFile").click();
   qs("ownerRestoreBtn").onclick = () => qs("ownerRestoreFile").click();
   qs("ownerCheckAllBtn").onclick = runOwnerCheckAll;
+  qs("ownerAggregateRefreshBtn").onclick = () => refreshOwnerAggregate();
+  qs("ownerAggregateRotateBtn").onclick = () => rotateOwnerAggregateUrl();
+  qs("ownerAggregateCopyBtn").onclick = async () => {
+    const urlInput = qs("ownerAggregateUrl");
+    const text = (urlInput && urlInput.value) || "";
+    if (!text) return setStatus("聚合URL为空", "warn");
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus("聚合URL已复制", "ok");
+    } catch (_e) {
+      setStatus("复制失败", "warn");
+    }
+  };
 
   qs("ownerImportFile").onchange = async (event) => {
     const file = event.target.files && event.target.files[0];
@@ -1607,6 +1689,7 @@ function init() {
     }
   });
   refreshByView(state.view, { force: true, showStatus: true });
+  loadOwnerAggregateInfo();
 }
 
 init();

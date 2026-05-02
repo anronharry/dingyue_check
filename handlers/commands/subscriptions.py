@@ -9,15 +9,17 @@ from core.models import BatchCheckResult, SubscriptionEntity
 from renderers.messages.admin_reports import render_subscription_check_report
 
 
-AUTO_REMOVE_ERROR_CODES = {"auth_error", "not_found", "invalid_content"}
+AUTO_REMOVE_ERROR_CODES = {"auth_error", "not_found", "invalid_content", "ssl_error"}
 AUTO_REMOVE_ERROR_SNIPPETS = (
     "已失效",
     "不存在",
     "无法识别订阅内容",
     "流量已完全耗尽",
     "剩余 0 B",
+    "SSL 证书校验失败",
 )
 
+LIST_SEND_INTERVAL_SECONDS = 0.35
 
 def _should_auto_remove_failed_subscription(exc: Exception) -> bool:
     code = str(getattr(exc, "code", "") or "").strip().lower()
@@ -145,6 +147,7 @@ def make_list_command(
     is_authorized,
     send_no_permission_msg,
     get_storage,
+    format_traffic,
     get_short_callback_data,
     button_labels,
     telegram_inline_button,
@@ -176,8 +179,22 @@ def make_list_command(
         schedule_auto_delete(context, update.message, reply_msg, delay=30)
 
         async def send_sub_item(url, data, tag_label=""):
-            label = f"{tag_label}" if tag_label else "📦 未分组"
+            label = tag_label if tag_label else "📦 未分组"
             msg = f"{label} — <b>{html.escape(data.get('name', '未命名'))}</b>\n<code>{html.escape(url)}</code>"
+            total = data.get("total")
+            remaining = data.get("remaining")
+            expire_time = data.get("expire_time")
+            has_recent_check = (
+                data.get("last_check_status") == "success"
+                and any(value is not None for value in (total, remaining, expire_time))
+            )
+            if has_recent_check:
+                total_text = format_traffic(int(total))
+                remain_text = format_traffic(int(remaining)) if isinstance(remaining, (int, float)) else "-"
+                msg += f"\n最近检测：总量 {total_text} | 剩余 {remain_text}"
+                msg += f"\n到期时间：{expire_time or '-'}"
+            else:
+                msg += "\n最近检测：暂无（可点击下方重新检测）"
             keyboard = [[
                 telegram_inline_button(
                     button_labels["recheck"],
@@ -201,9 +218,13 @@ def make_list_command(
         for tag in tags:
             tagged_subs = {url: data for url, data in subscriptions.items() if tag in data.get("tags", [])}
             for url, data in tagged_subs.items():
-                await send_sub_item(url, data, tag_label=f"🏷️ {tag}")
+                await send_sub_item(url, data, tag_label=f"[TAG] {tag}")
+                await asyncio.sleep(LIST_SEND_INTERVAL_SECONDS)
 
         for url, data in untagged.items():
             await send_sub_item(url, data)
+            await asyncio.sleep(LIST_SEND_INTERVAL_SECONDS)
 
     return list_command
+
+

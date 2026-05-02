@@ -59,6 +59,7 @@ def build_handlers(runtime: Runtime, *, post_init):
         is_authorized=runtime.is_authorized,
         send_no_permission_msg=runtime.send_no_permission_msg,
         get_storage=runtime.get_storage,
+        format_traffic=format_traffic,
         get_short_callback_data=runtime.get_short_callback_data,
         button_labels={"recheck": BTN_RECHECK, "tag": BTN_TAG, "delete": BTN_DELETE},
         telegram_inline_button=InlineKeyboardButton,

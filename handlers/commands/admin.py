@@ -23,7 +23,7 @@ WEB_MIGRATION_NOTICE = (
     "如未配置访问地址，请设置环境变量 WEB_ADMIN_PUBLIC_URL。"
 )
 
-AUTO_REMOVE_ERROR_CODES = {"auth_error", "not_found", "invalid_content"}
+AUTO_REMOVE_ERROR_CODES = {"auth_error", "not_found", "invalid_content", "ssl_error"}
 AUTO_REMOVE_ERROR_SNIPPETS = (
     "已失效",
     "不存在",
@@ -31,6 +31,7 @@ AUTO_REMOVE_ERROR_SNIPPETS = (
     "流量已耗尽",
     "流量已完全耗尽",
     "剩余 0 B",
+    "SSL 证书校验失败",
 )
 
 

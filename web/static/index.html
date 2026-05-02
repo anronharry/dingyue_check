@@ -201,9 +201,17 @@
                   <input id="ownerImportFile" type="file" accept=".json,application/json" hidden>
                   <input id="ownerRestoreFile" type="file" accept=".zip,application/zip" hidden>
                 </div>
+                <div class="tools-row" style="margin-top:10px;flex-wrap:wrap;gap:8px;">
+                  <input id="ownerAggregateUrl" type="text" readonly style="min-width:320px;flex:1;" placeholder="Owner 聚合订阅 URL">
+                  <button id="ownerAggregateCopyBtn" type="button">复制 URL</button>
+                  <button id="ownerAggregateRefreshBtn" class="btn-brand" type="button">刷新订阅缓存</button>
+                  <button id="ownerAggregateRotateBtn" class="btn-danger" type="button">刷新URL(旧URL作废)</button>
+                </div>
+                <div id="ownerAggregateMeta" class="hint">聚合订阅：未加载</div>
+                <div id="ownerAggregateHistory" class="hint" style="margin-top:8px;max-height:140px;overflow:auto;"></div>
               </div>
-            </article>
 
+            </article>
             <article class="card" data-page="overview">
               <div class="head">
                 <h2>运行环境状态</h2>

@@ -6,6 +6,17 @@ import html
 from handlers.callbacks.audit_actions import make_audit_callback_handler
 from handlers.callbacks.cache_actions import make_cache_callback_handler
 
+AUTO_REMOVE_ERROR_CODES = {"auth_error", "not_found", "invalid_content", "ssl_error"}
+AUTO_REMOVE_ERROR_SNIPPETS = (
+    "已失效",
+    "不存在",
+    "无法识别订阅内容",
+    "流量已耗尽",
+    "流量已完全耗尽",
+    "剩余 0 B",
+    "SSL 证书校验失败",
+)
+
 
 def make_subscription_callback_handler(
     *,
@@ -70,6 +81,13 @@ def make_subscription_callback_handler(
         if len(msg) > 120:
             msg = msg[:120] + "..."
         return msg
+
+    def _should_auto_remove_failed_subscription(exc: Exception) -> bool:
+        code = str(getattr(exc, "code", "") or "").strip().lower()
+        if code in AUTO_REMOVE_ERROR_CODES:
+            return True
+        error_text = str(exc or "")
+        return any(token in error_text for token in AUTO_REMOVE_ERROR_SNIPPETS)
 
     def _build_callback(action: str, url: str, operator_uid: int) -> str:
         try:
@@ -224,8 +242,14 @@ def make_subscription_callback_handler(
                 ),
             )
         except Exception as exc:
-            await query.edit_message_text(f"❌ 重新检测失败：{_safe_user_error(exc)}")
-        return True
+            store.mark_check_failed(url, str(exc), operator_uid=operator_uid, require_owner=not owner_mode)
+            auto_removed = False
+            if _should_auto_remove_failed_subscription(exc):
+                auto_removed = store.remove(url, operator_uid=operator_uid, require_owner=not owner_mode)
+            error_msg = f"❌ 重新检测失败：{_safe_user_error(exc)}"
+            if auto_removed:
+                error_msg += "\n已自动删除该失效订阅。"
+            await query.edit_message_text(error_msg)
 
     async def _handle_delete_prompt(
         query,
@@ -297,6 +321,13 @@ def make_subscription_callback_handler(
                 await query.edit_message_text("当前格式不支持直接获取节点列表测速。")
                 return True
             alive_count, total_count, alive_nodes = await latency_tester.ping_all_nodes(nodes, concurrency=20)
+            if total_count > 0 and alive_count == 0:
+                removed = store.remove(url, operator_uid=operator_uid, require_owner=not owner_mode)
+                if removed:
+                    await query.edit_message_text("❌ 测速结果为 0 存活，已自动删除该订阅记录。")
+                else:
+                    await query.edit_message_text("❌ 测速结果为 0 存活，自动删除失败（无权限或记录不存在）。")
+                return True
             ping_report = (
                 "<b>测速报告</b>\n"
                 f"总计: {total_count} | 存活: {alive_count} | 失败: {total_count - alive_count}\n"
@@ -310,7 +341,13 @@ def make_subscription_callback_handler(
             await query.message.delete()
         except Exception as exc:
             logger.error("测速过程中发生错误: %s", exc)
-            await query.edit_message_text(f"❌ 测速失败：{_safe_user_error(exc)}")
+            auto_removed = False
+            if _should_auto_remove_failed_subscription(exc):
+                auto_removed = store.remove(url, operator_uid=operator_uid, require_owner=not owner_mode)
+            message = f"❌ 测速失败：{_safe_user_error(exc)}"
+            if auto_removed:
+                message += "\n已自动删除该失效订阅。"
+            await query.edit_message_text(message)
         return True
 
     async def _handle_tag_select(query, context, *, store, url: str, operator_uid: int, owner_mode: bool, hash_key: str) -> bool:
@@ -491,3 +528,6 @@ def make_subscription_callback_handler(
         return True
 
     return handle_callback
+
+
+

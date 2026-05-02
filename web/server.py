@@ -11,12 +11,17 @@ import secrets
 import time
 import re
 import html as html_lib
+import os
+import base64
+import hashlib
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 import csv
+from types import SimpleNamespace
 
 from aiohttp import web
+import yaml
 
 
 API_PREFIX = "/api/v1"
@@ -36,6 +41,11 @@ LOGIN_MAX_ATTEMPTS_KEY = web.AppKey("web_admin_login_max_attempts", int)
 SESSION_TTL_KEY = web.AppKey("web_admin_session_ttl", int)
 AUTH_BACKEND_KEY = web.AppKey("web_admin_auth_backend", object)
 STARTED_AT_KEY = web.AppKey("web_admin_started_at", float)
+AGG_STATE_KEY = web.AppKey("owner_aggregate_state", object)
+AGG_TASK_KEY = web.AppKey("owner_aggregate_task", object)
+AGG_ROTATE_COOLDOWN_SECONDS = 30
+AGG_PARSE_CONCURRENCY = 6
+AGG_PARSE_TIMEOUT_SECONDS = 15
 
 
 class MemoryAuthBackend:
@@ -156,6 +166,358 @@ def _build_auth_backend(redis_url: str | None):
 
 def _get_admin_static_dir() -> Path:
     return Path(__file__).resolve().parent / "static"
+
+
+def _aggregate_state_file() -> Path:
+    return Path(__file__).resolve().parent.parent / "data" / "db" / "owner_aggregate.json"
+
+
+class OwnerAggregateState:
+    def __init__(self, path: Path, *, secret_key: str):
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = asyncio.Lock()
+        self._secret = (secret_key or "owner-aggregate").encode("utf-8")
+        self._state = self._load()
+
+    def _encode_token(self, token: str) -> str:
+        payload = token.encode("utf-8")
+        key = self._secret
+        mixed = bytes([b ^ key[i % len(key)] for i, b in enumerate(payload)])
+        return base64.urlsafe_b64encode(mixed).decode("ascii")
+
+    def _decode_token(self, token_enc: str) -> str:
+        raw = base64.urlsafe_b64decode(token_enc.encode("ascii"))
+        key = self._secret
+        plain = bytes([b ^ key[i % len(key)] for i, b in enumerate(raw)])
+        return plain.decode("utf-8")
+
+    def _load(self) -> dict[str, Any]:
+        if not self.path.exists():
+            return {}
+        try:
+            return json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _save(self) -> None:
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self._state, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, self.path)
+
+    async def get_token(self) -> str:
+        async with self._lock:
+            token = ""
+            token_enc = str(self._state.get("token_enc", "") or "").strip()
+            if token_enc:
+                try:
+                    token = self._decode_token(token_enc).strip()
+                except Exception:
+                    token = ""
+            if not token:
+                token = str(self._state.get("token", "") or "").strip()
+                if token:
+                    self._state["token_enc"] = self._encode_token(token)
+                    self._state.pop("token", None)
+                    self._save()
+            if token:
+                return token
+            token = secrets.token_urlsafe(24)
+            self._state["token_enc"] = self._encode_token(token)
+            self._state["created_at"] = int(time.time())
+            self._save()
+            return token
+
+    async def rotate_token(self) -> str:
+        async with self._lock:
+            now_ts = int(time.time())
+            last_rotated = int(self._state.get("rotated_at", self._state.get("created_at", 0)) or 0)
+            if last_rotated and now_ts - last_rotated < AGG_ROTATE_COOLDOWN_SECONDS:
+                raise ValueError("rotate_cooldown")
+            token = secrets.token_urlsafe(24)
+            self._state["token_enc"] = self._encode_token(token)
+            self._state.pop("token", None)
+            self._state["rotated_at"] = now_ts
+            self._state.pop("cache", None)
+            self._save()
+            return token
+
+    async def read_cache(self) -> dict[str, Any] | None:
+        async with self._lock:
+            cache = self._state.get("cache")
+            if not isinstance(cache, dict):
+                return None
+            return dict(cache)
+
+    async def read_meta(self) -> dict[str, Any]:
+        async with self._lock:
+            return {
+                "last_error": str(self._state.get("last_error", "") or ""),
+                "last_error_at": int(self._state.get("last_error_at", 0) or 0),
+                "rotated_at": int(self._state.get("rotated_at", 0) or 0),
+                "build_stats": dict(self._state.get("build_stats", {}) or {}),
+            }
+
+    async def write_cache(self, *, content: str, node_count: int, fingerprint: str = "") -> None:
+        async with self._lock:
+            version = str(int(time.time()))
+            self._state["cache"] = {
+                "content": content,
+                "node_count": int(node_count),
+                "generated_at": int(time.time()),
+                "version": version,
+                "fingerprint": str(fingerprint or ""),
+            }
+            self._state["last_error"] = ""
+            self._state["last_error_at"] = 0
+            self._save()
+
+    async def write_error(self, *, message: str) -> None:
+        async with self._lock:
+            self._state["last_error"] = str(message or "")[:300]
+            self._state["last_error_at"] = int(time.time())
+            self._save()
+
+    async def write_build_stats(self, stats: dict[str, Any]) -> None:
+        async with self._lock:
+            self._state["build_stats"] = dict(stats or {})
+            history = list(self._state.get("build_history", []) or [])
+            row = dict(stats or {})
+            row["ts"] = int(time.time())
+            history.append(row)
+            self._state["build_history"] = history[-20:]
+            self._save()
+
+    async def read_history(self) -> list[dict[str, Any]]:
+        async with self._lock:
+            rows = list(self._state.get("build_history", []) or [])
+            return [dict(r) for r in rows]
+
+
+def _is_subscription_eligible(data: dict[str, Any], *, now: datetime) -> bool:
+    if str(data.get("last_check_status", "")).lower() != "success":
+        return False
+    remaining = data.get("remaining")
+    if isinstance(remaining, (int, float)) and remaining <= 0:
+        return False
+    expire_text = str(data.get("expire_time", "") or "").strip()
+    if not expire_text:
+        return False
+    try:
+        expire_at = datetime.strptime(expire_text, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return False
+    return expire_at > now
+
+
+def _owner_audit_user(runtime: Any) -> SimpleNamespace:
+    owner_id = int(runtime.admin_service.owner_id)
+    return SimpleNamespace(id=owner_id, username="owner", full_name="Owner")
+
+
+def _build_proxy_groups(proxy_names: list[str]) -> list[dict[str, Any]]:
+    selector_list = ["♻ 自动选择", "🎯 全球直连", *proxy_names]
+    return [
+        {"name": "🚀 节点选择", "type": "select", "proxies": selector_list},
+        {
+            "name": "♻ 自动选择",
+            "type": "url-test",
+            "url": "http://www.gstatic.com/generate_204",
+            "interval": 300,
+            "tolerance": 50,
+            "proxies": proxy_names or ["🎯 全球直连"],
+        },
+        {"name": "🎯 全球直连", "type": "select", "proxies": ["DIRECT"]},
+    ]
+
+
+def _node_quality_key(node: dict[str, Any]) -> tuple[float, str]:
+    latency_raw = node.get("latency") or node.get("delay") or node.get("latency_ms")
+    try:
+        latency = float(latency_raw)
+    except Exception:
+        latency = 999999.0
+    return latency, str(node.get("name", ""))
+
+
+def _render_clash_yaml(nodes: list[dict[str, Any]]) -> tuple[str, int]:
+    proxies: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, int, str]] = set()
+    for row in nodes:
+        ptype = str(row.get("type") or row.get("protocol") or "").strip().lower()
+        server = str(row.get("server", "")).strip()
+        port_raw = row.get("port", 0)
+        try:
+            port = int(port_raw)
+        except Exception:
+            port = 0
+        name = str(row.get("name", "")).strip() or f"{ptype}-{server}:{port}"
+        if not ptype or not server or port <= 0:
+            continue
+        key = (ptype, server, port, str(row.get("uuid") or row.get("password") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        proxy = dict(row)
+        proxy["name"] = name
+        proxy["type"] = ptype
+        proxy["server"] = server
+        proxy["port"] = port
+        proxies.append(proxy)
+    proxies.sort(key=_node_quality_key)
+
+    proxy_names = [p["name"] for p in proxies]
+    config = {
+        "mixed-port": 7890,
+        "allow-lan": False,
+        "mode": "rule",
+        "log-level": "info",
+        "profile": {"store-selected": True, "store-fake-ip": True},
+        "proxies": proxies,
+        "proxy-groups": _build_proxy_groups(proxy_names),
+        "rules": [
+            "DOMAIN-SUFFIX,google.com,🚀 节点选择",
+            "DOMAIN-KEYWORD,telegram,🚀 节点选择",
+            "GEOIP,CN,DIRECT",
+            "MATCH,🚀 节点选择",
+        ],
+    }
+    return yaml.safe_dump(config, allow_unicode=True, sort_keys=False), len(proxies)
+
+
+def _render_raw_lines(nodes: list[dict[str, Any]]) -> tuple[str, int]:
+    lines: list[str] = []
+    seen: set[str] = set()
+    for node in nodes:
+        raw = str(node.get("raw", "") or "").strip()
+        if not raw or raw in seen:
+            continue
+        seen.add(raw)
+        lines.append(raw)
+    return "\n".join(lines), len(lines)
+
+
+def _render_base64(nodes: list[dict[str, Any]]) -> tuple[str, int]:
+    raw_text, count = _render_raw_lines(nodes)
+    payload = base64.b64encode(raw_text.encode("utf-8")).decode("ascii") if raw_text else ""
+    return payload, count
+
+
+async def _build_owner_aggregate_content(runtime: Any) -> tuple[str, int, dict[str, Any]]:
+    owner_id = int(runtime.admin_service.owner_id)
+    subs = await asyncio.to_thread(runtime.get_storage().get_by_user, owner_id)
+    if not subs:
+        empty = {"total_subscriptions": 0, "eligible_subscriptions": 0, "parsed_ok": 0, "parsed_failed": 0, "timed_out": 0}
+        return yaml.safe_dump({"proxies": [], "proxy-groups": _build_proxy_groups([]), "rules": ["MATCH,DIRECT"]}, allow_unicode=True, sort_keys=False), 0, empty
+    now = datetime.now()
+    eligible_subs = {url: data for url, data in subs.items() if _is_subscription_eligible(data, now=now)}
+    if not eligible_subs:
+        empty = {"total_subscriptions": len(subs), "eligible_subscriptions": 0, "parsed_ok": 0, "parsed_failed": 0, "timed_out": 0}
+        return yaml.safe_dump({"proxies": [], "proxy-groups": _build_proxy_groups([]), "rules": ["MATCH,DIRECT"]}, allow_unicode=True, sort_keys=False), 0, empty
+    parser_instance = await runtime.get_parser()
+    collected_nodes: list[dict[str, Any]] = []
+    parse_ok = 0
+    parse_failed = 0
+    timed_out = 0
+    semaphore = asyncio.Semaphore(AGG_PARSE_CONCURRENCY)
+
+    async def _parse_one(url: str) -> None:
+        nonlocal parse_ok, parse_failed, timed_out
+        async with semaphore:
+            try:
+                result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
+                nodes = result.get("_normalized_nodes") or result.get("_raw_nodes") or []
+                if isinstance(nodes, list):
+                    for node in nodes:
+                        if isinstance(node, dict):
+                            collected_nodes.append(node)
+                parse_ok += 1
+            except asyncio.TimeoutError:
+                timed_out += 1
+                parse_failed += 1
+                logger.warning("aggregate parse timeout url=%s", url)
+            except Exception as exc:
+                parse_failed += 1
+                logger.warning("aggregate parse failed url=%s err=%s", url, exc)
+
+    await asyncio.gather(*[_parse_one(url) for url in eligible_subs.keys()])
+    content, count = _render_clash_yaml(collected_nodes)
+    stats = {
+        "total_subscriptions": len(subs),
+        "eligible_subscriptions": len(eligible_subs),
+        "parsed_ok": parse_ok,
+        "parsed_failed": parse_failed,
+        "timed_out": timed_out,
+    }
+    return content, count, stats
+
+
+async def _collect_owner_eligible_nodes(runtime: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    owner_id = int(runtime.admin_service.owner_id)
+    subs = await asyncio.to_thread(runtime.get_storage().get_by_user, owner_id)
+    now = datetime.now()
+    eligible_subs = {url: data for url, data in subs.items() if _is_subscription_eligible(data, now=now)}
+    parser_instance = await runtime.get_parser()
+    collected_nodes: list[dict[str, Any]] = []
+    parse_ok = 0
+    parse_failed = 0
+    timed_out = 0
+    semaphore = asyncio.Semaphore(AGG_PARSE_CONCURRENCY)
+
+    async def _parse_one(url: str) -> None:
+        nonlocal parse_ok, parse_failed, timed_out
+        async with semaphore:
+            try:
+                result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
+                nodes = result.get("_normalized_nodes") or result.get("_raw_nodes") or []
+                if isinstance(nodes, list):
+                    for node in nodes:
+                        if isinstance(node, dict):
+                            collected_nodes.append(node)
+                parse_ok += 1
+            except asyncio.TimeoutError:
+                timed_out += 1
+                parse_failed += 1
+            except Exception:
+                parse_failed += 1
+
+    await asyncio.gather(*[_parse_one(url) for url in eligible_subs.keys()])
+    stats = {
+        "total_subscriptions": len(subs),
+        "eligible_subscriptions": len(eligible_subs),
+        "parsed_ok": parse_ok,
+        "parsed_failed": parse_failed,
+        "timed_out": timed_out,
+    }
+    return collected_nodes, stats
+
+
+async def _compute_owner_fingerprint(runtime: Any) -> str:
+    owner_id = int(runtime.admin_service.owner_id)
+    subs = await asyncio.to_thread(runtime.get_storage().get_by_user, owner_id)
+    rows = []
+    for url, data in sorted(subs.items(), key=lambda item: item[0]):
+        rows.append(
+            {
+                "url": url,
+                "updated_at": data.get("updated_at"),
+                "last_check_status": data.get("last_check_status"),
+                "expire_time": data.get("expire_time"),
+                "remaining": data.get("remaining"),
+            }
+        )
+    blob = json.dumps(rows, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()
+
+
+def _build_subscribe_url(request: web.Request, token: str) -> str:
+    configured = os.getenv("WEB_ADMIN_PUBLIC_URL", "").strip()
+    if configured:
+        base = configured.rstrip("/")
+        if base.endswith("/admin"):
+            base = base[:-6]
+        return f"{base}/sub/{token}"
+    return f"{request.scheme}://{request.host}/sub/{token}"
 
 
 def _is_api_path(path: str) -> bool:
@@ -1090,7 +1452,173 @@ async def _owner_check_all(request: web.Request) -> web.Response:
     success = sum(1 for row in results if row)
     failed = len(results) - success
     return web.json_response({"ok": True, "data": {"total": len(results), "success": success, "failed": failed}})
+
+
+async def _owner_aggregate_info(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    state: OwnerAggregateState = request.app[AGG_STATE_KEY]
+    token = await state.get_token()
+    cache = await state.read_cache()
+    meta = await state.read_meta()
+    history = await state.read_history()
+    generated_at = int(cache.get("generated_at", 0) or 0) if cache else 0
+    node_count = int(cache.get("node_count", 0) or 0) if cache else 0
+    version = str(cache.get("version", "") or "") if cache else ""
+    last_error = str(meta.get("last_error", "") or "")
+    last_error_at = int(meta.get("last_error_at", 0) or 0)
+    build_stats = dict(meta.get("build_stats", {}) or {})
+    return web.json_response(
+        {
+            "ok": True,
+            "data": {
+                "url": _build_subscribe_url(request, token),
+                "token_preview": token[:6],
+                "generated_at": generated_at,
+                "node_count": node_count,
+                "version": version,
+                "last_error": last_error,
+                "last_error_at": last_error_at,
+                "build_stats": build_stats,
+                "build_history": history,
+                "owner_id": int(runtime.admin_service.owner_id),
+            },
+        }
+    )
+
+
+async def _owner_aggregate_rotate(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    state: OwnerAggregateState = request.app[AGG_STATE_KEY]
+    old_token = await state.get_token()
+    try:
+        token = await state.rotate_token()
+    except ValueError as exc:
+        if str(exc) == "rotate_cooldown":
+            return _json_error("rotate_cooldown", status=429)
+        raise
+    runtime.usage_audit_service.log_check(
+        user=_owner_audit_user(runtime),
+        urls=[f"rotate:{old_token[:8]}->{token[:8]}"],
+        source="web:owner:aggregate:rotate",
+    )
+    return web.json_response(
+        {"ok": True, "data": {"url": _build_subscribe_url(request, token), "token_preview": token[:6], "rotated": True}}
+    )
+
+
+async def _owner_aggregate_refresh(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    state: OwnerAggregateState = request.app[AGG_STATE_KEY]
+    token = await state.get_token()
+    content, node_count, stats = await _build_owner_aggregate_content(runtime)
+    stats["fingerprint"] = await _compute_owner_fingerprint(runtime)
+    await state.write_cache(content=content, node_count=node_count, fingerprint=str(stats.get("fingerprint", "")))
+    await state.write_build_stats(stats)
+    runtime.usage_audit_service.log_check(
+        user=_owner_audit_user(runtime),
+        urls=[f"refresh:{token[:8]} nodes={node_count}"],
+        source="web:owner:aggregate:refresh",
+    )
+    return web.json_response(
+        {
+            "ok": True,
+            "data": {
+                "url": _build_subscribe_url(request, token),
+                "node_count": node_count,
+                "generated_at": int(time.time()),
+                "build_stats": stats,
+            },
+        }
+    )
+
+
+async def _public_owner_subscription(request: web.Request) -> web.Response:
+    runtime = request.app[RUNTIME_KEY]
+    state: OwnerAggregateState = request.app[AGG_STATE_KEY]
+    format_type = request.query.get("format", "yaml").strip().lower()
+    if format_type not in {"yaml", "base64", "raw"}:
+        return _json_error("invalid_format", status=400)
+    token = request.match_info.get("token", "").strip()
+    current = await state.get_token()
+    if not token or not hmac.compare_digest(token, current):
+        raise web.HTTPNotFound()
+    cache = await state.read_cache()
+    now_ts = int(time.time())
+    latest_fingerprint = await _compute_owner_fingerprint(runtime)
+    cache_fingerprint = str((cache or {}).get("fingerprint", "") or "")
+    cache_valid = (
+        cache
+        and now_ts - int(cache.get("generated_at", 0) or 0) <= 180
+        and cache.get("content")
+        and cache_fingerprint == latest_fingerprint
+    )
+    if cache_valid:
+        yaml_content = str(cache["content"])
+        node_count = int(cache.get("node_count", 0) or 0)
+        version = str(cache.get("version", "") or "")
+    else:
+        try:
+            yaml_content, node_count, stats = await _build_owner_aggregate_content(runtime)
+            stats["fingerprint"] = latest_fingerprint
+            await state.write_cache(content=yaml_content, node_count=node_count, fingerprint=latest_fingerprint)
+            await state.write_build_stats(stats)
+            latest = await state.read_cache()
+            version = str((latest or {}).get("version", "") or "")
+        except Exception as exc:
+            await state.write_error(message=str(exc))
+            raise
+    if format_type == "yaml":
+        output_text = yaml_content
+        content_type = "text/yaml"
+        filename = "owner-pool.yaml"
+    else:
+        nodes, _stats = await _collect_owner_eligible_nodes(runtime)
+        if format_type == "base64":
+            output_text, node_count = _render_base64(nodes)
+        else:
+            output_text, node_count = _render_raw_lines(nodes)
+        content_type = "text/plain"
+        filename = "owner-pool.txt"
+
+    resp = web.Response(text=output_text, content_type=content_type, charset="utf-8")
+    resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+    resp.headers["X-Node-Count"] = str(node_count)
+    if version:
+        resp.headers["X-Config-Version"] = version
+        resp.headers["ETag"] = f"W/\"{version}\""
+    return resp
+
+
+async def _aggregate_prewarm_loop(app: web.Application) -> None:
+    runtime = app[RUNTIME_KEY]
+    state: OwnerAggregateState = app[AGG_STATE_KEY]
+    while True:
+        try:
+            token = await state.get_token()
+            content, node_count, stats = await _build_owner_aggregate_content(runtime)
+            await state.write_cache(content=content, node_count=node_count, fingerprint=str(stats.get("fingerprint", "")))
+            await state.write_build_stats(stats)
+            logger.info("owner aggregate cache refreshed token=%s nodes=%s", token[:8], node_count)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await state.write_error(message=str(exc))
+            logger.warning("owner aggregate prewarm failed: %s", exc)
+        await asyncio.sleep(180)
+
+
+async def _start_background_tasks(app: web.Application) -> None:
+    app[AGG_TASK_KEY] = asyncio.create_task(_aggregate_prewarm_loop(app))
+
+
 async def _close_auth_backend(app: web.Application) -> None:
+    task = app.get(AGG_TASK_KEY)
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     backend = app[AUTH_BACKEND_KEY]
     close = getattr(backend, "close", None)
     if close is not None:
@@ -1124,6 +1652,8 @@ def build_web_app(
     app[LOGIN_MAX_ATTEMPTS_KEY] = max(1, web_admin_login_max_attempts)
     app[AUTH_BACKEND_KEY] = _build_auth_backend(web_admin_redis_url)
     app[STARTED_AT_KEY] = time.time()
+    app[AGG_STATE_KEY] = OwnerAggregateState(_aggregate_state_file(), secret_key=web_admin_token or "owner-aggregate")
+    app.on_startup.append(_start_background_tasks)
     app.on_cleanup.append(_close_auth_backend)
 
     static_dir = _get_admin_static_dir()
@@ -1153,5 +1683,9 @@ def build_web_app(
     app.router.add_get(f"{API_PREFIX}/owner/backup", _owner_backup_download)
     app.router.add_post(f"{API_PREFIX}/owner/restore", _owner_restore_backup)
     app.router.add_post(f"{API_PREFIX}/owner/check-all", _owner_check_all)
+    app.router.add_get(f"{API_PREFIX}/owner/aggregate-subscription", _owner_aggregate_info)
+    app.router.add_post(f"{API_PREFIX}/owner/aggregate-subscription/rotate", _owner_aggregate_rotate)
+    app.router.add_post(f"{API_PREFIX}/owner/aggregate-subscription/refresh", _owner_aggregate_refresh)
+    app.router.add_get("/sub/{token}", _public_owner_subscription)
     app.router.add_static("/admin/static/", path=static_dir, show_index=False)
     return app
