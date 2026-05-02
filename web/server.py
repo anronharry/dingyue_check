@@ -499,6 +499,47 @@ async def _collect_owner_eligible_nodes(runtime: Any) -> tuple[list[dict[str, An
     return collected_nodes, stats
 
 
+async def _collect_owner_eligible_links(runtime: Any) -> tuple[list[str], dict[str, Any]]:
+    owner_id = int(runtime.admin_service.owner_id)
+    subs = await asyncio.to_thread(runtime.get_storage().get_by_user, owner_id)
+    now = datetime.now()
+    eligible_subs = {url: data for url, data in subs.items() if _is_subscription_eligible(data, now=now)}
+    parser_instance = await runtime.get_parser()
+    parse_ok = 0
+    parse_failed = 0
+    timed_out = 0
+    links: list[str] = []
+    seen: set[str] = set()
+    semaphore = asyncio.Semaphore(AGG_PARSE_CONCURRENCY)
+
+    async def _parse_one(url: str) -> None:
+        nonlocal parse_ok, parse_failed, timed_out
+        async with semaphore:
+            try:
+                result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
+                parse_ok += 1
+                raw_text = str(result.get("_raw_content", "") or "")
+                for item in _extract_protocol_links_from_text(raw_text):
+                    if item not in seen:
+                        seen.add(item)
+                        links.append(item)
+            except asyncio.TimeoutError:
+                timed_out += 1
+                parse_failed += 1
+            except Exception:
+                parse_failed += 1
+
+    await asyncio.gather(*[_parse_one(url) for url in eligible_subs.keys()])
+    stats = {
+        "total_subscriptions": len(subs),
+        "eligible_subscriptions": len(eligible_subs),
+        "parsed_ok": parse_ok,
+        "parsed_failed": parse_failed,
+        "timed_out": timed_out,
+    }
+    return links, stats
+
+
 async def _compute_owner_fingerprint(runtime: Any) -> str:
     owner_id = int(runtime.admin_service.owner_id)
     subs = await asyncio.to_thread(runtime.get_storage().get_by_user, owner_id)
@@ -525,6 +566,34 @@ def _build_subscribe_url(request: web.Request, token: str) -> str:
             base = base[:-6]
         return f"{base}/sub/{token}"
     return f"{request.scheme}://{request.host}/sub/{token}"
+
+
+def _format_urls_for_token(request: web.Request, token: str) -> dict[str, str]:
+    base = _build_subscribe_url(request, token)
+    return {
+        "nodes": f"{base}/nodes",
+        "base64": f"{base}/base64",
+        "clash": f"{base}/clash",
+    }
+
+
+def _extract_protocol_links_from_text(text: str) -> list[str]:
+    if not text:
+        return []
+    schemes = ("vmess://", "vless://", "trojan://", "ss://", "ssr://", "hysteria://", "hysteria2://", "tuic://")
+    seen: set[str] = set()
+    links: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        for scheme in schemes:
+            if line.startswith(scheme):
+                if line not in seen:
+                    seen.add(line)
+                    links.append(line)
+                break
+    return links
 
 
 def _is_api_path(path: str) -> bool:
@@ -1479,6 +1548,7 @@ async def _owner_aggregate_info(request: web.Request) -> web.Response:
             "ok": True,
             "data": {
                 "url": _build_subscribe_url(request, token),
+                "urls": _format_urls_for_token(request, token),
                 "token_preview": token[:6],
                 "generated_at": generated_at,
                 "node_count": node_count,
@@ -1509,7 +1579,15 @@ async def _owner_aggregate_rotate(request: web.Request) -> web.Response:
         source="web:owner:aggregate:rotate",
     )
     return web.json_response(
-        {"ok": True, "data": {"url": _build_subscribe_url(request, token), "token_preview": token[:6], "rotated": True}}
+        {
+            "ok": True,
+            "data": {
+                "url": _build_subscribe_url(request, token),
+                "urls": _format_urls_for_token(request, token),
+                "token_preview": token[:6],
+                "rotated": True,
+            },
+        }
     )
 
 
@@ -1531,6 +1609,7 @@ async def _owner_aggregate_refresh(request: web.Request) -> web.Response:
             "ok": True,
             "data": {
                 "url": _build_subscribe_url(request, token),
+                "urls": _format_urls_for_token(request, token),
                 "node_count": node_count,
                 "generated_at": int(time.time()),
                 "build_stats": stats,
@@ -1542,7 +1621,12 @@ async def _owner_aggregate_refresh(request: web.Request) -> web.Response:
 async def _public_owner_subscription(request: web.Request) -> web.Response:
     runtime = request.app[RUNTIME_KEY]
     state: OwnerAggregateState = request.app[AGG_STATE_KEY]
-    format_type = request.query.get("format", "yaml").strip().lower()
+    route_mode = request.match_info.get("mode", "").strip().lower()
+    format_type = route_mode or request.query.get("format", "yaml").strip().lower()
+    if format_type == "clash":
+        format_type = "yaml"
+    if format_type == "nodes":
+        format_type = "raw"
     if format_type not in {"yaml", "base64", "raw"}:
         return _json_error("invalid_format", status=400)
     token = request.match_info.get("token", "").strip()
@@ -1579,11 +1663,14 @@ async def _public_owner_subscription(request: web.Request) -> web.Response:
         content_type = "text/yaml"
         filename = "owner-pool.yaml"
     else:
-        nodes, _stats = await _collect_owner_eligible_nodes(runtime)
+        links, _stats = await _collect_owner_eligible_links(runtime)
         if format_type == "base64":
-            output_text, node_count = _render_base64(nodes)
+            plain_text = "\n".join(links)
+            output_text = base64.b64encode(plain_text.encode("utf-8")).decode("utf-8")
+            node_count = len(links)
         else:
-            output_text, node_count = _render_raw_lines(nodes)
+            output_text = "\n".join(links)
+            node_count = len(links)
         content_type = "text/plain"
         filename = "owner-pool.txt"
 
@@ -1694,5 +1781,6 @@ def build_web_app(
     app.router.add_post(f"{API_PREFIX}/owner/aggregate-subscription/rotate", _owner_aggregate_rotate)
     app.router.add_post(f"{API_PREFIX}/owner/aggregate-subscription/refresh", _owner_aggregate_refresh)
     app.router.add_get("/sub/{token}", _public_owner_subscription)
+    app.router.add_get("/sub/{token}/{mode}", _public_owner_subscription)
     app.router.add_static("/admin/static/", path=static_dir, show_index=False)
     return app

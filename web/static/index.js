@@ -34,6 +34,7 @@ let loginRedirecting = false;
 let ownerCheckAllRunning = false;
 let ownerAggregateBaseUrl = "";
 let ownerAggregateFormat = "raw";
+let ownerAggregateUrls = { raw: "", base64: "", yaml: "" };
 let heartbeatInFlight = false;
 let perfMode = "full";
 const loadedViews = new Set();
@@ -1283,6 +1284,11 @@ async function loadOwnerAggregateInfo() {
   const meta = qs("ownerAggregateMeta");
   const historyBox = qs("ownerAggregateHistory");
   ownerAggregateBaseUrl = String(data.url || "").split("?")[0];
+  ownerAggregateUrls = {
+    raw: String((data.urls && data.urls.nodes) || ""),
+    base64: String((data.urls && data.urls.base64) || ""),
+    yaml: String((data.urls && data.urls.clash) || ""),
+  };
   if (!ownerAggregateFormat) ownerAggregateFormat = "raw";
   syncAggregateFormatButtons();
   if (urlInput) applyAggregateUrlToInput();
@@ -1343,6 +1349,11 @@ async function rotateOwnerAggregateUrl() {
   }
   if (!data) return;
   ownerAggregateBaseUrl = String(data.url || "").split("?")[0];
+  ownerAggregateUrls = {
+    raw: String((data.urls && data.urls.nodes) || ""),
+    base64: String((data.urls && data.urls.base64) || ""),
+    yaml: String((data.urls && data.urls.clash) || ""),
+  };
   applyAggregateUrlToInput();
   setStatus("聚合URL已刷新，旧URL已作废", "ok");
   await refreshOwnerAggregate();
@@ -1368,10 +1379,14 @@ function nextFullRefreshSignal() {
 }
 
 function buildAggregateUrlWithFormat(baseUrl, format) {
+  const fmt = format || "raw";
+  const byMode = ownerAggregateUrls[fmt];
+  if (byMode) return byMode;
   const safeBase = String(baseUrl || "").split("?")[0];
   if (!safeBase) return "";
-  if (!format || format === "yaml") return safeBase;
-  return `${safeBase}?format=${encodeURIComponent(format)}`;
+  if (fmt === "raw") return `${safeBase}/nodes`;
+  if (fmt === "base64") return `${safeBase}/base64`;
+  return `${safeBase}/clash`;
 }
 
 function syncAggregateFormatButtons() {
