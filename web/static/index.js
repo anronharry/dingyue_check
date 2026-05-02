@@ -32,6 +32,8 @@ let authHeartbeatTimer = null;
 let liveClockTimer = null;
 let loginRedirecting = false;
 let ownerCheckAllRunning = false;
+let ownerAggregateBaseUrl = "";
+let ownerAggregateFormat = "raw";
 let heartbeatInFlight = false;
 let perfMode = "full";
 const loadedViews = new Set();
@@ -1280,7 +1282,10 @@ async function loadOwnerAggregateInfo() {
   const urlInput = qs("ownerAggregateUrl");
   const meta = qs("ownerAggregateMeta");
   const historyBox = qs("ownerAggregateHistory");
-  if (urlInput) urlInput.value = data.url || "";
+  ownerAggregateBaseUrl = String(data.url || "").split("?")[0];
+  if (!ownerAggregateFormat) ownerAggregateFormat = "raw";
+  syncAggregateFormatButtons();
+  if (urlInput) applyAggregateUrlToInput();
   if (meta) {
     const ts = data.generated_at ? formatLocalDateTime(new Date(Number(data.generated_at) * 1000).toISOString().slice(0, 19).replace("T", " ")) : "-";
     const ver = data.version || "-";
@@ -1337,8 +1342,8 @@ async function rotateOwnerAggregateUrl() {
     throw e;
   }
   if (!data) return;
-  const urlInput = qs("ownerAggregateUrl");
-  if (urlInput) urlInput.value = data.url || "";
+  ownerAggregateBaseUrl = String(data.url || "").split("?")[0];
+  applyAggregateUrlToInput();
   setStatus("聚合URL已刷新，旧URL已作废", "ok");
   await refreshOwnerAggregate();
 }
@@ -1360,6 +1365,45 @@ function nextFullRefreshSignal() {
   if (fullRefreshController) fullRefreshController.abort();
   fullRefreshController = new AbortController();
   return { signal: fullRefreshController.signal, controller: fullRefreshController };
+}
+
+function buildAggregateUrlWithFormat(baseUrl, format) {
+  const safeBase = String(baseUrl || "").split("?")[0];
+  if (!safeBase) return "";
+  if (!format || format === "yaml") return safeBase;
+  return `${safeBase}?format=${encodeURIComponent(format)}`;
+}
+
+function syncAggregateFormatButtons() {
+  const map = [
+    ["ownerAggregateFormatRawBtn", "raw"],
+    ["ownerAggregateFormatBase64Btn", "base64"],
+    ["ownerAggregateFormatYamlBtn", "yaml"],
+  ];
+  map.forEach(([id, fmt]) => {
+    const btn = qs(id);
+    if (!btn) return;
+    if (fmt === ownerAggregateFormat) btn.classList.add("btn-brand");
+    else btn.classList.remove("btn-brand");
+  });
+}
+
+function applyAggregateUrlToInput() {
+  const urlInput = qs("ownerAggregateUrl");
+  const meta = qs("ownerAggregateMeta");
+  if (!urlInput) return;
+  urlInput.value = buildAggregateUrlWithFormat(ownerAggregateBaseUrl, ownerAggregateFormat);
+  if (meta) {
+    const formatLabel =
+      ownerAggregateFormat === "raw" ? "机场节点" :
+      ownerAggregateFormat === "base64" ? "Base64" :
+      "Clash YAML";
+    const text = String(meta.textContent || "");
+    const next = text.includes("当前分发格式：")
+      ? text.replace(/当前分发格式：[^|]+/, `当前分发格式：${formatLabel} `)
+      : `${text}${text ? " | " : ""}当前分发格式：${formatLabel}`;
+    meta.textContent = next;
+  }
 }
 
 function getViewLoaders(view, requestOptions = {}) {
@@ -1546,6 +1590,21 @@ function bindEvents() {
   qs("ownerImportJsonBtn").onclick = () => qs("ownerImportFile").click();
   qs("ownerRestoreBtn").onclick = () => qs("ownerRestoreFile").click();
   qs("ownerCheckAllBtn").onclick = runOwnerCheckAll;
+  qs("ownerAggregateFormatRawBtn").onclick = () => {
+    ownerAggregateFormat = "raw";
+    syncAggregateFormatButtons();
+    applyAggregateUrlToInput();
+  };
+  qs("ownerAggregateFormatBase64Btn").onclick = () => {
+    ownerAggregateFormat = "base64";
+    syncAggregateFormatButtons();
+    applyAggregateUrlToInput();
+  };
+  qs("ownerAggregateFormatYamlBtn").onclick = () => {
+    ownerAggregateFormat = "yaml";
+    syncAggregateFormatButtons();
+    applyAggregateUrlToInput();
+  };
   qs("ownerAggregateRefreshBtn").onclick = () => refreshOwnerAggregate();
   qs("ownerAggregateRotateBtn").onclick = () => rotateOwnerAggregateUrl();
   qs("ownerAggregateCopyBtn").onclick = async () => {
