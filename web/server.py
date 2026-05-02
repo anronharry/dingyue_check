@@ -22,6 +22,7 @@ from types import SimpleNamespace
 
 from aiohttp import web
 import yaml
+from core.converters.ss_converter import SSNodeConverter
 
 
 API_PREFIX = "/api/v1"
@@ -386,10 +387,16 @@ def _render_clash_yaml(nodes: list[dict[str, Any]]) -> tuple[str, int]:
 
 
 def _render_raw_lines(nodes: list[dict[str, Any]]) -> tuple[str, int]:
+    converter = SSNodeConverter()
     lines: list[str] = []
     seen: set[str] = set()
     for node in nodes:
         raw = str(node.get("raw", "") or "").strip()
+        if not raw:
+            try:
+                raw = str(converter.build_url(node) or "").strip()
+            except Exception:
+                raw = ""
         if not raw or raw in seen:
             continue
         seen.add(raw)
