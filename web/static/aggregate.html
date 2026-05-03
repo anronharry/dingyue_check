@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aggregate Console</title>
+  <link rel="icon" type="image/png" href="/admin/static/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/static/common.css">
+  <link rel="stylesheet" href="/admin/static/aggregate.css">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-backdrop"></div>
+    <main class="aggregate-shell">
+      <header class="aggregate-topbar">
+        <div class="topbar-brand">
+          <img src="/admin/static/logo.png" alt="Logo">
+          <div>
+            <div class="topbar-eyebrow">Owner Aggregate</div>
+            <h1>聚合 URL 控制台</h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button id="backDashboardBtn" type="button">返回控制台</button>
+          <button id="logoutBtn" class="btn-danger" type="button">退出登录</button>
+        </div>
+      </header>
+
+      <section class="hero-panel">
+        <div class="hero-copy">
+          <p class="hero-kicker">Multi-format Distribution</p>
+          <h2>统一查看当前聚合订阅的生成状态、分发 URL 和历史构建记录</h2>
+          <p id="heroSummary" class="hero-summary">正在加载聚合元数据...</p>
+        </div>
+        <div class="hero-actions">
+          <button id="refreshAggregateBtn" class="btn-brand" type="button">刷新聚合缓存</button>
+          <button id="rotateAggregateBtn" class="btn-danger" type="button">刷新 URL</button>
+        </div>
+      </section>
+
+      <section class="stats-grid">
+        <article class="stat-card">
+          <span>节点总数</span>
+          <strong id="statNodeCount">-</strong>
+        </article>
+        <article class="stat-card">
+          <span>总订阅数</span>
+          <strong id="statTotalSubs">-</strong>
+        </article>
+        <article class="stat-card">
+          <span>合格订阅</span>
+          <strong id="statEligibleSubs">-</strong>
+        </article>
+        <article class="stat-card">
+          <span>解析成功</span>
+          <strong id="statParsedOk">-</strong>
+        </article>
+        <article class="stat-card">
+          <span>解析失败</span>
+          <strong id="statParsedFailed">-</strong>
+        </article>
+        <article class="stat-card">
+          <span>超时数</span>
+          <strong id="statTimedOut">-</strong>
+        </article>
+      </section>
+
+      <section class="main-grid">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">Formats</div>
+              <h3>分发 URL</h3>
+            </div>
+            <div class="format-switch">
+              <button id="fmtRawBtn" class="btn-brand" type="button">机场节点</button>
+              <button id="fmtBase64Btn" type="button">Base64</button>
+              <button id="fmtYamlBtn" type="button">Clash YAML</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <label class="field-label" for="aggregateUrlInput">当前链接</label>
+            <div class="url-box">
+              <input id="aggregateUrlInput" type="text" readonly>
+              <button id="copyUrlBtn" type="button">复制</button>
+            </div>
+            <div class="format-grid">
+              <article class="format-card">
+                <span class="format-label">机场节点</span>
+                <code id="rawUrlPreview">-</code>
+              </article>
+              <article class="format-card">
+                <span class="format-label">Base64</span>
+                <code id="base64UrlPreview">-</code>
+              </article>
+              <article class="format-card">
+                <span class="format-label">Clash YAML</span>
+                <code id="yamlUrlPreview">-</code>
+              </article>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">Status</div>
+              <h3>生成状态</h3>
+            </div>
+          </div>
+          <div class="panel-body">
+            <dl class="meta-list">
+              <div><dt>最近生成</dt><dd id="generatedAt">-</dd></div>
+              <div><dt>版本标识</dt><dd id="versionTag">-</dd></div>
+              <div><dt>最近错误</dt><dd id="lastError">-</dd></div>
+              <div><dt>错误时间</dt><dd id="lastErrorAt">-</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="panel panel-span-2">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">Build History</div>
+              <h3>构建历史</h3>
+            </div>
+          </div>
+          <div id="historyTimeline" class="timeline"></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="/admin/static/aggregate.js"></script>
+</body>
+</html>

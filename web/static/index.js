@@ -35,6 +35,7 @@ let ownerCheckAllRunning = false;
 let ownerAggregateBaseUrl = "";
 let ownerAggregateFormat = "raw";
 let ownerAggregateUrls = { raw: "", base64: "", yaml: "" };
+let ownerAggregateLastData = null;
 let heartbeatInFlight = false;
 let perfMode = "full";
 const loadedViews = new Set();
@@ -1280,47 +1281,58 @@ async function runOwnerCheckAll() {
 async function loadOwnerAggregateInfo() {
   const data = await apiRequest("/api/v1/owner/aggregate-subscription");
   if (!data) return null;
+  ownerAggregateLastData = data;
   const urlInput = qs("ownerAggregateUrl");
   const meta = qs("ownerAggregateMeta");
   const historyBox = qs("ownerAggregateHistory");
+  const nodeCountBox = qs("ownerAggregateNodeCount");
+  const eligibleCountBox = qs("ownerAggregateEligibleCount");
+  const parsedCountBox = qs("ownerAggregateParsedCount");
   ownerAggregateBaseUrl = String(data.url || "").split("?")[0];
   ownerAggregateUrls = {
     raw: String((data.urls && data.urls.nodes) || ""),
     base64: String((data.urls && data.urls.base64) || ""),
     yaml: String((data.urls && data.urls.clash) || ""),
   };
+  if (nodeCountBox) nodeCountBox.textContent = String(Number(data.node_count || 0));
+  if (eligibleCountBox) {
+    eligibleCountBox.textContent = String(Number((data.build_stats && data.build_stats.eligible_subscriptions) || 0));
+  }
+  if (parsedCountBox) {
+    parsedCountBox.textContent = String(Number((data.build_stats && data.build_stats.parsed_ok) || 0));
+  }
   if (!ownerAggregateFormat) ownerAggregateFormat = "raw";
   syncAggregateFormatButtons();
   if (urlInput) applyAggregateUrlToInput();
   if (meta) {
     const ts = data.generated_at ? formatLocalDateTime(new Date(Number(data.generated_at) * 1000).toISOString().slice(0, 19).replace("T", " ")) : "-";
     const ver = data.version || "-";
-    let text = `节点数: ${Number(data.node_count || 0)} | 最近生成: ${ts} | 版本: ${ver}`;
+    let text = `节点数 ${Number(data.node_count || 0)} | 最近生成 ${ts} | 版本 ${ver}`;
     if (data.last_error) {
       const errTs = data.last_error_at
         ? formatLocalDateTime(new Date(Number(data.last_error_at) * 1000).toISOString().slice(0, 19).replace("T", " "))
         : "-";
-      text += ` | 最近失败: ${data.last_error} (${errTs})`;
+      text += ` | 最近失败 ${data.last_error} (${errTs})`;
     }
     if (data.build_stats) {
       const s = data.build_stats;
-      text += ` | 构建: 总${Number(s.total_subscriptions || 0)} 合格${Number(s.eligible_subscriptions || 0)} 成功${Number(s.parsed_ok || 0)} 超时${Number(s.timed_out || 0)}`;
+      text += ` | 构建 总${Number(s.total_subscriptions || 0)} 合格${Number(s.eligible_subscriptions || 0)} 成功${Number(s.parsed_ok || 0)} 超时${Number(s.timed_out || 0)}`;
     }
     meta.textContent = text;
   }
   if (historyBox) {
     const rows = Array.isArray(data.build_history) ? data.build_history.slice(-8).reverse() : [];
     if (!rows.length) {
-      historyBox.textContent = "最近构建：暂无";
+      historyBox.innerHTML = '<div class="aggregate-history-item">最近构建暂无记录</div>';
     } else {
       historyBox.innerHTML = rows
         .map((r) => {
           const ts = r.ts
             ? formatLocalDateTime(new Date(Number(r.ts) * 1000).toISOString().slice(0, 19).replace("T", " "))
             : "-";
-          return `• ${ts} | 总${Number(r.total_subscriptions || 0)} 合格${Number(r.eligible_subscriptions || 0)} 成功${Number(r.parsed_ok || 0)} 失败${Number(r.parsed_failed || 0)} 超时${Number(r.timed_out || 0)}`;
+          return `<div class="aggregate-history-item"><strong>${ts}</strong><br>总 ${Number(r.total_subscriptions || 0)} / 合格 ${Number(r.eligible_subscriptions || 0)} / 成功 ${Number(r.parsed_ok || 0)} / 失败 ${Number(r.parsed_failed || 0)} / 超时 ${Number(r.timed_out || 0)}</div>`;
         })
-        .join("<br>");
+        .join("");
     }
   }
   return data;
@@ -1401,6 +1413,13 @@ function syncAggregateFormatButtons() {
     if (fmt === ownerAggregateFormat) btn.classList.add("btn-brand");
     else btn.classList.remove("btn-brand");
   });
+  const label = qs("ownerAggregateFormatLabel");
+  if (label) {
+    label.textContent =
+      ownerAggregateFormat === "raw" ? "机场节点" :
+      ownerAggregateFormat === "base64" ? "Base64" :
+      "Clash YAML";
+  }
 }
 
 function applyAggregateUrlToInput() {
@@ -1622,6 +1641,9 @@ function bindEvents() {
   };
   qs("ownerAggregateRefreshBtn").onclick = () => refreshOwnerAggregate();
   qs("ownerAggregateRotateBtn").onclick = () => rotateOwnerAggregateUrl();
+  qs("ownerAggregateOpenPageBtn").onclick = () => {
+    window.location.href = "/admin/aggregate";
+  };
   qs("ownerAggregateCopyBtn").onclick = async () => {
     const urlInput = qs("ownerAggregateUrl");
     const text = (urlInput && urlInput.value) || "";

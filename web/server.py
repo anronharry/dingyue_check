@@ -299,16 +299,22 @@ class OwnerAggregateState:
 def _is_subscription_eligible(data: dict[str, Any], *, now: datetime) -> bool:
     if str(data.get("last_check_status", "")).lower() != "success":
         return False
+    total = data.get("total")
     remaining = data.get("remaining")
-    if isinstance(remaining, (int, float)) and remaining <= 0:
+    if (
+        isinstance(total, (int, float))
+        and total > 0
+        and isinstance(remaining, (int, float))
+        and remaining <= 0
+    ):
         return False
     expire_text = str(data.get("expire_time", "") or "").strip()
     if not expire_text:
-        return False
+        return True
     try:
         expire_at = datetime.strptime(expire_text, "%Y-%m-%d %H:%M:%S")
     except ValueError:
-        return False
+        return True
     return expire_at > now
 
 
@@ -762,6 +768,11 @@ async def _login_page(_request: web.Request) -> web.FileResponse:
 async def _admin_index(_request: web.Request) -> web.FileResponse:
     static_dir = _get_admin_static_dir()
     return web.FileResponse(static_dir / "index.html")
+
+
+async def _aggregate_page(_request: web.Request) -> web.FileResponse:
+    static_dir = _get_admin_static_dir()
+    return web.FileResponse(static_dir / "aggregate.html")
 
 
 async def _login(request: web.Request) -> web.Response:
@@ -1814,6 +1825,8 @@ def build_web_app(
     app.router.add_post("/admin/logout", _logout)
     app.router.add_get("/admin", _admin_index)
     app.router.add_get("/admin/", _admin_index)
+    app.router.add_get("/admin/aggregate", _aggregate_page)
+    app.router.add_get("/admin/aggregate/", _aggregate_page)
     app.router.add_get(f"{API_PREFIX}/system/overview", _system_overview)
     app.router.add_get(f"{API_PREFIX}/users/recent", _recent_users)
     app.router.add_get(f"{API_PREFIX}/exports/recent", _recent_exports)
