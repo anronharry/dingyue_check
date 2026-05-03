@@ -33,8 +33,7 @@ body {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background:
-    repeating-linear-gradient(180deg, rgba(73, 243, 255, 0.04) 0 1px, transparent 1px 5px);
+  background: repeating-linear-gradient(180deg, rgba(73, 243, 255, 0.04) 0 1px, transparent 1px 5px);
   opacity: 0.28;
 }
 
@@ -178,13 +177,13 @@ button:hover {
 }
 
 .stat-card strong {
-  font-size: clamp(24px, 3vw, 30px);
+  font-size: clamp(22px, 2.5vw, 30px);
   color: var(--green);
 }
 
 .main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
   gap: 18px;
 }
 
@@ -207,7 +206,8 @@ button:hover {
 }
 
 .panel-body,
-.timeline {
+.timeline,
+.source-list {
   padding: 18px;
 }
 
@@ -242,10 +242,16 @@ input {
   margin-top: 14px;
 }
 
-.format-card {
+.format-card,
+.timeline-item,
+.source-item,
+.metric-item {
   border: 1px solid rgba(73, 243, 255, 0.16);
   border-radius: 12px;
   background: rgba(4, 14, 21, 0.78);
+}
+
+.format-card {
   padding: 12px;
   display: grid;
   gap: 8px;
@@ -302,24 +308,57 @@ code {
   line-height: 1.55;
 }
 
+.metric-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.metric-item {
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.metric-item span {
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.metric-item strong,
+.source-head span {
+  color: var(--green);
+  font-family: "JetBrains Mono", monospace;
+}
+
+.source-list,
 .timeline {
   display: grid;
   gap: 10px;
 }
 
+.source-item,
 .timeline-item {
-  border: 1px solid rgba(73, 243, 255, 0.16);
-  border-radius: 12px;
   padding: 12px 14px;
-  background: rgba(4, 14, 21, 0.78);
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
+.source-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.source-item strong,
 .timeline-item strong {
   color: var(--cyan);
 }
 
+.source-item p,
 .timeline-item p {
   margin: 0;
   color: var(--text-soft);
@@ -329,7 +368,7 @@ code {
 
 @media (max-width: 1100px) {
   .stats-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .main-grid {
@@ -353,17 +392,16 @@ code {
   .panel-head,
   .topbar-actions,
   .hero-actions,
-  .format-switch {
+  .format-switch,
+  .source-head {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .stats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .url-box,
-  .format-grid {
+  .stats-grid,
+  .metric-list,
+  .format-grid,
+  .url-box {
     grid-template-columns: 1fr;
   }
 }

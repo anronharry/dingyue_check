@@ -22,6 +22,7 @@ from types import SimpleNamespace
 from urllib.parse import urlparse
 
 from aiohttp import web
+import aiohttp
 import yaml
 from core.converters.ss_converter import SSNodeConverter
 
@@ -48,6 +49,30 @@ AGG_TASK_KEY = web.AppKey("owner_aggregate_task", object)
 AGG_ROTATE_COOLDOWN_SECONDS = 30
 AGG_PARSE_CONCURRENCY = 6
 AGG_PARSE_TIMEOUT_SECONDS = 15
+AGG_NODE_TEST_TIMEOUT_SECONDS = float(os.getenv("OWNER_AGGREGATE_NODE_TEST_TIMEOUT_SECONDS", "1.5"))
+AGG_NODE_TEST_CONCURRENCY = int(os.getenv("OWNER_AGGREGATE_NODE_TEST_CONCURRENCY", "40"))
+AGG_NODE_SOURCE_LIMIT = int(os.getenv("OWNER_AGGREGATE_SOURCE_LIMIT", "24"))
+AGG_NODE_CANDIDATE_LIMIT = int(os.getenv("OWNER_AGGREGATE_CANDIDATE_LIMIT", "180"))
+AGG_NODE_PUBLISH_LIMIT = int(os.getenv("OWNER_AGGREGATE_PUBLISH_LIMIT", "120"))
+AGG_NODE_QUICK_TTL_SECONDS = int(os.getenv("OWNER_AGGREGATE_NODE_QUICK_TTL_SECONDS", "1800"))
+AGG_NODE_VERIFY_TTL_SECONDS = int(os.getenv("OWNER_AGGREGATE_NODE_VERIFY_TTL_SECONDS", "21600"))
+AGG_NODE_VERIFY_ENABLED = str(os.getenv("OWNER_AGGREGATE_VERIFY_ENABLED", "1")).strip().lower() not in {"0", "false", "no"}
+AGG_NODE_VERIFY_LIMIT = int(os.getenv("OWNER_AGGREGATE_VERIFY_LIMIT", "30"))
+AGG_NODE_VERIFY_TIMEOUT_MS = int(os.getenv("OWNER_AGGREGATE_VERIFY_TIMEOUT_MS", "3500"))
+AGG_NODE_STABLE_SUCCESS_THRESHOLD = int(os.getenv("OWNER_AGGREGATE_STABLE_SUCCESS_THRESHOLD", "2"))
+AGG_NODE_EVICT_FAILURE_THRESHOLD = int(os.getenv("OWNER_AGGREGATE_EVICT_FAILURE_THRESHOLD", "2"))
+AGG_PREWARM_INTERVAL_SECONDS = int(os.getenv("OWNER_AGGREGATE_PREWARM_INTERVAL_SECONDS", "180"))
+AGG_HEALTH_SCORE_MIN = 0
+AGG_HEALTH_SCORE_MAX = 100
+AGG_STABLE_REVERIFY_LIMIT = int(os.getenv("OWNER_AGGREGATE_STABLE_REVERIFY_LIMIT", "12"))
+AGG_PUBLISH_SOURCE_LIMIT = int(os.getenv("OWNER_AGGREGATE_PUBLISH_SOURCE_LIMIT", "12"))
+AGG_PUBLISH_SERVER_LIMIT = int(os.getenv("OWNER_AGGREGATE_PUBLISH_SERVER_LIMIT", "3"))
+AGG_PREWARM_MIN_SECONDS = int(os.getenv("OWNER_AGGREGATE_PREWARM_MIN_SECONDS", "60"))
+AGG_PREWARM_MAX_SECONDS = int(os.getenv("OWNER_AGGREGATE_PREWARM_MAX_SECONDS", "300"))
+AGG_POOL_STABLE_RATIO = int(os.getenv("OWNER_AGGREGATE_POOL_STABLE_RATIO", "70"))
+AGG_POOL_WARM_RATIO = int(os.getenv("OWNER_AGGREGATE_POOL_WARM_RATIO", "20"))
+AGG_POOL_FRESH_RATIO = int(os.getenv("OWNER_AGGREGATE_POOL_FRESH_RATIO", "10"))
+AGG_HEALTH_DECAY_WINDOW_SECONDS = int(os.getenv("OWNER_AGGREGATE_HEALTH_DECAY_WINDOW_SECONDS", "21600"))
 
 
 class MemoryAuthBackend:
@@ -174,13 +199,23 @@ def _aggregate_state_file() -> Path:
     return Path(__file__).resolve().parent.parent / "data" / "db" / "owner_aggregate.json"
 
 
+def _aggregate_node_health_state() -> "OwnerAggregateState":
+    secret = os.getenv("WEB_ADMIN_TOKEN", "").strip() or "owner-aggregate"
+    return OwnerAggregateState(_aggregate_state_file(), secret_key=secret)
+
+
 class OwnerAggregateState:
     def __init__(self, path: Path, *, secret_key: str):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.state_dir = path.with_suffix("")
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.meta_path = self.state_dir / "meta.json"
+        self.cache_path = self.state_dir / "cache.json"
+        self.node_health_path = self.state_dir / "node_health.json"
         self._lock = asyncio.Lock()
         self._secret = (secret_key or "owner-aggregate").encode("utf-8")
-        self._state = self._load()
+        self._meta, self._cache, self._node_health = self._load_split_state()
 
     def _encode_token(self, token: str) -> str:
         payload = token.encode("utf-8")
@@ -194,59 +229,97 @@ class OwnerAggregateState:
         plain = bytes([b ^ key[i % len(key)] for i, b in enumerate(raw)])
         return plain.decode("utf-8")
 
-    def _load(self) -> dict[str, Any]:
-        if not self.path.exists():
+    def _load_json(self, path: Path) -> dict[str, Any]:
+        if not path.exists():
             return {}
         try:
-            return json.loads(self.path.read_text(encoding="utf-8"))
+            return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return {}
 
-    def _save(self) -> None:
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._state, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp, self.path)
+    def _write_json(self, path: Path, payload: dict[str, Any]) -> None:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+
+    def _load_split_state(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        legacy = self._load_json(self.path)
+        meta = self._load_json(self.meta_path)
+        cache = self._load_json(self.cache_path)
+        node_health = self._load_json(self.node_health_path)
+        if meta or cache or node_health:
+            return meta, cache, node_health
+        if not legacy:
+            return {}, {}, {}
+        migrated_meta = {
+            key: value
+            for key, value in legacy.items()
+            if key not in {"cache", "node_health"}
+        }
+        migrated_cache = dict(legacy.get("cache", {}) or {})
+        migrated_node_health = dict(legacy.get("node_health", {}) or {})
+        self._write_json(self.meta_path, migrated_meta)
+        self._write_json(self.cache_path, migrated_cache)
+        self._write_json(self.node_health_path, migrated_node_health)
+        return migrated_meta, migrated_cache, migrated_node_health
+
+    def _save_if_changed(self, kind: str, next_state: dict[str, Any]) -> None:
+        current = {"meta": self._meta, "cache": self._cache, "node_health": self._node_health}[kind]
+        if next_state == current:
+            return
+        if kind == "meta":
+            self._meta = next_state
+            self._write_json(self.meta_path, self._meta)
+        elif kind == "cache":
+            self._cache = next_state
+            self._write_json(self.cache_path, self._cache)
+        else:
+            self._node_health = next_state
+            self._write_json(self.node_health_path, self._node_health)
 
     async def get_token(self) -> str:
         async with self._lock:
             token = ""
-            token_enc = str(self._state.get("token_enc", "") or "").strip()
+            token_enc = str(self._meta.get("token_enc", "") or "").strip()
             if token_enc:
                 try:
                     token = self._decode_token(token_enc).strip()
                 except Exception:
                     token = ""
             if not token:
-                token = str(self._state.get("token", "") or "").strip()
+                token = str(self._meta.get("token", "") or "").strip()
                 if token:
-                    self._state["token_enc"] = self._encode_token(token)
-                    self._state.pop("token", None)
-                    self._save()
+                    next_meta = dict(self._meta)
+                    next_meta["token_enc"] = self._encode_token(token)
+                    next_meta.pop("token", None)
+                    self._save_if_changed("meta", next_meta)
             if token:
                 return token
             token = secrets.token_urlsafe(24)
-            self._state["token_enc"] = self._encode_token(token)
-            self._state["created_at"] = int(time.time())
-            self._save()
+            next_meta = dict(self._meta)
+            next_meta["token_enc"] = self._encode_token(token)
+            next_meta["created_at"] = int(time.time())
+            self._save_if_changed("meta", next_meta)
             return token
 
     async def rotate_token(self) -> str:
         async with self._lock:
             now_ts = int(time.time())
-            last_rotated = int(self._state.get("rotated_at", self._state.get("created_at", 0)) or 0)
+            last_rotated = int(self._meta.get("rotated_at", self._meta.get("created_at", 0)) or 0)
             if last_rotated and now_ts - last_rotated < AGG_ROTATE_COOLDOWN_SECONDS:
                 raise ValueError("rotate_cooldown")
             token = secrets.token_urlsafe(24)
-            self._state["token_enc"] = self._encode_token(token)
-            self._state.pop("token", None)
-            self._state["rotated_at"] = now_ts
-            self._state.pop("cache", None)
-            self._save()
+            next_meta = dict(self._meta)
+            next_meta["token_enc"] = self._encode_token(token)
+            next_meta.pop("token", None)
+            next_meta["rotated_at"] = now_ts
+            self._save_if_changed("meta", next_meta)
+            self._save_if_changed("cache", {})
             return token
 
     async def read_cache(self) -> dict[str, Any] | None:
         async with self._lock:
-            cache = self._state.get("cache")
+            cache = self._cache
             if not isinstance(cache, dict):
                 return None
             return dict(cache)
@@ -254,46 +327,77 @@ class OwnerAggregateState:
     async def read_meta(self) -> dict[str, Any]:
         async with self._lock:
             return {
-                "last_error": str(self._state.get("last_error", "") or ""),
-                "last_error_at": int(self._state.get("last_error_at", 0) or 0),
-                "rotated_at": int(self._state.get("rotated_at", 0) or 0),
-                "build_stats": dict(self._state.get("build_stats", {}) or {}),
+                "last_error": str(self._meta.get("last_error", "") or ""),
+                "last_error_at": int(self._meta.get("last_error_at", 0) or 0),
+                "rotated_at": int(self._meta.get("rotated_at", 0) or 0),
+                "build_stats": dict(self._meta.get("build_stats", {}) or {}),
+                "pool_snapshot": dict(self._meta.get("pool_snapshot", {}) or {}),
             }
 
-    async def write_cache(self, *, content: str, node_count: int, fingerprint: str = "") -> None:
+    async def write_cache(
+        self,
+        *,
+        content: str,
+        node_count: int,
+        fingerprint: str = "",
+        raw_content: str = "",
+        base64_content: str = "",
+    ) -> None:
         async with self._lock:
+            generated_at = int(time.time())
             version = str(int(time.time()))
-            self._state["cache"] = {
+            next_cache = {
                 "content": content,
+                "formats": {
+                    "yaml": content,
+                    "raw": str(raw_content or ""),
+                    "base64": str(base64_content or ""),
+                },
                 "node_count": int(node_count),
-                "generated_at": int(time.time()),
+                "generated_at": generated_at,
                 "version": version,
                 "fingerprint": str(fingerprint or ""),
             }
-            self._state["last_error"] = ""
-            self._state["last_error_at"] = 0
-            self._save()
+            next_meta = dict(self._meta)
+            next_meta["last_error"] = ""
+            next_meta["last_error_at"] = 0
+            self._save_if_changed("cache", next_cache)
+            self._save_if_changed("meta", next_meta)
 
     async def write_error(self, *, message: str) -> None:
         async with self._lock:
-            self._state["last_error"] = str(message or "")[:300]
-            self._state["last_error_at"] = int(time.time())
-            self._save()
+            next_meta = dict(self._meta)
+            next_meta["last_error"] = str(message or "")[:300]
+            next_meta["last_error_at"] = int(time.time())
+            self._save_if_changed("meta", next_meta)
 
-    async def write_build_stats(self, stats: dict[str, Any]) -> None:
+    async def write_build_stats(self, stats: dict[str, Any], *, snapshot: dict[str, Any] | None = None) -> None:
         async with self._lock:
-            self._state["build_stats"] = dict(stats or {})
-            history = list(self._state.get("build_history", []) or [])
+            next_meta = dict(self._meta)
+            next_meta["build_stats"] = dict(stats or {})
+            next_meta["pool_snapshot"] = dict(snapshot or {})
+            history = list(next_meta.get("build_history", []) or [])
             row = dict(stats or {})
             row["ts"] = int(time.time())
             history.append(row)
-            self._state["build_history"] = history[-20:]
-            self._save()
+            next_meta["build_history"] = history[-20:]
+            self._save_if_changed("meta", next_meta)
 
     async def read_history(self) -> list[dict[str, Any]]:
         async with self._lock:
-            rows = list(self._state.get("build_history", []) or [])
+            rows = list(self._meta.get("build_history", []) or [])
             return [dict(r) for r in rows]
+
+    async def read_node_health(self) -> dict[str, Any]:
+        async with self._lock:
+            rows = self._node_health
+            if not isinstance(rows, dict):
+                return {}
+            return dict(rows)
+
+    async def write_node_health(self, rows: dict[str, Any]) -> None:
+        async with self._lock:
+            self._save_if_changed("node_health", dict(rows or {}))
 
 
 def _is_subscription_eligible(data: dict[str, Any], *, now: datetime) -> bool:
@@ -346,6 +450,135 @@ def _node_quality_key(node: dict[str, Any]) -> tuple[float, str]:
     except Exception:
         latency = 999999.0
     return latency, str(node.get("name", ""))
+
+
+def _health_score_step(mode: str, status: str) -> int:
+    matrix = {
+        ("quick", "alive"): 8,
+        ("quick", "dead"): -10,
+        ("verify", "alive"): 18,
+        ("verify", "dead"): -24,
+    }
+    return matrix.get((str(mode), str(status)), 0)
+
+
+def _clamp_health_score(value: int) -> int:
+    return max(AGG_HEALTH_SCORE_MIN, min(AGG_HEALTH_SCORE_MAX, int(value)))
+
+
+def _build_source_seed_scores(snapshot: dict[str, Any] | None) -> dict[str, int]:
+    rows = list((snapshot or {}).get("top_sources", []) or [])
+    seeded: dict[str, int] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        source = str(row.get("source", "") or "").strip().lower()
+        if not source:
+            continue
+        seeded[source] = int(row.get("reputation_score", 0) or 0)
+    return seeded
+
+
+def _source_sort_key(node: dict[str, Any], seed_scores: dict[str, int]) -> tuple[int, str, str]:
+    source = _aggregate_source_bucket(node)
+    return (-int(seed_scores.get(source, 0) or 0), source, str(node.get("name", "") or ""))
+
+
+def _source_candidate_limit(source: str, seed_scores: dict[str, int]) -> int:
+    score = int(seed_scores.get(source, 0) or 0)
+    if score >= 85:
+        return AGG_NODE_SOURCE_LIMIT
+    if score >= 60:
+        return max(4, AGG_NODE_SOURCE_LIMIT - 6)
+    if score >= 30:
+        return max(3, AGG_NODE_SOURCE_LIMIT // 2)
+    return max(2, AGG_NODE_SOURCE_LIMIT // 3)
+
+
+def _effective_health_score(row: dict[str, Any] | None, *, now_ts: int) -> int:
+    if not isinstance(row, dict):
+        return 0
+    score = int(row.get("health_score", 0) or 0)
+    checked_at = int(row.get("checked_at", 0) or 0)
+    if checked_at <= 0:
+        return score
+    age = max(0, now_ts - checked_at)
+    penalty = age // max(1, AGG_HEALTH_DECAY_WINDOW_SECONDS)
+    return _clamp_health_score(score - int(penalty) * 8)
+
+
+def _rank_health_row(node: dict[str, Any], cache_rows: dict[str, Any]) -> tuple[int, int, float, str]:
+    cached = cache_rows.get(_aggregate_node_cache_key(node))
+    if not isinstance(cached, dict):
+        return (1, 0, *_node_quality_key(node))
+    now_ts = int(time.time())
+    stable_rank = 0 if _is_aggregate_health_stable(cached) else 1
+    score_rank = -_effective_health_score(cached, now_ts=now_ts)
+    latency_rank = float(cached.get("latency", node.get("latency", 999999.0)) or 999999.0)
+    return stable_rank, score_rank, latency_rank, str(node.get("name", "") or "")
+
+
+def _count_nodes_by_source(nodes: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for node in nodes:
+        source = _aggregate_source_bucket(node)
+        counts[source] = counts.get(source, 0) + 1
+    return counts
+
+
+def _aggregate_server_bucket(node: dict[str, Any]) -> str:
+    server = str(node.get("server") or node.get("address") or "").strip().lower()
+    port = str(node.get("port", "") or "").strip()
+    return f"{server}:{port}"
+
+
+def _init_source_stat(row: dict[str, Any] | None = None) -> dict[str, Any]:
+    base = dict(row or {})
+    defaults = {
+        "subscriptions": 0,
+        "eligible_subscriptions": 0,
+        "parsed_ok": 0,
+        "parsed_failed": 0,
+        "timed_out": 0,
+        "parsed_nodes": 0,
+        "candidate_nodes": 0,
+        "quick_alive": 0,
+        "verified_alive": 0,
+        "stable_nodes": 0,
+        "published_nodes": 0,
+        "reputation_score": 0,
+    }
+    for key, value in defaults.items():
+        base[key] = int(base.get(key, value) or value)
+    return base
+
+
+def _apply_source_counts(source_stats: dict[str, dict[str, Any]], field: str, counts: dict[str, int]) -> None:
+    for source, value in counts.items():
+        row = _init_source_stat(source_stats.get(source))
+        row[field] = row.get(field, 0) + int(value or 0)
+        source_stats[source] = row
+
+
+def _finalize_source_snapshot(source_stats: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for source, raw in source_stats.items():
+        row = _init_source_stat(raw)
+        score = (
+            row["parsed_ok"] * 8
+            + row["parsed_nodes"]
+            + row["quick_alive"] * 3
+            + row["verified_alive"] * 6
+            + row["stable_nodes"] * 8
+            + row["published_nodes"] * 5
+            - row["parsed_failed"] * 6
+            - row["timed_out"] * 4
+        )
+        row["source"] = source
+        row["reputation_score"] = _clamp_health_score(score)
+        rows.append(row)
+    rows.sort(key=lambda item: (-int(item.get("reputation_score", 0) or 0), -int(item.get("published_nodes", 0) or 0), item["source"]))
+    return rows[:10]
 
 
 def _render_clash_yaml(nodes: list[dict[str, Any]]) -> tuple[str, int]:
@@ -468,18 +701,571 @@ def _apply_source_label_to_node(node: dict[str, Any], source_url: str, source_na
     return row
 
 
-async def _build_owner_aggregate_content(runtime: Any) -> tuple[str, int, dict[str, Any]]:
+def _aggregate_node_key(node: dict[str, Any]) -> tuple[str, str, int, str]:
+    ptype = str(node.get("type") or node.get("protocol") or "").strip().lower()
+    server = str(node.get("server") or node.get("address") or "").strip().lower()
+    try:
+        port = int(node.get("port", 0) or 0)
+    except Exception:
+        port = 0
+    auth = str(node.get("uuid") or node.get("password") or node.get("auth-str") or "").strip()
+    return ptype, server, port, auth
+
+
+def _aggregate_node_cache_key(node: dict[str, Any]) -> str:
+    return hashlib.sha1(json.dumps(_aggregate_node_key(node), ensure_ascii=True).encode("utf-8")).hexdigest()
+
+
+def _dedupe_aggregate_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, int, str]] = set()
+    unique: list[dict[str, Any]] = []
+    for row in nodes:
+        key = _aggregate_node_key(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(row)
+    return unique
+
+
+def _aggregate_source_bucket(node: dict[str, Any]) -> str:
+    name = str(node.get("name", "") or "")
+    match = re.search(r"\[src:([^\]]+)\]", name)
+    if match:
+        return match.group(1).strip().lower() or "unknown"
+    return "unknown"
+
+
+def _select_aggregate_candidates(
+    nodes: list[dict[str, Any]],
+    seed_scores: dict[str, int] | None = None,
+) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    per_source: dict[str, int] = {}
+    scores = dict(seed_scores or {})
+    for row in nodes:
+        if len(selected) >= AGG_NODE_CANDIDATE_LIMIT:
+            break
+        bucket = _aggregate_source_bucket(row)
+        used = per_source.get(bucket, 0)
+        if used >= _source_candidate_limit(bucket, scores):
+            continue
+        per_source[bucket] = used + 1
+        selected.append(row)
+    return selected
+
+
+def _limit_published_aggregate_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    per_source: dict[str, int] = {}
+    per_server: dict[str, int] = {}
+    for node in nodes:
+        if len(selected) >= AGG_NODE_PUBLISH_LIMIT:
+            break
+        source = _aggregate_source_bucket(node)
+        server = _aggregate_server_bucket(node)
+        if per_source.get(source, 0) >= AGG_PUBLISH_SOURCE_LIMIT:
+            continue
+        if per_server.get(server, 0) >= AGG_PUBLISH_SERVER_LIMIT:
+            continue
+        per_source[source] = per_source.get(source, 0) + 1
+        per_server[server] = per_server.get(server, 0) + 1
+        selected.append(node)
+    return selected
+
+
+def _load_cached_aggregate_health(cache_rows: dict[str, Any], node: dict[str, Any], *, now_ts: int) -> dict[str, Any] | None:
+    row = cache_rows.get(_aggregate_node_cache_key(node))
+    if not isinstance(row, dict):
+        return None
+    checked_at = int(row.get("checked_at", 0) or 0)
+    if checked_at <= 0:
+        return None
+    mode = str(row.get("mode", "") or "")
+    status = str(row.get("status", "") or "")
+    ttl = AGG_NODE_VERIFY_TTL_SECONDS if mode == "verify" else AGG_NODE_QUICK_TTL_SECONDS
+    if now_ts - checked_at > ttl:
+        return None
+    return row
+
+
+def _merge_cached_aggregate_health(cache_rows: dict[str, Any], updates: dict[str, Any], *, now_ts: int) -> dict[str, Any]:
+    merged = dict(cache_rows or {})
+    merged.update(updates or {})
+    max_ttl = max(AGG_NODE_QUICK_TTL_SECONDS, AGG_NODE_VERIFY_TTL_SECONDS)
+    fresh: dict[str, Any] = {}
+    for key, row in merged.items():
+        if not isinstance(row, dict):
+            continue
+        checked_at = int(row.get("checked_at", 0) or 0)
+        if checked_at <= 0 or (now_ts - checked_at) > (max_ttl * 3):
+            continue
+        fresh[key] = row
+    return fresh
+
+
+def _is_aggregate_health_stable(row: dict[str, Any]) -> bool:
+    return int(row.get("success_streak", 0) or 0) >= AGG_NODE_STABLE_SUCCESS_THRESHOLD
+
+
+def _is_aggregate_health_evicted(row: dict[str, Any]) -> bool:
+    return int(row.get("failure_streak", 0) or 0) >= AGG_NODE_EVICT_FAILURE_THRESHOLD
+
+
+def _mark_aggregate_health(
+    mode: str,
+    status: str,
+    *,
+    latency: float | int = 0,
+    previous: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    prev_success = int((previous or {}).get("success_streak", 0) or 0)
+    prev_failure = int((previous or {}).get("failure_streak", 0) or 0)
+    prev_score = int((previous or {}).get("health_score", 0) or 0)
+    is_alive = str(status) == "alive"
+    success_streak = prev_success + 1 if is_alive else 0
+    failure_streak = 0 if is_alive else prev_failure + 1
+    score = _clamp_health_score(prev_score + _health_score_step(mode, status))
+    return {
+        "mode": str(mode),
+        "status": str(status),
+        "checked_at": int(time.time()),
+        "latency": float(latency or 0.0),
+        "success_streak": success_streak,
+        "failure_streak": failure_streak,
+        "health_score": score,
+        "stable": success_streak >= AGG_NODE_STABLE_SUCCESS_THRESHOLD,
+    }
+
+
+def _build_pool_snapshot(
+    stats: dict[str, Any],
+    cache_rows: dict[str, Any],
+    source_rows: list[dict[str, Any]],
+    previous_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    total_cached = 0
+    alive_cached = 0
+    stable_cached = 0
+    evicted_cached = 0
+    health_total = 0
+    for row in cache_rows.values():
+        if not isinstance(row, dict):
+            continue
+        total_cached += 1
+        health_total += int(row.get("health_score", 0) or 0)
+        if row.get("status") == "alive":
+            alive_cached += 1
+        if _is_aggregate_health_stable(row):
+            stable_cached += 1
+        if _is_aggregate_health_evicted(row):
+            evicted_cached += 1
+    snapshot = {
+        "cached_nodes": total_cached,
+        "cached_alive_nodes": alive_cached,
+        "stable_cached_nodes": stable_cached,
+        "evicted_cached_nodes": evicted_cached,
+        "average_health_score": round(health_total / total_cached, 1) if total_cached else 0.0,
+        "cache_hits": int(stats.get("cache_hits", 0) or 0),
+        "tested_nodes": int(stats.get("tested_nodes", 0) or 0),
+        "verify_attempted": int(stats.get("verify_attempted", 0) or 0),
+        "verify_alive": int(stats.get("verify_alive", 0) or 0),
+        "stable_pool_nodes": int(stats.get("stable_pool_nodes", 0) or 0),
+        "published_nodes": int(stats.get("published_nodes", 0) or 0),
+        "promoted_stable_nodes": int(stats.get("promoted_stable_nodes", 0) or 0),
+        "evicted_nodes": int(stats.get("evicted_nodes", 0) or 0),
+        "verify_mode": str(stats.get("verify_mode", "disabled") or "disabled"),
+        "timings_ms": dict(stats.get("timings_ms", {}) or {}),
+        "layer_counts": dict(stats.get("layer_counts", {}) or {}),
+        "top_sources": source_rows,
+    }
+    snapshot["delta"] = _build_snapshot_delta(snapshot, dict(previous_snapshot or {}))
+    return snapshot
+
+
+def _record_health_update(
+    updates: dict[str, Any],
+    stats: dict[str, Any],
+    key: str,
+    next_row: dict[str, Any],
+    previous: dict[str, Any] | None,
+) -> None:
+    updates[key] = next_row
+    was_stable = bool((previous or {}).get("stable"))
+    is_stable = bool(next_row.get("stable"))
+    if is_stable and not was_stable:
+        stats["promoted_stable_nodes"] = int(stats.get("promoted_stable_nodes", 0) or 0) + 1
+    was_evicted = _is_aggregate_health_evicted(previous or {})
+    is_evicted = _is_aggregate_health_evicted(next_row)
+    if is_evicted and not was_evicted:
+        stats["evicted_nodes"] = int(stats.get("evicted_nodes", 0) or 0) + 1
+
+
+def _sort_nodes_by_health(nodes: list[dict[str, Any]], cache_rows: dict[str, Any]) -> list[dict[str, Any]]:
+    return sorted(nodes, key=lambda node: _rank_health_row(node, cache_rows))
+
+
+def _select_verify_input(
+    stable_verified_alive: list[dict[str, Any]],
+    quick_pool: list[dict[str, Any]],
+    cache_rows: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if len(stable_verified_alive) >= AGG_NODE_PUBLISH_LIMIT:
+        return []
+    stable_keys = {_aggregate_node_cache_key(item) for item in stable_verified_alive}
+    stable_recheck = sorted(
+        stable_verified_alive,
+        key=lambda node: int((cache_rows.get(_aggregate_node_cache_key(node)) or {}).get("checked_at", 0) or 0),
+    )[:AGG_STABLE_REVERIFY_LIMIT]
+    fresh_candidates = [node for node in quick_pool if _aggregate_node_cache_key(node) not in stable_keys]
+    merged = _dedupe_aggregate_nodes(stable_recheck + fresh_candidates)
+    return merged[: max(0, AGG_NODE_VERIFY_LIMIT)]
+
+
+def _format_timing_ms(started_at: float) -> int:
+    return max(0, int((time.perf_counter() - started_at) * 1000))
+
+
+def _bucket_publish_targets() -> tuple[int, int, int]:
+    stable_target = max(0, int(AGG_NODE_PUBLISH_LIMIT * AGG_POOL_STABLE_RATIO / 100))
+    warm_target = max(0, int(AGG_NODE_PUBLISH_LIMIT * AGG_POOL_WARM_RATIO / 100))
+    fresh_target = max(0, AGG_NODE_PUBLISH_LIMIT - stable_target - warm_target)
+    return stable_target, warm_target, fresh_target
+
+
+def _append_diverse_nodes(
+    selected: list[dict[str, Any]],
+    nodes: list[dict[str, Any]],
+    *,
+    limit: int,
+    per_source: dict[str, int],
+    per_server: dict[str, int],
+) -> None:
+    if limit <= 0:
+        return
+    for node in nodes:
+        if len(selected) >= limit:
+            return
+        source = _aggregate_source_bucket(node)
+        server = _aggregate_server_bucket(node)
+        if per_source.get(source, 0) >= AGG_PUBLISH_SOURCE_LIMIT:
+            continue
+        if per_server.get(server, 0) >= AGG_PUBLISH_SERVER_LIMIT:
+            continue
+        if node in selected:
+            continue
+        per_source[source] = per_source.get(source, 0) + 1
+        per_server[server] = per_server.get(server, 0) + 1
+        selected.append(node)
+
+
+def _build_layered_published_pool(
+    stable_nodes: list[dict[str, Any]],
+    warm_nodes: list[dict[str, Any]],
+    fresh_nodes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    stable_target, warm_target, fresh_target = _bucket_publish_targets()
+    selected: list[dict[str, Any]] = []
+    per_source: dict[str, int] = {}
+    per_server: dict[str, int] = {}
+    _append_diverse_nodes(selected, stable_nodes, limit=stable_target, per_source=per_source, per_server=per_server)
+    _append_diverse_nodes(selected, warm_nodes, limit=stable_target + warm_target, per_source=per_source, per_server=per_server)
+    _append_diverse_nodes(selected, fresh_nodes, limit=stable_target + warm_target + fresh_target, per_source=per_source, per_server=per_server)
+    if len(selected) < AGG_NODE_PUBLISH_LIMIT:
+        remainder = [n for n in stable_nodes + warm_nodes + fresh_nodes if n not in selected]
+        _append_diverse_nodes(selected, remainder, limit=AGG_NODE_PUBLISH_LIMIT, per_source=per_source, per_server=per_server)
+    return selected[:AGG_NODE_PUBLISH_LIMIT]
+
+
+def _build_snapshot_delta(current: dict[str, Any], previous: dict[str, Any]) -> dict[str, int]:
+    keys = ("published_nodes", "stable_pool_nodes", "cached_nodes", "verify_alive", "evicted_nodes")
+    return {
+        key: int(current.get(key, 0) or 0) - int(previous.get(key, 0) or 0)
+        for key in keys
+    }
+
+
+def _compute_next_prewarm_sleep(*, fingerprint_changed: bool, had_error: bool) -> int:
+    if had_error:
+        return AGG_PREWARM_MIN_SECONDS
+    if fingerprint_changed:
+        return max(AGG_PREWARM_MIN_SECONDS, min(AGG_PREWARM_INTERVAL_SECONDS, AGG_PREWARM_MIN_SECONDS * 2))
+    return max(AGG_PREWARM_INTERVAL_SECONDS, AGG_PREWARM_MAX_SECONDS)
+
+
+async def _verify_aggregate_nodes_with_mihomo(nodes: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    stats = {"verify_attempted": 0, "verify_alive": 0, "verify_mode": "disabled"}
+    if not AGG_NODE_VERIFY_ENABLED or not nodes:
+        return [], stats
+    stats["verify_mode"] = "preparing"
+    try:
+        from app import config as _cfg
+        from core.plugins.mihomo_engine import MihomoEngine
+    except Exception:
+        stats["verify_mode"] = "unavailable"
+        return [], stats
+
+    engine = MihomoEngine()
+    if not await engine.prepare():
+        stats["verify_mode"] = "prepare_failed"
+        return [], stats
+
+    stats["verify_mode"] = "running"
+    verify_nodes = list(nodes[:AGG_NODE_VERIFY_LIMIT])
+    stats["verify_attempted"] = len(verify_nodes)
+    results: list[dict[str, Any]] = []
+    try:
+        timeout = aiohttp.ClientTimeout(total=max(20, AGG_NODE_VERIFY_TIMEOUT_MS / 1000 + 8))
+        connector = aiohttp.TCPConnector(ssl=_cfg.VERIFY_SSL, limit=max(1, _cfg.NODE_TEST_WORKERS))
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            if not await engine.start(verify_nodes, _cfg.API_PORT, session):
+                stats["verify_mode"] = "start_failed"
+                return [], stats
+            sem = asyncio.Semaphore(max(1, _cfg.NODE_TEST_WORKERS))
+            tasks = [
+                asyncio.create_task(engine.async_test_node(node["name"], AGG_NODE_VERIFY_TIMEOUT_MS, _cfg.TEST_URL, session, sem))
+                for node in verify_nodes
+            ]
+            for future in asyncio.as_completed(tasks):
+                results.append(await future)
+    finally:
+        engine.stop()
+
+    alive_names = {
+        str(row.get("name", "") or "")
+        for row in results
+        if row.get("status") == "valid" and float(row.get("delay", -1) or -1) > 0
+    }
+    verified: list[dict[str, Any]] = []
+    for node in verify_nodes:
+        if node.get("name") in alive_names:
+            matched = next((r for r in results if r.get("name") == node.get("name")), None)
+            row = dict(node)
+            if matched:
+                row["latency"] = float(matched.get("delay", 0.0) or 0.0)
+            verified.append(row)
+    stats["verify_alive"] = len(verified)
+    stats["verify_mode"] = "ok"
+    return verified, stats
+
+
+async def _quick_filter_aggregate_nodes(
+    runtime: Any,
+    nodes: list[dict[str, Any]],
+    *,
+    state: OwnerAggregateState | None = None,
+    source_seed: dict[str, int] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    stats = {
+        "collected_nodes": len(nodes),
+        "deduped_nodes": 0,
+        "candidate_nodes": 0,
+        "tested_nodes": 0,
+        "alive_nodes": 0,
+        "published_nodes": 0,
+        "sampled_nodes": False,
+        "connectivity_filter_enabled": False,
+        "cache_hits": 0,
+        "cache_quick_alive": 0,
+        "cache_verify_alive": 0,
+        "cache_stable_alive": 0,
+        "verify_attempted": 0,
+        "verify_alive": 0,
+        "verify_mode": "disabled",
+        "stable_pool_nodes": 0,
+        "promoted_stable_nodes": 0,
+        "evicted_nodes": 0,
+        "timings_ms": {},
+    }
+    deduped = _dedupe_aggregate_nodes(nodes)
+    stats["deduped_nodes"] = len(deduped)
+    candidates = _select_aggregate_candidates(deduped, source_seed)
+    stats["candidate_nodes"] = len(candidates)
+    stats["sampled_nodes"] = len(candidates) < len(deduped)
+    state = state or _aggregate_node_health_state()
+    cache_rows = await state.read_node_health()
+    now_ts = int(time.time())
+    stable_verified_alive: list[dict[str, Any]] = []
+    cached_verified_alive: list[dict[str, Any]] = []
+    quick_alive_candidates: list[dict[str, Any]] = []
+    pending_nodes: list[dict[str, Any]] = []
+    for row in candidates:
+        cached = _load_cached_aggregate_health(cache_rows, row, now_ts=now_ts)
+        if cached:
+            stats["cache_hits"] += 1
+            if cached.get("mode") == "verify" and cached.get("status") == "alive":
+                item = dict(row)
+                item["latency"] = float(cached.get("latency", 0.0) or 0.0)
+                if _is_aggregate_health_stable(cached):
+                    stable_verified_alive.append(item)
+                    stats["cache_stable_alive"] += 1
+                    continue
+                cached_verified_alive.append(item)
+                stats["cache_verify_alive"] += 1
+                continue
+            if cached.get("mode") == "quick" and cached.get("status") == "alive":
+                item = dict(row)
+                item["latency"] = float(cached.get("latency", 0.0) or 0.0)
+                quick_alive_candidates.append(item)
+                stats["cache_quick_alive"] += 1
+                continue
+            if cached.get("status") == "dead" and _is_aggregate_health_evicted(cached):
+                continue
+        pending_nodes.append(row)
+    stats["stable_pool_nodes"] = len(stable_verified_alive)
+    quick_ping_runner = getattr(getattr(runtime, "document_service", None), "quick_ping_runner", None)
+    if not callable(quick_ping_runner) or not candidates:
+        published = _limit_published_aggregate_nodes(stable_verified_alive + cached_verified_alive + quick_alive_candidates + pending_nodes)
+        stats["published_nodes"] = len(published)
+        stats["layer_counts"] = {
+            "stable": len(stable_verified_alive),
+            "warm": len(cached_verified_alive),
+            "fresh": len(quick_alive_candidates) + len(pending_nodes),
+        }
+        source_stats: dict[str, dict[str, Any]] = {}
+        _apply_source_counts(source_stats, "candidate_nodes", _count_nodes_by_source(candidates))
+        _apply_source_counts(source_stats, "published_nodes", _count_nodes_by_source(published))
+        stats["top_sources"] = _finalize_source_snapshot(source_stats)
+        stats["pool_snapshot"] = _build_pool_snapshot(stats, cache_rows, stats["top_sources"])
+        return published, stats
+
+    stats["connectivity_filter_enabled"] = True
+    updates: dict[str, Any] = {}
+    newly_quick_alive: list[dict[str, Any]] = []
+    if pending_nodes:
+        quick_started = time.perf_counter()
+        alive_count, tested_count, alive_rows = await quick_ping_runner(
+            pending_nodes,
+            concurrency=AGG_NODE_TEST_CONCURRENCY,
+            timeout=AGG_NODE_TEST_TIMEOUT_SECONDS,
+        )
+        stats["timings_ms"]["quick_filter"] = _format_timing_ms(quick_started)
+        stats["tested_nodes"] = int(tested_count or 0)
+        stats["alive_nodes"] = int(alive_count or 0)
+        alive_keys = {
+            _aggregate_node_cache_key(dict(item.get("raw_node") or {})): float(item.get("latency", 0.0) or 0.0)
+            for item in alive_rows
+        }
+        for node in pending_nodes:
+            key = _aggregate_node_cache_key(node)
+            latency = alive_keys.get(key)
+            previous = cache_rows.get(key) if isinstance(cache_rows.get(key), dict) else None
+            if latency is not None:
+                row = dict(node)
+                row["latency"] = float(latency)
+                newly_quick_alive.append(row)
+                _record_health_update(
+                    updates,
+                    stats,
+                    key,
+                    _mark_aggregate_health("quick", "alive", latency=latency, previous=previous),
+                    previous,
+                )
+            else:
+                _record_health_update(
+                    updates,
+                    stats,
+                    key,
+                    _mark_aggregate_health("quick", "dead", previous=previous),
+                    previous,
+                )
+    quick_pool = stable_verified_alive + cached_verified_alive + quick_alive_candidates + newly_quick_alive
+    quick_pool = _dedupe_aggregate_nodes(quick_pool)
+    verify_input = _select_verify_input(stable_verified_alive, quick_pool, cache_rows)
+    verify_started = time.perf_counter()
+    verified_nodes, verify_stats = await _verify_aggregate_nodes_with_mihomo(verify_input)
+    stats["timings_ms"]["verify_filter"] = _format_timing_ms(verify_started)
+    stats.update(verify_stats)
+    verified_keys = {_aggregate_node_cache_key(node): node for node in verified_nodes}
+    for node in verify_input:
+        key = _aggregate_node_cache_key(node)
+        previous = cache_rows.get(key) if isinstance(cache_rows.get(key), dict) else None
+        if key in verified_keys:
+            _record_health_update(
+                updates,
+                stats,
+                key,
+                _mark_aggregate_health(
+                    "verify",
+                    "alive",
+                    latency=float(verified_keys[key].get("latency", 0.0) or 0.0),
+                    previous=previous,
+                ),
+                previous,
+            )
+        elif verify_stats.get("verify_mode") == "ok":
+            _record_health_update(
+                updates,
+                stats,
+                key,
+                _mark_aggregate_health("verify", "dead", previous=previous),
+                previous,
+            )
+    if state and updates:
+        merged_cache = _merge_cached_aggregate_health(cache_rows, updates, now_ts=now_ts)
+        await state.write_node_health(merged_cache)
+        cache_rows = merged_cache
+    stable_fallback = []
+    for node in quick_pool:
+        key = _aggregate_node_cache_key(node)
+        row = cache_rows.get(key)
+        if isinstance(row, dict) and row.get("status") == "alive" and _is_aggregate_health_stable(row):
+            item = dict(node)
+            item["latency"] = float(row.get("latency", item.get("latency", 0.0)) or 0.0)
+            stable_fallback.append(item)
+    stable_fallback = _sort_nodes_by_health(_dedupe_aggregate_nodes(stable_fallback), cache_rows)
+    stats["stable_pool_nodes"] = len(stable_fallback)
+    warm_nodes = _sort_nodes_by_health(_dedupe_aggregate_nodes(cached_verified_alive + verified_nodes), cache_rows)
+    fresh_nodes = _sort_nodes_by_health(
+        _dedupe_aggregate_nodes([node for node in quick_pool if _aggregate_node_cache_key(node) not in verified_keys]),
+        cache_rows,
+    )
+    stats["layer_counts"] = {
+        "stable": len(stable_fallback),
+        "warm": len(warm_nodes),
+        "fresh": len(fresh_nodes),
+    }
+    published = _build_layered_published_pool(stable_fallback, warm_nodes, fresh_nodes)
+    stats["published_nodes"] = len(published)
+    source_stats = {}
+    _apply_source_counts(source_stats, "candidate_nodes", _count_nodes_by_source(candidates))
+    _apply_source_counts(source_stats, "quick_alive", _count_nodes_by_source(quick_pool))
+    _apply_source_counts(source_stats, "verified_alive", _count_nodes_by_source(verified_nodes))
+    _apply_source_counts(source_stats, "stable_nodes", _count_nodes_by_source(stable_fallback))
+    _apply_source_counts(source_stats, "published_nodes", _count_nodes_by_source(published))
+    stats["top_sources"] = _finalize_source_snapshot(source_stats)
+    stats["pool_snapshot"] = _build_pool_snapshot(stats, cache_rows, stats["top_sources"])
+    return published, stats
+
+
+async def _collect_owner_aggregate_nodes(
+    runtime: Any,
+    *,
+    state: OwnerAggregateState | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    started_at = time.perf_counter()
     owner_id = int(runtime.admin_service.owner_id)
     subs = await asyncio.to_thread(runtime.get_storage().get_by_user, owner_id)
     if not subs:
-        empty = {"total_subscriptions": 0, "eligible_subscriptions": 0, "parsed_ok": 0, "parsed_failed": 0, "timed_out": 0}
-        return yaml.safe_dump({"proxies": [], "proxy-groups": _build_proxy_groups([]), "rules": ["MATCH,DIRECT"]}, allow_unicode=True, sort_keys=False), 0, empty
+        return [], {"total_subscriptions": 0, "eligible_subscriptions": 0, "parsed_ok": 0, "parsed_failed": 0, "timed_out": 0}
     now = datetime.now()
     eligible_subs = {url: data for url, data in subs.items() if _is_subscription_eligible(data, now=now)}
     if not eligible_subs:
-        empty = {"total_subscriptions": len(subs), "eligible_subscriptions": 0, "parsed_ok": 0, "parsed_failed": 0, "timed_out": 0}
-        return yaml.safe_dump({"proxies": [], "proxy-groups": _build_proxy_groups([]), "rules": ["MATCH,DIRECT"]}, allow_unicode=True, sort_keys=False), 0, empty
+        return [], {"total_subscriptions": len(subs), "eligible_subscriptions": 0, "parsed_ok": 0, "parsed_failed": 0, "timed_out": 0}
+
     parser_instance = await runtime.get_parser()
+    state = state or _aggregate_node_health_state()
+    previous_meta = await state.read_meta()
+    previous_snapshot = dict(previous_meta.get("pool_snapshot", {}) or {})
+    source_stats: dict[str, dict[str, Any]] = {}
+    source_seed = _build_source_seed_scores(previous_snapshot)
+    for url in subs.keys():
+        source = _source_label_from_url(url)
+        row = _init_source_stat(source_stats.get(source))
+        row["subscriptions"] += 1
+        if url in eligible_subs:
+            row["eligible_subscriptions"] += 1
+        source_stats[source] = row
     collected_nodes: list[dict[str, Any]] = []
     parse_ok = 0
     parse_failed = 0
@@ -489,117 +1275,116 @@ async def _build_owner_aggregate_content(runtime: Any) -> tuple[str, int, dict[s
     async def _parse_one(url: str) -> None:
         nonlocal parse_ok, parse_failed, timed_out
         async with semaphore:
+            source = _source_label_from_url(url)
             try:
                 result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
                 source_name = str(result.get("name", "") or "").strip()
+                parsed_nodes = 0
                 for node in _nodes_from_parse_result(result):
                     collected_nodes.append(_apply_source_label_to_node(node, url, source_name))
+                    parsed_nodes += 1
+                row = _init_source_stat(source_stats.get(source))
+                row["parsed_ok"] += 1
+                row["parsed_nodes"] += parsed_nodes
+                source_stats[source] = row
                 parse_ok += 1
             except asyncio.TimeoutError:
+                row = _init_source_stat(source_stats.get(source))
+                row["timed_out"] += 1
+                row["parsed_failed"] += 1
+                source_stats[source] = row
                 timed_out += 1
                 parse_failed += 1
                 logger.warning("aggregate parse timeout url=%s", url)
             except Exception as exc:
+                row = _init_source_stat(source_stats.get(source))
+                row["parsed_failed"] += 1
+                source_stats[source] = row
                 parse_failed += 1
                 logger.warning("aggregate parse failed url=%s err=%s", url, exc)
 
     await asyncio.gather(*[_parse_one(url) for url in eligible_subs.keys()])
-    content, count = _render_clash_yaml(collected_nodes)
+    parse_timing_ms = _format_timing_ms(started_at)
+    collected_nodes.sort(key=lambda node: _source_sort_key(node, source_seed))
+    filtered_nodes, filter_stats = await _quick_filter_aggregate_nodes(
+        runtime,
+        collected_nodes,
+        state=state,
+        source_seed=source_seed,
+    )
+    for row in list(filter_stats.get("top_sources", []) or []):
+        if not isinstance(row, dict):
+            continue
+        source = str(row.get("source", "") or "").strip().lower()
+        if not source:
+            continue
+        merged = _init_source_stat(source_stats.get(source))
+        for key in ("candidate_nodes", "quick_alive", "verified_alive", "stable_nodes", "published_nodes"):
+            merged[key] = int(row.get(key, 0) or 0)
+        source_stats[source] = merged
+    top_sources = _finalize_source_snapshot(source_stats)
     stats = {
         "total_subscriptions": len(subs),
         "eligible_subscriptions": len(eligible_subs),
         "parsed_ok": parse_ok,
         "parsed_failed": parse_failed,
         "timed_out": timed_out,
+        **filter_stats,
     }
-    return content, count, stats
+    stats["timings_ms"] = dict(filter_stats.get("timings_ms", {}) or {})
+    stats["timings_ms"]["parse"] = parse_timing_ms
+    stats["timings_ms"]["collect_total"] = _format_timing_ms(started_at)
+    stats["top_sources"] = top_sources
+    stats["pool_snapshot"] = _build_pool_snapshot(stats, await state.read_node_health(), top_sources, previous_snapshot)
+    return filtered_nodes, stats
+
+
+async def _build_owner_aggregate_bundle(
+    runtime: Any,
+    *,
+    state: OwnerAggregateState | None = None,
+) -> dict[str, Any]:
+    started_at = time.perf_counter()
+    active_state = state or _aggregate_node_health_state()
+    collected_nodes, stats = await _collect_owner_aggregate_nodes(runtime, state=active_state)
+    render_started = time.perf_counter()
+    if not collected_nodes:
+        yaml_content = yaml.safe_dump({"proxies": [], "proxy-groups": _build_proxy_groups([]), "rules": ["MATCH,DIRECT"]}, allow_unicode=True, sort_keys=False)
+        stats["timings_ms"] = dict(stats.get("timings_ms", {}) or {})
+        stats["timings_ms"]["render"] = _format_timing_ms(render_started)
+        stats["timings_ms"]["build_total"] = _format_timing_ms(started_at)
+        meta = await active_state.read_meta()
+        stats["pool_snapshot"] = _build_pool_snapshot(
+            stats,
+            await active_state.read_node_health(),
+            stats.get("top_sources", []),
+            dict(meta.get("pool_snapshot", {}) or {}),
+        )
+        return {"yaml": yaml_content, "raw": "", "base64": "", "node_count": 0, "stats": stats}
+    yaml_content, count = _render_clash_yaml(collected_nodes)
+    raw_content, _raw_count = _render_raw_lines(collected_nodes)
+    base64_content, _base64_count = _render_base64(collected_nodes)
+    stats["timings_ms"] = dict(stats.get("timings_ms", {}) or {})
+    stats["timings_ms"]["render"] = _format_timing_ms(render_started)
+    stats["timings_ms"]["build_total"] = _format_timing_ms(started_at)
+    meta = await active_state.read_meta()
+    stats["pool_snapshot"] = _build_pool_snapshot(
+        stats,
+        await active_state.read_node_health(),
+        stats.get("top_sources", []),
+        dict(meta.get("pool_snapshot", {}) or {}),
+    )
+    return {"yaml": yaml_content, "raw": raw_content, "base64": base64_content, "node_count": count, "stats": stats}
 
 
 async def _collect_owner_eligible_nodes(runtime: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    owner_id = int(runtime.admin_service.owner_id)
-    subs = await asyncio.to_thread(runtime.get_storage().get_by_user, owner_id)
-    now = datetime.now()
-    eligible_subs = {url: data for url, data in subs.items() if _is_subscription_eligible(data, now=now)}
-    parser_instance = await runtime.get_parser()
-    collected_nodes: list[dict[str, Any]] = []
-    parse_ok = 0
-    parse_failed = 0
-    timed_out = 0
-    semaphore = asyncio.Semaphore(AGG_PARSE_CONCURRENCY)
-
-    async def _parse_one(url: str) -> None:
-        nonlocal parse_ok, parse_failed, timed_out
-        async with semaphore:
-            try:
-                result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
-                source_name = str(result.get("name", "") or "").strip()
-                for node in _nodes_from_parse_result(result):
-                    collected_nodes.append(_apply_source_label_to_node(node, url, source_name))
-                parse_ok += 1
-            except asyncio.TimeoutError:
-                timed_out += 1
-                parse_failed += 1
-            except Exception:
-                parse_failed += 1
-
-    await asyncio.gather(*[_parse_one(url) for url in eligible_subs.keys()])
-    stats = {
-        "total_subscriptions": len(subs),
-        "eligible_subscriptions": len(eligible_subs),
-        "parsed_ok": parse_ok,
-        "parsed_failed": parse_failed,
-        "timed_out": timed_out,
-    }
-    return collected_nodes, stats
+    return await _collect_owner_aggregate_nodes(runtime)
 
 
 async def _collect_owner_eligible_links(runtime: Any) -> tuple[list[str], dict[str, Any]]:
-    owner_id = int(runtime.admin_service.owner_id)
-    subs = await asyncio.to_thread(runtime.get_storage().get_by_user, owner_id)
-    now = datetime.now()
-    eligible_subs = {url: data for url, data in subs.items() if _is_subscription_eligible(data, now=now)}
-    parser_instance = await runtime.get_parser()
-    parse_ok = 0
-    parse_failed = 0
-    timed_out = 0
-    links: list[str] = []
-    seen: set[str] = set()
-    semaphore = asyncio.Semaphore(AGG_PARSE_CONCURRENCY)
-
-    async def _parse_one(url: str) -> None:
-        nonlocal parse_ok, parse_failed, timed_out
-        async with semaphore:
-            try:
-                result = await asyncio.wait_for(parser_instance.parse(url), timeout=AGG_PARSE_TIMEOUT_SECONDS)
-                parse_ok += 1
-                source_name = str(result.get("name", "") or "").strip()
-                extracted: list[str] = []
-                nodes = _nodes_from_parse_result(result)
-                if nodes:
-                    tagged_nodes = [_apply_source_label_to_node(node, url, source_name) for node in nodes]
-                    raw_from_nodes, _ = _render_raw_lines(tagged_nodes)
-                    extracted = [line.strip() for line in raw_from_nodes.splitlines() if line.strip()]
-                if not extracted:
-                    raw_text = str(result.get("_raw_content", "") or "")
-                    extracted = _extract_protocol_links_from_text(raw_text)
-                for item in extracted:
-                    if item not in seen:
-                        seen.add(item)
-                        links.append(item)
-            except asyncio.TimeoutError:
-                timed_out += 1
-                parse_failed += 1
-            except Exception:
-                parse_failed += 1
-
-    await asyncio.gather(*[_parse_one(url) for url in eligible_subs.keys()])
-    stats = {
-        "total_subscriptions": len(subs),
-        "eligible_subscriptions": len(eligible_subs),
-        "parsed_ok": parse_ok,
-        "parsed_failed": parse_failed,
-        "timed_out": timed_out,
-    }
+    nodes, stats = await _collect_owner_aggregate_nodes(runtime)
+    raw_text, _count = _render_raw_lines(nodes)
+    links = [line.strip() for line in raw_text.splitlines() if line.strip()]
     return links, stats
 
 
@@ -638,6 +1423,15 @@ def _format_urls_for_token(request: web.Request, token: str) -> dict[str, str]:
         "base64": f"{base}/base64",
         "clash": f"{base}/clash",
     }
+
+
+def _cache_has_format(cache: dict[str, Any] | None, format_type: str) -> bool:
+    if not isinstance(cache, dict):
+        return False
+    if format_type == "yaml":
+        return bool(cache.get("content"))
+    formats = dict(cache.get("formats", {}) or {})
+    return bool(formats.get(format_type))
 
 
 def _extract_protocol_links_from_text(text: str) -> list[str]:
@@ -1606,11 +2400,13 @@ async def _owner_aggregate_info(request: web.Request) -> web.Response:
     meta = await state.read_meta()
     history = await state.read_history()
     generated_at = int(cache.get("generated_at", 0) or 0) if cache else 0
+    cache_age = max(0, int(time.time()) - generated_at) if generated_at else 0
     node_count = int(cache.get("node_count", 0) or 0) if cache else 0
     version = str(cache.get("version", "") or "") if cache else ""
     last_error = str(meta.get("last_error", "") or "")
     last_error_at = int(meta.get("last_error_at", 0) or 0)
     build_stats = dict(meta.get("build_stats", {}) or {})
+    pool_snapshot = dict(meta.get("pool_snapshot", {}) or {})
     return web.json_response(
         {
             "ok": True,
@@ -1619,11 +2415,13 @@ async def _owner_aggregate_info(request: web.Request) -> web.Response:
                 "urls": _format_urls_for_token(request, token),
                 "token_preview": token[:6],
                 "generated_at": generated_at,
+                "cache_age_seconds": cache_age,
                 "node_count": node_count,
                 "version": version,
                 "last_error": last_error,
                 "last_error_at": last_error_at,
                 "build_stats": build_stats,
+                "pool_snapshot": pool_snapshot,
                 "build_history": history,
                 "owner_id": int(runtime.admin_service.owner_id),
             },
@@ -1663,13 +2461,26 @@ async def _owner_aggregate_refresh(request: web.Request) -> web.Response:
     runtime = request.app[RUNTIME_KEY]
     state: OwnerAggregateState = request.app[AGG_STATE_KEY]
     token = await state.get_token()
-    content, node_count, stats = await _build_owner_aggregate_content(runtime)
+    refresh_started = time.perf_counter()
+    bundle = await _build_owner_aggregate_bundle(runtime, state=state)
+    stats = dict(bundle.get("stats", {}) or {})
     stats["fingerprint"] = await _compute_owner_fingerprint(runtime)
-    await state.write_cache(content=content, node_count=node_count, fingerprint=str(stats.get("fingerprint", "")))
-    await state.write_build_stats(stats)
+    write_started = time.perf_counter()
+    await state.write_cache(
+        content=str(bundle.get("yaml", "") or ""),
+        raw_content=str(bundle.get("raw", "") or ""),
+        base64_content=str(bundle.get("base64", "") or ""),
+        node_count=int(bundle.get("node_count", 0) or 0),
+        fingerprint=str(stats.get("fingerprint", "")),
+    )
+    stats["timings_ms"] = dict(stats.get("timings_ms", {}) or {})
+    stats["timings_ms"]["write_cache"] = _format_timing_ms(write_started)
+    stats["timings_ms"]["refresh_total"] = _format_timing_ms(refresh_started)
+    stats["pool_snapshot"] = _build_pool_snapshot(stats, await state.read_node_health(), stats.get("top_sources", []))
+    await state.write_build_stats(stats, snapshot=dict(stats.get("pool_snapshot", {}) or {}))
     runtime.usage_audit_service.log_check(
         user=_owner_audit_user(runtime),
-        urls=[f"refresh:{token[:8]} nodes={node_count}"],
+        urls=[f"refresh:{token[:8]} nodes={int(bundle.get('node_count', 0) or 0)}"],
         source="web:owner:aggregate:refresh",
     )
     return web.json_response(
@@ -1678,9 +2489,10 @@ async def _owner_aggregate_refresh(request: web.Request) -> web.Response:
             "data": {
                 "url": _build_subscribe_url(request, token),
                 "urls": _format_urls_for_token(request, token),
-                "node_count": node_count,
+                "node_count": int(bundle.get("node_count", 0) or 0),
                 "generated_at": int(time.time()),
                 "build_stats": stats,
+                "pool_snapshot": dict(stats.get("pool_snapshot", {}) or {}),
             },
         }
     )
@@ -1702,27 +2514,35 @@ async def _public_owner_subscription(request: web.Request) -> web.Response:
     if not token or not hmac.compare_digest(token, current):
         raise web.HTTPNotFound()
     cache = await state.read_cache()
-    now_ts = int(time.time())
-    latest_fingerprint = await _compute_owner_fingerprint(runtime)
-    cache_fingerprint = str((cache or {}).get("fingerprint", "") or "")
-    cache_valid = (
-        cache
-        and now_ts - int(cache.get("generated_at", 0) or 0) <= 180
-        and cache.get("content")
-        and cache_fingerprint == latest_fingerprint
-    )
+    formats = dict((cache or {}).get("formats", {}) or {})
+    cache_valid = _cache_has_format(cache, format_type)
     if cache_valid:
-        yaml_content = str(cache["content"])
+        yaml_content = str(formats.get("yaml") or (cache or {}).get("content", ""))
+        raw_content = str(formats.get("raw", "") or "")
+        base64_content = str(formats.get("base64", "") or "")
         node_count = int(cache.get("node_count", 0) or 0)
         version = str(cache.get("version", "") or "")
+        generated_at = int(cache.get("generated_at", 0) or 0)
     else:
         try:
-            yaml_content, node_count, stats = await _build_owner_aggregate_content(runtime)
-            stats["fingerprint"] = latest_fingerprint
-            await state.write_cache(content=yaml_content, node_count=node_count, fingerprint=latest_fingerprint)
-            await state.write_build_stats(stats)
+            bundle = await _build_owner_aggregate_bundle(runtime, state=state)
+            yaml_content = str(bundle.get("yaml", "") or "")
+            raw_content = str(bundle.get("raw", "") or "")
+            base64_content = str(bundle.get("base64", "") or "")
+            node_count = int(bundle.get("node_count", 0) or 0)
+            stats = dict(bundle.get("stats", {}) or {})
+            stats["fingerprint"] = await _compute_owner_fingerprint(runtime)
+            await state.write_cache(
+                content=yaml_content,
+                raw_content=raw_content,
+                base64_content=base64_content,
+                node_count=node_count,
+                fingerprint=str(stats.get("fingerprint", "")),
+            )
+            await state.write_build_stats(stats, snapshot=dict(stats.get("pool_snapshot", {}) or {}))
             latest = await state.read_cache()
             version = str((latest or {}).get("version", "") or "")
+            generated_at = int((latest or {}).get("generated_at", 0) or 0)
         except Exception as exc:
             await state.write_error(message=str(exc))
             raise
@@ -1731,20 +2551,18 @@ async def _public_owner_subscription(request: web.Request) -> web.Response:
         content_type = "text/yaml"
         filename = "owner-pool.yaml"
     else:
-        links, _stats = await _collect_owner_eligible_links(runtime)
         if format_type == "base64":
-            plain_text = "\n".join(links)
-            output_text = base64.b64encode(plain_text.encode("utf-8")).decode("utf-8")
-            node_count = len(links)
+            output_text = base64_content
         else:
-            output_text = "\n".join(links)
-            node_count = len(links)
+            output_text = raw_content
         content_type = "text/plain"
         filename = "owner-pool.txt"
 
     resp = web.Response(text=output_text, content_type=content_type, charset="utf-8")
     resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
     resp.headers["X-Node-Count"] = str(node_count)
+    resp.headers["X-Aggregate-Cache"] = "hit" if cache_valid else "miss"
+    resp.headers["X-Aggregate-Cache-Age"] = str(max(0, int(time.time()) - generated_at) if generated_at else 0)
     if version:
         resp.headers["X-Config-Version"] = version
         resp.headers["ETag"] = f"W/\"{version}\""
@@ -1755,18 +2573,40 @@ async def _aggregate_prewarm_loop(app: web.Application) -> None:
     runtime = app[RUNTIME_KEY]
     state: OwnerAggregateState = app[AGG_STATE_KEY]
     while True:
+        sleep_seconds = AGG_PREWARM_INTERVAL_SECONDS
         try:
             token = await state.get_token()
-            content, node_count, stats = await _build_owner_aggregate_content(runtime)
-            await state.write_cache(content=content, node_count=node_count, fingerprint=str(stats.get("fingerprint", "")))
-            await state.write_build_stats(stats)
-            logger.info("owner aggregate cache refreshed token=%s nodes=%s", token[:8], node_count)
+            loop_started = time.perf_counter()
+            previous_meta = await state.read_meta()
+            previous_fingerprint = str((previous_meta.get("build_stats", {}) or {}).get("fingerprint", "") or "")
+            bundle = await _build_owner_aggregate_bundle(runtime, state=state)
+            stats = dict(bundle.get("stats", {}) or {})
+            stats["fingerprint"] = await _compute_owner_fingerprint(runtime)
+            write_started = time.perf_counter()
+            await state.write_cache(
+                content=str(bundle.get("yaml", "") or ""),
+                raw_content=str(bundle.get("raw", "") or ""),
+                base64_content=str(bundle.get("base64", "") or ""),
+                node_count=int(bundle.get("node_count", 0) or 0),
+                fingerprint=str(stats.get("fingerprint", "")),
+            )
+            stats["timings_ms"] = dict(stats.get("timings_ms", {}) or {})
+            stats["timings_ms"]["write_cache"] = _format_timing_ms(write_started)
+            stats["timings_ms"]["prewarm_total"] = _format_timing_ms(loop_started)
+            stats["pool_snapshot"] = _build_pool_snapshot(stats, await state.read_node_health(), stats.get("top_sources", []))
+            await state.write_build_stats(stats, snapshot=dict(stats.get("pool_snapshot", {}) or {}))
+            sleep_seconds = _compute_next_prewarm_sleep(
+                fingerprint_changed=str(stats.get("fingerprint", "")) != previous_fingerprint,
+                had_error=False,
+            )
+            logger.info("owner aggregate cache refreshed token=%s nodes=%s", token[:8], int(bundle.get("node_count", 0) or 0))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             await state.write_error(message=str(exc))
             logger.warning("owner aggregate prewarm failed: %s", exc)
-        await asyncio.sleep(180)
+            sleep_seconds = _compute_next_prewarm_sleep(fingerprint_changed=False, had_error=True)
+        await asyncio.sleep(sleep_seconds)
 
 
 async def _start_background_tasks(app: web.Application) -> None:

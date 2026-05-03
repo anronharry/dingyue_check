@@ -31,8 +31,8 @@
 
       <section class="hero-panel">
         <div class="hero-copy">
-          <p class="hero-kicker">Multi-format Distribution</p>
-          <h2>统一查看当前聚合订阅的生成状态、分发 URL 和历史构建记录</h2>
+          <p class="hero-kicker">Stable Pool Monitor</p>
+          <h2>统一查看聚合订阅的发布 URL、稳定池快照、源信誉和构建历史</h2>
           <p id="heroSummary" class="hero-summary">正在加载聚合元数据...</p>
         </div>
         <div class="hero-actions">
@@ -42,30 +42,18 @@
       </section>
 
       <section class="stats-grid">
-        <article class="stat-card">
-          <span>节点总数</span>
-          <strong id="statNodeCount">-</strong>
-        </article>
-        <article class="stat-card">
-          <span>总订阅数</span>
-          <strong id="statTotalSubs">-</strong>
-        </article>
-        <article class="stat-card">
-          <span>合格订阅</span>
-          <strong id="statEligibleSubs">-</strong>
-        </article>
-        <article class="stat-card">
-          <span>解析成功</span>
-          <strong id="statParsedOk">-</strong>
-        </article>
-        <article class="stat-card">
-          <span>解析失败</span>
-          <strong id="statParsedFailed">-</strong>
-        </article>
-        <article class="stat-card">
-          <span>超时数</span>
-          <strong id="statTimedOut">-</strong>
-        </article>
+        <article class="stat-card"><span>当前节点</span><strong id="statNodeCount">-</strong></article>
+        <article class="stat-card"><span>总订阅数</span><strong id="statTotalSubs">-</strong></article>
+        <article class="stat-card"><span>合格订阅</span><strong id="statEligibleSubs">-</strong></article>
+        <article class="stat-card"><span>解析成功</span><strong id="statParsedOk">-</strong></article>
+        <article class="stat-card"><span>解析失败</span><strong id="statParsedFailed">-</strong></article>
+        <article class="stat-card"><span>超时数</span><strong id="statTimedOut">-</strong></article>
+        <article class="stat-card"><span>稳定池</span><strong id="statStablePool">-</strong></article>
+        <article class="stat-card"><span>Mihomo 通过</span><strong id="statVerifyAlive">-</strong></article>
+        <article class="stat-card"><span>缓存命中</span><strong id="statCacheHits">-</strong></article>
+        <article class="stat-card"><span>新增稳定</span><strong id="statPromoted">-</strong></article>
+        <article class="stat-card"><span>淘汰节点</span><strong id="statEvicted">-</strong></article>
+        <article class="stat-card"><span>平均健康分</span><strong id="statHealthScore">-</strong></article>
       </section>
 
       <section class="main-grid">
@@ -88,18 +76,9 @@
               <button id="copyUrlBtn" type="button">复制</button>
             </div>
             <div class="format-grid">
-              <article class="format-card">
-                <span class="format-label">机场节点</span>
-                <code id="rawUrlPreview">-</code>
-              </article>
-              <article class="format-card">
-                <span class="format-label">Base64</span>
-                <code id="base64UrlPreview">-</code>
-              </article>
-              <article class="format-card">
-                <span class="format-label">Clash YAML</span>
-                <code id="yamlUrlPreview">-</code>
-              </article>
+              <article class="format-card"><span class="format-label">机场节点</span><code id="rawUrlPreview">-</code></article>
+              <article class="format-card"><span class="format-label">Base64</span><code id="base64UrlPreview">-</code></article>
+              <article class="format-card"><span class="format-label">Clash YAML</span><code id="yamlUrlPreview">-</code></article>
             </div>
           </div>
         </article>
@@ -117,8 +96,45 @@
               <div><dt>版本标识</dt><dd id="versionTag">-</dd></div>
               <div><dt>最近错误</dt><dd id="lastError">-</dd></div>
               <div><dt>错误时间</dt><dd id="lastErrorAt">-</dd></div>
+              <div><dt>验证模式</dt><dd id="verifyMode">-</dd></div>
+              <div><dt>缓存节点</dt><dd id="cachedNodes">-</dd></div>
+              <div><dt>缓存年龄</dt><dd id="cacheAge">-</dd></div>
             </dl>
           </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">Pool Snapshot</div>
+              <h3>稳定池快照</h3>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="poolMetrics" class="metric-list"></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">Diagnostics</div>
+              <h3>构建耗时与排障</h3>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="timingMetrics" class="metric-list"></div>
+          </div>
+        </article>
+
+        <article class="panel panel-span-2">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">Source Reputation</div>
+              <h3>订阅源质量分布</h3>
+            </div>
+          </div>
+          <div id="sourceList" class="source-list"></div>
         </article>
 
         <article class="panel panel-span-2">

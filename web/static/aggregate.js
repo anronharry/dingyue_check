@@ -9,29 +9,12 @@ function redirectToLogin() {
 }
 
 async function authFetch(path, options = {}) {
-  const resp = await fetch(path, {
-    credentials: "include",
-    ...options,
-  });
+  const resp = await fetch(path, { credentials: "include", ...options });
   if (resp.status === 401) {
     redirectToLogin();
     return null;
   }
   return resp;
-}
-
-async function readErrorMessage(resp) {
-  if (!resp) return "请求失败";
-  try {
-    const contentType = (resp.headers.get("content-type") || "").toLowerCase();
-    if (contentType.includes("application/json")) {
-      const data = await resp.json();
-      return data.error || data.message || `请求失败（${resp.status}）`;
-    }
-    return (await resp.text()) || `请求失败（${resp.status}）`;
-  } catch (_) {
-    return `请求失败（${resp.status}）`;
-  }
 }
 
 async function apiRequest(path, options = {}) {
@@ -61,6 +44,19 @@ function formatLocalDateTime(value) {
   }).format(dt);
 }
 
+function numberText(value, digits = 0) {
+  const num = Number(value || 0);
+  if (!Number.isFinite(num)) return "0";
+  return digits > 0 ? num.toFixed(digits) : String(Math.trunc(num));
+}
+
+function signedNumberText(value) {
+  const num = Number(value || 0);
+  if (!Number.isFinite(num)) return "0";
+  if (num > 0) return `+${Math.trunc(num)}`;
+  return String(Math.trunc(num));
+}
+
 function buildAggregateUrlWithFormat(baseUrl, format) {
   const fmt = format || "raw";
   const direct = aggregateUrls[fmt];
@@ -80,8 +76,7 @@ function syncFormatButtons() {
   ].forEach(([id, value]) => {
     const btn = qs(id);
     if (!btn) return;
-    if (aggregateFormat === value) btn.classList.add("btn-brand");
-    else btn.classList.remove("btn-brand");
+    btn.classList.toggle("btn-brand", aggregateFormat === value);
   });
   const input = qs("aggregateUrlInput");
   if (input) input.value = buildAggregateUrlWithFormat(aggregateBaseUrl, aggregateFormat);
@@ -89,28 +84,41 @@ function syncFormatButtons() {
 
 function fillStats(data) {
   const buildStats = data.build_stats || {};
-  qs("statNodeCount").textContent = String(Number(data.node_count || 0));
-  qs("statTotalSubs").textContent = String(Number(buildStats.total_subscriptions || 0));
-  qs("statEligibleSubs").textContent = String(Number(buildStats.eligible_subscriptions || 0));
-  qs("statParsedOk").textContent = String(Number(buildStats.parsed_ok || 0));
-  qs("statParsedFailed").textContent = String(Number(buildStats.parsed_failed || 0));
-  qs("statTimedOut").textContent = String(Number(buildStats.timed_out || 0));
+  const snapshot = data.pool_snapshot || {};
+  qs("statNodeCount").textContent = numberText(data.node_count);
+  qs("statTotalSubs").textContent = numberText(buildStats.total_subscriptions);
+  qs("statEligibleSubs").textContent = numberText(buildStats.eligible_subscriptions);
+  qs("statParsedOk").textContent = numberText(buildStats.parsed_ok);
+  qs("statParsedFailed").textContent = numberText(buildStats.parsed_failed);
+  qs("statTimedOut").textContent = numberText(buildStats.timed_out);
+  qs("statStablePool").textContent = numberText(snapshot.stable_pool_nodes);
+  qs("statVerifyAlive").textContent = numberText(snapshot.verify_alive);
+  qs("statCacheHits").textContent = numberText(snapshot.cache_hits);
+  qs("statPromoted").textContent = numberText(snapshot.promoted_stable_nodes);
+  qs("statEvicted").textContent = numberText(snapshot.evicted_nodes);
+  qs("statHealthScore").textContent = numberText(snapshot.average_health_score, 1);
 }
 
 function fillMeta(data) {
+  const snapshot = data.pool_snapshot || {};
   qs("generatedAt").textContent = data.generated_at ? formatLocalDateTime(new Date(Number(data.generated_at) * 1000).toISOString()) : "-";
   qs("versionTag").textContent = String(data.version || "-");
   qs("lastError").textContent = String(data.last_error || "-");
   qs("lastErrorAt").textContent = data.last_error_at ? formatLocalDateTime(new Date(Number(data.last_error_at) * 1000).toISOString()) : "-";
+  qs("verifyMode").textContent = String(snapshot.verify_mode || "-");
+  qs("cachedNodes").textContent = numberText(snapshot.cached_nodes);
+  qs("cacheAge").textContent = `${numberText(data.cache_age_seconds)} s`;
 }
 
 function fillSummary(data) {
   const buildStats = data.build_stats || {};
+  const snapshot = data.pool_snapshot || {};
   const summary = [
-    `当前节点 ${Number(data.node_count || 0)} 条`,
-    `合格订阅 ${Number(buildStats.eligible_subscriptions || 0)} / ${Number(buildStats.total_subscriptions || 0)}`,
-    `解析成功 ${Number(buildStats.parsed_ok || 0)}`,
-    `超时 ${Number(buildStats.timed_out || 0)}`,
+    `当前发布 ${numberText(data.node_count)} 条`,
+    `稳定池 ${numberText(snapshot.stable_pool_nodes)} 条`,
+    `验证通过 ${numberText(snapshot.verify_alive)} 条`,
+    `缓存命中 ${numberText(snapshot.cache_hits)} / 测试 ${numberText(snapshot.tested_nodes)}`,
+    `合格订阅 ${numberText(buildStats.eligible_subscriptions)} / ${numberText(buildStats.total_subscriptions)}`,
   ].join(" | ");
   qs("heroSummary").textContent = summary;
 }
@@ -120,6 +128,72 @@ function fillUrlCards() {
   qs("base64UrlPreview").textContent = aggregateUrls.base64 || "-";
   qs("yamlUrlPreview").textContent = aggregateUrls.yaml || "-";
   syncFormatButtons();
+}
+
+function fillPoolMetrics(data) {
+  const snapshot = data.pool_snapshot || {};
+  const layers = snapshot.layer_counts || {};
+  const rows = [
+    ["缓存节点", numberText(snapshot.cached_nodes)],
+    ["缓存存活", numberText(snapshot.cached_alive_nodes)],
+    ["缓存稳定", numberText(snapshot.stable_cached_nodes)],
+    ["已淘汰缓存", numberText(snapshot.evicted_cached_nodes)],
+    ["Quick 测试", numberText(snapshot.tested_nodes)],
+    ["Mihomo 验证", `${numberText(snapshot.verify_alive)} / ${numberText(snapshot.verify_attempted)}`],
+    ["Stable 层", numberText(layers.stable)],
+    ["Warm 层", numberText(layers.warm)],
+    ["Fresh 层", numberText(layers.fresh)],
+  ];
+  const box = qs("poolMetrics");
+  box.innerHTML = rows.map(([label, value]) => `
+    <div class="metric-item">
+      <span>${label}</span>
+      <strong>${value}</strong>
+    </div>
+  `).join("");
+}
+
+function fillDiagnostics(data) {
+  const timings = ((data.pool_snapshot || {}).timings_ms) || {};
+  const delta = ((data.pool_snapshot || {}).delta) || {};
+  const rows = [
+    ["解析", `${numberText(timings.parse)} ms`],
+    ["Quick", `${numberText(timings.quick_filter)} ms`],
+    ["Verify", `${numberText(timings.verify_filter)} ms`],
+    ["渲染", `${numberText(timings.render)} ms`],
+    ["写缓存", `${numberText(timings.write_cache)} ms`],
+    ["总耗时", `${numberText(timings.prewarm_total || timings.refresh_total || timings.build_total || timings.collect_total)} ms`],
+    ["发布变化", signedNumberText(delta.published_nodes)],
+    ["稳定变化", signedNumberText(delta.stable_pool_nodes)],
+    ["验证变化", signedNumberText(delta.verify_alive)],
+    ["缓存变化", signedNumberText(delta.cached_nodes)],
+  ];
+  const box = qs("timingMetrics");
+  box.innerHTML = rows.map(([label, value]) => `
+    <div class="metric-item">
+      <span>${label}</span>
+      <strong>${value}</strong>
+    </div>
+  `).join("");
+}
+
+function fillSources(data) {
+  const rows = Array.isArray((data.pool_snapshot || {}).top_sources) ? data.pool_snapshot.top_sources : [];
+  const box = qs("sourceList");
+  if (!rows.length) {
+    box.innerHTML = '<div class="source-item"><strong>暂无数据</strong><p>当前还没有可展示的订阅源质量快照。</p></div>';
+    return;
+  }
+  box.innerHTML = rows.map((row) => `
+    <article class="source-item">
+      <div class="source-head">
+        <strong>${String(row.source || "unknown")}</strong>
+        <span>${numberText(row.reputation_score)} 分</span>
+      </div>
+      <p>订阅 ${numberText(row.eligible_subscriptions)} / ${numberText(row.subscriptions)} | 解析 ${numberText(row.parsed_ok)} 成功, ${numberText(row.parsed_failed)} 失败, ${numberText(row.timed_out)} 超时</p>
+      <p>节点 ${numberText(row.parsed_nodes)} 收集 | 候选 ${numberText(row.candidate_nodes)} | Quick ${numberText(row.quick_alive)} | Verify ${numberText(row.verified_alive)} | Stable ${numberText(row.stable_nodes)} | Publish ${numberText(row.published_nodes)}</p>
+    </article>
+  `).join("");
 }
 
 function fillHistory(data) {
@@ -134,7 +208,8 @@ function fillHistory(data) {
     return `
       <article class="timeline-item">
         <strong>${ts}</strong>
-        <p>总订阅 ${Number(row.total_subscriptions || 0)} / 合格 ${Number(row.eligible_subscriptions || 0)} / 成功 ${Number(row.parsed_ok || 0)} / 失败 ${Number(row.parsed_failed || 0)} / 超时 ${Number(row.timed_out || 0)}</p>
+        <p>订阅 ${numberText(row.eligible_subscriptions)} / ${numberText(row.total_subscriptions)} | 解析成功 ${numberText(row.parsed_ok)} | 失败 ${numberText(row.parsed_failed)} | 超时 ${numberText(row.timed_out)}</p>
+        <p>发布 ${numberText(row.published_nodes)} | 稳定池 ${numberText(row.stable_pool_nodes)} | 验证 ${numberText(row.verify_alive)} / ${numberText(row.verify_attempted)} | 命中 ${numberText(row.cache_hits)}</p>
       </article>
     `;
   }).join("");
@@ -152,6 +227,9 @@ async function loadAggregateInfo() {
   fillSummary(data);
   fillStats(data);
   fillMeta(data);
+  fillPoolMetrics(data);
+  fillDiagnostics(data);
+  fillSources(data);
   fillUrlCards();
   fillHistory(data);
 }
@@ -174,9 +252,7 @@ async function copyCurrentUrl() {
 }
 
 function bindEvents() {
-  qs("backDashboardBtn").onclick = () => {
-    window.location.href = "/admin";
-  };
+  qs("backDashboardBtn").onclick = () => { window.location.href = "/admin"; };
   qs("logoutBtn").onclick = async () => {
     await apiRequest("/admin/logout", { method: "POST" });
     redirectToLogin();
@@ -184,18 +260,9 @@ function bindEvents() {
   qs("refreshAggregateBtn").onclick = () => refreshAggregate();
   qs("rotateAggregateBtn").onclick = () => rotateAggregate();
   qs("copyUrlBtn").onclick = () => copyCurrentUrl();
-  qs("fmtRawBtn").onclick = () => {
-    aggregateFormat = "raw";
-    syncFormatButtons();
-  };
-  qs("fmtBase64Btn").onclick = () => {
-    aggregateFormat = "base64";
-    syncFormatButtons();
-  };
-  qs("fmtYamlBtn").onclick = () => {
-    aggregateFormat = "yaml";
-    syncFormatButtons();
-  };
+  qs("fmtRawBtn").onclick = () => { aggregateFormat = "raw"; syncFormatButtons(); };
+  qs("fmtBase64Btn").onclick = () => { aggregateFormat = "base64"; syncFormatButtons(); };
+  qs("fmtYamlBtn").onclick = () => { aggregateFormat = "yaml"; syncFormatButtons(); };
 }
 
 async function init() {
@@ -203,7 +270,7 @@ async function init() {
   await loadAggregateInfo();
 }
 
-init().catch(async (error) => {
+init().catch((error) => {
   const message = String(error?.message || error || "加载失败");
   const box = qs("historyTimeline");
   if (box) {
