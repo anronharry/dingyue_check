@@ -10,6 +10,7 @@ import yaml
 
 from core.converters.ss_converter import SSNodeConverter
 from core.json_store import JsonStore
+from shared.time_helpers import format_beijing, now_beijing, parse_beijing
 
 
 ERROR_CACHE_MISSING = "cache_missing"
@@ -28,20 +29,17 @@ class ExportCacheService:
 
     @staticmethod
     def _now() -> datetime:
-        return datetime.now()
+        return now_beijing()
 
     @staticmethod
     def _ts(value: datetime) -> str:
-        return value.strftime("%Y-%m-%d %H:%M:%S")
+        return format_beijing(value)
 
     @staticmethod
     def _parse_ts(value: str | None) -> datetime | None:
         if not value:
             return None
-        try:
-            return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-        except Exception:
-            return None
+        return parse_beijing(value)
 
     @staticmethod
     def make_source_key(source: str, *, owner_uid: int) -> str:

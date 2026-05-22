@@ -7,9 +7,10 @@ import json
 import os
 import threading
 from collections import deque
-from datetime import datetime
 
 import aiofiles
+
+from shared.time_helpers import format_beijing_now
 
 
 class UsageAuditService:
@@ -58,7 +59,7 @@ class UsageAuditService:
         if not user or not urls:
             return
         record = {
-            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "ts": format_beijing_now(),
             "user_id": user.id,
             "username": getattr(user, "username", None),
             "full_name": getattr(user, "full_name", None),
@@ -71,7 +72,7 @@ class UsageAuditService:
         if not user or not urls:
             return
         record = {
-            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "ts": format_beijing_now(),
             "user_id": user.id,
             "username": getattr(user, "username", None),
             "full_name": getattr(user, "full_name", None),

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from time import monotonic
 
 from core.models import BatchCheckResult, SubscriptionEntity
+from shared.time_helpers import format_beijing, now_beijing, parse_beijing
 
 
 EXPORT_AUDIT_PREFIX = "导出缓存:"
@@ -60,15 +61,10 @@ class AdminService:
 
     @staticmethod
     def _parse_dt(value: str | None) -> datetime | None:
-        if not value:
-            return None
-        try:
-            return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-        except Exception:
-            return None
+        return parse_beijing(value)
 
     def _count_recent_profiles(self, profiles: list[dict], *, hours: int = 24) -> int:
-        threshold = datetime.now() - timedelta(hours=hours)
+        threshold = now_beijing() - timedelta(hours=hours)
         return sum(
             1
             for row in profiles
@@ -76,7 +72,7 @@ class AdminService:
         )
 
     def _count_recent_records(self, records: list[dict], *, hours: int = 24) -> int:
-        threshold = datetime.now() - timedelta(hours=hours)
+        threshold = now_beijing() - timedelta(hours=hours)
         return sum(
             1 for row in records if (self._parse_dt(row.get("ts")) or datetime.min) >= threshold
         )
@@ -88,7 +84,7 @@ class AdminService:
         hours: int | None = None,
         include_owner: bool = False,
     ) -> int:
-        threshold = datetime.now() - timedelta(hours=hours) if hours and hours > 0 else None
+        threshold = now_beijing() - timedelta(hours=hours) if hours and hours > 0 else None
         user_ids: set[int] = set()
         for row in records:
             uid = row.get("user_id")
@@ -157,7 +153,7 @@ class AdminService:
 
     def _summarize_cache_entries(self) -> dict:
         snapshot = self.export_cache_service.get_index_snapshot()
-        now = datetime.now()
+        now = now_beijing()
         valid = 0
         recently_exported = 0
         for entry in snapshot.values():
@@ -275,7 +271,7 @@ class AdminService:
     def get_available_subscriptions_data(self, *, page: int = 1, limit: int = 20) -> dict:
         store = self.get_storage()
         all_subs = store.get_all() if store and hasattr(store, "get_all") else {}
-        now = datetime.now()
+        now = now_beijing()
         rows: list[dict] = []
         for url, data in all_subs.items():
             available, expire_time, remaining = self._is_subscription_available(data, now=now)
@@ -289,7 +285,7 @@ class AdminService:
                     "name": str(data.get("name", "未命名")),
                     "url": str(url),
                     "remaining": self.format_traffic(remaining),
-                    "expire_time": expire_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "expire_time": format_beijing(expire_time),
                     "updated_at": str(data.get("updated_at", "-")),
                 }
             )
@@ -361,7 +357,7 @@ class AdminService:
         title = {"others": "其他用户", "owner": "管理员", "all": "全部用户"}.get(
             mode_safe, "其他用户"
         )
-        threshold = datetime.now() - timedelta(hours=24)
+        threshold = now_beijing() - timedelta(hours=24)
         recent = [
             row for row in filtered if (self._parse_dt(row.get("ts")) or datetime.min) >= threshold
         ]
@@ -550,7 +546,7 @@ class AdminService:
         }
 
     def make_export_file_path(self) -> tuple[str, str]:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_beijing().strftime("%Y%m%d_%H%M%S")
         export_file = os.path.join("data", f"export_{timestamp}.json")
         export_name = f"subscriptions_{timestamp}.json"
         return export_file, export_name

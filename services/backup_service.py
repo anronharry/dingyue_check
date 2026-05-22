@@ -7,9 +7,9 @@ import logging
 import os
 import shutil
 import zipfile
-from datetime import datetime
 
 from core.json_store import JsonStore
+from shared.time_helpers import format_beijing_now, now_beijing
 
 
 logger = logging.getLogger(__name__)
@@ -38,11 +38,11 @@ class BackupService:
         ]
 
     def create_backup(self) -> tuple[str, str]:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_beijing().strftime("%Y%m%d_%H%M%S")
         zip_path = os.path.join(self.backups_dir, f"backup_{timestamp}.zip")
         manifest = {
             "version": "2.0",
-            "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "exported_at": format_beijing_now(),
             "app": "dingyue_TG",
             "files": [],
         }
@@ -117,7 +117,7 @@ class BackupService:
                 f"Backup package too large: {len(content_bytes)} > {self.max_restore_total_bytes}"
             )
         tmp_path = os.path.join(
-            self.backups_dir, f"restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+            self.backups_dir, f"restore_{now_beijing().strftime('%Y%m%d_%H%M%S')}.zip"
         )
         with open(tmp_path, "wb") as handle:
             handle.write(content_bytes)

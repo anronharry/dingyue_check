@@ -8,12 +8,12 @@ import logging
 import os
 import threading
 from copy import deepcopy
-from datetime import datetime
 from typing import Any, Dict, List
 
 import aiofiles
 
 from core.workspace_manager import WorkspaceManager
+from shared.time_helpers import format_beijing_now, now_beijing, parse_beijing
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ class SubscriptionStorage:
         return self._save_data()
 
     def add_or_update(self, url: str, info: Dict[str, Any], user_id: int = 0) -> None:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = format_beijing_now()
         with self._lock:
             existing = self.subscriptions.get(url, {})
             existing_owner = existing.get("owner_uid", 0)
@@ -227,7 +227,7 @@ class SubscriptionStorage:
     ) -> bool:
         if not self._can_modify_subscription(url, operator_uid, require_owner):
             return False
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = format_beijing_now()
         with self._lock:
             data = self.subscriptions[url]
             data["last_check_status"] = "failed"
@@ -297,7 +297,7 @@ class SubscriptionStorage:
                 snapshot = deepcopy(self.subscriptions)
             export_data = {
                 "version": "1.0",
-                "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "exported_at": format_beijing_now(),
                 "count": len(snapshot),
                 "subscriptions": snapshot,
             }
@@ -347,16 +347,18 @@ class SubscriptionStorage:
         total_traffic = 0
         total_remaining = 0
         tags = set()
-        now = datetime.now()
+        now = now_beijing()
 
         for data in subs.values():
             expire_time_str = data.get("expire_time")
             if expire_time_str:
                 try:
-                    expire_date = datetime.strptime(expire_time_str, "%Y-%m-%d %H:%M:%S")
+                    expire_date = parse_beijing(expire_time_str)
+                    if expire_date is None:
+                        continue
                     if expire_date < now:
                         expired += 1
-                except Exception:
+                except ValueError:
                     pass
             total_traffic += data.get("total", 0)
             total_remaining += data.get("remaining", 0)

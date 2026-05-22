@@ -20,6 +20,7 @@ from app import config as _cfg
 from core.subscription_checker import try_decode_b64, PROXY_SCHEMES, is_pseudo_200_response
 from core.converters.ss_converter import SSNodeConverter
 from core.models import ProxyNode, SubFetchResult
+from shared.time_helpers import DATE_FORMAT, format_beijing_timestamp
 
 init(autoreset=True)
 if not _cfg.VERIFY_SSL:
@@ -118,10 +119,8 @@ async def async_fetch_nodes_from_subscriptions(
                         traffic_info = f" 剩余{_fmt(remaining)}"
                     expire = info.get("expire", 0)
                     if expire:
-                        from datetime import datetime as _dt
-
                         try:
-                            expire_str = _dt.fromtimestamp(int(expire)).strftime("%Y-%m-%d")
+                            expire_str = format_beijing_timestamp(expire, DATE_FORMAT)
                             traffic_info += f" 到期:{expire_str}"
                         except (ValueError, OSError):
                             pass

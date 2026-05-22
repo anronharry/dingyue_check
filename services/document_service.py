@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import os
 from collections import Counter
-from datetime import datetime
 
 from core.file_handler import FileHandler
+from shared.time_helpers import now_beijing
 
 
 class DocumentService:
@@ -32,7 +32,7 @@ class DocumentService:
         loop = asyncio.get_event_loop()
         os.makedirs("data", exist_ok=True)
         import_file = os.path.join(
-            "data", f"import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            "data", f"import_{now_beijing().strftime('%Y%m%d_%H%M%S')}.json"
         )
         with open(import_file, "wb") as handle:
             handle.write(content_bytes)

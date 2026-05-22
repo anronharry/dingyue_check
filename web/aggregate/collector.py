@@ -27,6 +27,7 @@ from web.aggregate.rendering import (
 )
 from web.aggregate.state import OwnerAggregateState
 from web.constants import AGG_PARSE_CONCURRENCY, AGG_PARSE_TIMEOUT_SECONDS
+from shared.time_helpers import now_beijing, parse_beijing
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +52,8 @@ def _is_subscription_eligible(data: dict[str, Any], *, now: datetime) -> bool:
     expire_text = str(data.get("expire_time", "") or "").strip()
     if not expire_text:
         return True
-    try:
-        expire_at = datetime.strptime(expire_text, "%Y-%m-%d %H:%M:%S")
-    except ValueError:
+    expire_at = parse_beijing(expire_text)
+    if expire_at is None:
         return True
     return expire_at > now
 
@@ -164,7 +164,7 @@ def _empty_collect_stats(total_subscriptions: int) -> dict[str, Any]:
 
 
 def _eligible_subscriptions(subs: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    now = datetime.now()
+    now = now_beijing()
     return {url: data for url, data in subs.items() if _is_subscription_eligible(data, now=now)}
 
 

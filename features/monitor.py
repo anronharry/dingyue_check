@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from datetime import datetime
 from typing import Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
+
+from shared.time_helpers import now_beijing, parse_beijing
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +62,13 @@ async def check_subscriptions_job(
             time_alert = False
             if expire_str:
                 try:
-                    expire_time = datetime.strptime(expire_str, "%Y-%m-%d %H:%M:%S")
-                    days_left = (expire_time - datetime.now()).days
-                    if 0 <= days_left <= 3:
+                    expire_time = parse_beijing(expire_str)
+                    days_left = (
+                        (expire_time - now_beijing()).days if expire_time is not None else -1
+                    )
+                    if expire_time is not None and 0 <= days_left <= 3:
                         time_alert = True
-                except Exception:
+                except ValueError:
                     pass
 
             if traffic_alert or time_alert:

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
+
+from shared.time_helpers import format_unix_timestamp_beijing
 
 
 TRAFFIC_HEADER = "subscription-userinfo"
@@ -44,10 +45,8 @@ def _parse_userinfo_part(part: str, traffic_info: dict[str, Any]) -> None:
 
 def _parse_expire_time(value: str, traffic_info: dict[str, Any]) -> None:
     try:
-        traffic_info["expire_time"] = datetime.fromtimestamp(int(value)).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-    except Exception:
+        traffic_info["expire_time"] = format_unix_timestamp_beijing(value)
+    except (OverflowError, OSError, ValueError):
         return
 
 

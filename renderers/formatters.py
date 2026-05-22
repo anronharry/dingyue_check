@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-from datetime import datetime
 
 from shared.format_helpers import (
     create_progress_bar,
@@ -11,6 +10,7 @@ from shared.format_helpers import (
     format_traffic,
     get_country_flag,
 )
+from shared.time_helpers import now_beijing, parse_beijing
 
 MAX_TELEGRAM_TEXT = 3900
 
@@ -166,9 +166,10 @@ def _status_text(info: dict) -> str:
     expire_time = str(info.get("expire_time") or "").strip()
     if expire_time:
         try:
-            if datetime.strptime(expire_time, "%Y-%m-%d %H:%M:%S") < datetime.now():
+            expire_dt = parse_beijing(expire_time)
+            if expire_dt is not None and expire_dt < now_beijing():
                 return "已过期"
-        except Exception:
+        except ValueError:
             pass
 
     total = info.get("total")

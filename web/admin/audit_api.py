@@ -13,6 +13,7 @@ from typing import Any
 
 from aiohttp import web
 
+from shared.time_helpers import now_beijing
 from web.admin.users_api import _json_error, _parse_limit, _parse_positive_int
 from web.constants import ALLOW_HEADER_TOKEN_KEY, COOKIE_SECURE_KEY, RUNTIME_KEY
 
@@ -166,7 +167,7 @@ async def _audit_alerts(request: web.Request) -> web.Response:
     url_threshold, err = _parse_positive_int(request, "high_url_threshold", 40, 1, 2000)
     if err is not None:
         return err
-    cutoff = datetime.now() - timedelta(hours=24)
+    cutoff = now_beijing() - timedelta(hours=24)
 
     def is_recent(row: dict[str, Any]) -> bool:
         ts = _parse_datetime_text(row.get("ts"))
@@ -317,7 +318,7 @@ async def _audit_export(request: web.Request) -> web.Response:
     rows, err = await _build_export_rows(runtime, request)
     if err is not None:
         return err
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = now_beijing().strftime("%Y%m%d_%H%M%S")
     if fmt == "json":
         body = await asyncio.to_thread(json.dumps, rows, ensure_ascii=False, indent=2)
         return web.Response(

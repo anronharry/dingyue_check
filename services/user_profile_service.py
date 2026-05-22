@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import html
 import time
-from datetime import datetime
 
 from core.json_store import JsonStore
+from shared.time_helpers import format_beijing_now
 
 
 class UserProfileService:
@@ -20,7 +20,7 @@ class UserProfileService:
     def touch_user(self, *, user, source: str, is_owner: bool, is_authorized: bool) -> None:
         if not user:
             return
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = format_beijing_now()
         key = str(user.id)
         existing = self._profiles.get(key, {})
         self._profiles[key] = {

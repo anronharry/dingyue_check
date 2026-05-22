@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from datetime import datetime
+from shared.time_helpers import now_beijing, parse_beijing
 
 
 def bytes_to_gb(bytes_value):
@@ -124,8 +124,10 @@ def get_country_flag(country_name):
 
 def format_remaining_time(expire_time_str, *, include_seconds: bool = True):
     try:
-        expire_date = datetime.strptime(expire_time_str, "%Y-%m-%d %H:%M:%S")
-        now = datetime.now()
+        expire_date = parse_beijing(expire_time_str)
+        if expire_date is None:
+            return ""
+        now = now_beijing()
         if expire_date < now:
             return "已过期"
         delta = expire_date - now
