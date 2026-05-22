@@ -1,12 +1,17 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
 
 from handlers.callbacks.cache_actions import make_cache_callback_handler
-from renderers.formatters import format_node_analysis_compact, format_subscription_compact, format_subscription_info
+from renderers.formatters import (
+    format_node_analysis_compact,
+    format_subscription_compact,
+    format_subscription_info,
+)
 from shared.format_helpers import get_country_flag
 from renderers.telegram_keyboards import build_subscription_keyboard
+from renderers.telegram_keyboards import build_owner_panel_keyboard
 from services.export_cache_service import ERROR_CACHE_MISSING
 
 
@@ -53,6 +58,23 @@ class _FakeJobQueue:
 
 
 class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
+    def test_owner_maintenance_keyboard_keeps_dangerous_actions_on_subpages(self):
+        keyboard = build_owner_panel_keyboard(section="maintenance")
+        all_text = [btn.text for row in keyboard.inline_keyboard for btn in row]
+
+        self.assertIn("💾 备份迁移", all_text)
+        self.assertIn("🔐 权限开关", all_text)
+        self.assertIn("📋 维护命令", all_text)
+        self.assertNotIn("🟢 开放访问", all_text)
+        self.assertNotIn("📢 发布广播", all_text)
+
+    def test_owner_access_keyboard_contains_public_access_switches(self):
+        keyboard = build_owner_panel_keyboard(section="maint_access")
+        all_text = [btn.text for row in keyboard.inline_keyboard for btn in row]
+
+        self.assertIn("🟢 开放访问", all_text)
+        self.assertIn("🔒 关闭访问", all_text)
+
     def test_subscription_keyboard_hides_delete_cache_for_normal_user(self):
         keyboard = build_subscription_keyboard(
             "https://example.com/sub",
@@ -95,7 +117,9 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_export_cache_callback_replies_with_success(self):
         handler = make_cache_callback_handler(
-            get_storage=lambda: SimpleNamespace(get_all=lambda: {"https://example.com/sub": {"owner_uid": 1}}),
+            get_storage=lambda: SimpleNamespace(
+                get_all=lambda: {"https://example.com/sub": {"owner_uid": 1}}
+            ),
             is_owner=lambda update: False,
             export_cache_service=SimpleNamespace(
                 resolve_export_path=lambda **kwargs: (__file__, None),
@@ -115,7 +139,9 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_export_cache_callback_handles_expired_cache(self):
         handler = make_cache_callback_handler(
-            get_storage=lambda: SimpleNamespace(get_all=lambda: {"https://example.com/sub": {"owner_uid": 1}}),
+            get_storage=lambda: SimpleNamespace(
+                get_all=lambda: {"https://example.com/sub": {"owner_uid": 1}}
+            ),
             is_owner=lambda update: False,
             export_cache_service=SimpleNamespace(
                 resolve_export_path=lambda **kwargs: (None, ERROR_CACHE_MISSING),
@@ -142,7 +168,13 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
                 "node_count": 38,
                 "_cache_remaining_text": "47小时59分钟",
                 "_cache_last_exported_at": "2026-03-30 00:30:00",
-                "quick_check": {"tested": 40, "alive": 28, "dead": 12, "skipped": 3, "sampled": True},
+                "quick_check": {
+                    "tested": 40,
+                    "alive": 28,
+                    "dead": 12,
+                    "skipped": 3,
+                    "sampled": True,
+                },
             },
             url="https://example.com/sub?token=secret",
         )
@@ -158,7 +190,13 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
             {
                 "name": "节点列表",
                 "node_count": 12,
-                "quick_check": {"tested": 10, "alive": 7, "dead": 3, "skipped": 2, "sampled": False},
+                "quick_check": {
+                    "tested": 10,
+                    "alive": 7,
+                    "dead": 3,
+                    "skipped": 2,
+                    "sampled": False,
+                },
                 "node_stats": {
                     "countries": {"香港": 5, "日本": 4, "美国": 3},
                     "protocols": {"vmess": 6, "trojan": 4, "ss": 2},
@@ -234,7 +272,10 @@ class UIFeedbackTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<b>订阅链接：</b>", text)
         self.assertIn("<code>https://example.com/sub?token=abc</code>", text)
         self.assertLess(text.index("<b>机场名称：</b> Demo"), text.index("<b>已用 / 总量：</b>"))
-        self.assertLess(text.index("<code>https://example.com/sub?token=abc</code>"), text.index("<b>已用 / 总量：</b>"))
+        self.assertLess(
+            text.index("<code>https://example.com/sub?token=abc</code>"),
+            text.index("<b>已用 / 总量：</b>"),
+        )
         self.assertNotIn("<blockquote>\n<b>机场名称：</b>", text)
 
     def test_verbose_formatter_marks_exhausted_when_remaining_is_negative(self):

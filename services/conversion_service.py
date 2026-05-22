@@ -1,4 +1,5 @@
 """Conversion and deep-check service helpers."""
+
 from __future__ import annotations
 
 import os
@@ -13,7 +14,9 @@ class ConversionService:
         self.latency_runner = latency_runner
         self.export_cache_service = export_cache_service
 
-    def convert_txt_bytes_to_yaml(self, *, file_name: str, content_bytes: bytes, owner_uid: int | None = None) -> dict:
+    def convert_txt_bytes_to_yaml(
+        self, *, file_name: str, content_bytes: bytes, owner_uid: int | None = None
+    ) -> dict:
         raw_path = self.workspace_manager.save_raw_file(file_name, content_bytes)
         converter = SSNodeConverter()
         if not converter.parse_txt_file(raw_path):
@@ -33,7 +36,9 @@ class ConversionService:
             )
         return {"ok": True, "output_name": output_name, "output_path": output_path}
 
-    def convert_yaml_bytes_to_txt(self, *, file_name: str, content_bytes: bytes, owner_uid: int | None = None) -> dict:
+    def convert_yaml_bytes_to_txt(
+        self, *, file_name: str, content_bytes: bytes, owner_uid: int | None = None
+    ) -> dict:
         raw_path = self.workspace_manager.save_raw_file(file_name, content_bytes)
         converter = SSNodeConverter()
         if not converter.parse_yaml_file(raw_path):
@@ -53,7 +58,9 @@ class ConversionService:
             )
         return {"ok": True, "output_name": output_name, "output_path": output_path}
 
-    async def run_deepcheck(self, *, file_name: str, content_bytes: bytes, status_callback, owner_uid: int | None = None) -> dict:
+    async def run_deepcheck(
+        self, *, file_name: str, content_bytes: bytes, status_callback, owner_uid: int | None = None
+    ) -> dict:
         target_file = self.workspace_manager.save_raw_file(file_name, content_bytes)
         before_run = time.time()
         await self.latency_runner(
@@ -73,7 +80,11 @@ class ConversionService:
                     source=f"deepcheck:{file_name}",
                     yaml_text=handle.read(),
                 )
-        return {"ok": True, "output_path": latest_path, "output_name": os.path.basename(latest_path)}
+        return {
+            "ok": True,
+            "output_path": latest_path,
+            "output_name": os.path.basename(latest_path),
+        }
 
     def _find_latest_yaml_export(self, *, min_mtime: float) -> str | None:
         yaml_dir = self.workspace_manager.yaml_dir

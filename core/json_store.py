@@ -1,4 +1,5 @@
 """Shared JSON file persistence helpers."""
+
 from __future__ import annotations
 
 import asyncio
@@ -25,9 +26,13 @@ class JsonStore:
         try:
             with open(self.path, "r", encoding="utf-8") as handle:
                 data = json.load(handle)
-            return data if data is not None else self.default_factory()
-        except Exception:
-            return self.default_factory()
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"JSON state file is corrupted: {self.path}") from exc
+        except OSError as exc:
+            raise RuntimeError(f"Failed to read JSON state file: {self.path}") from exc
+        except UnicodeDecodeError as exc:
+            raise RuntimeError(f"JSON state file is not valid UTF-8: {self.path}") from exc
+        return data if data is not None else self.default_factory()
 
     def mark_dirty(self) -> None:
         with self._lock:

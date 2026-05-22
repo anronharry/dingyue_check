@@ -18,7 +18,9 @@ class DocumentServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         with self.assertRaises(RuntimeError):
-            await service.parse_subscription_urls(subscription_urls=["https://example.com/sub"], owner_uid=1)
+            await service.parse_subscription_urls(
+                subscription_urls=["https://example.com/sub"], owner_uid=1
+            )
 
     async def test_analyze_node_text_attaches_quick_check_summary(self):
         async def analyze_nodes(nodes):

@@ -1,4 +1,5 @@
 """Admin data aggregation service."""
+
 from __future__ import annotations
 
 import os
@@ -68,11 +69,17 @@ class AdminService:
 
     def _count_recent_profiles(self, profiles: list[dict], *, hours: int = 24) -> int:
         threshold = datetime.now() - timedelta(hours=hours)
-        return sum(1 for row in profiles if (self._parse_dt(row.get("last_seen_at")) or datetime.min) >= threshold)
+        return sum(
+            1
+            for row in profiles
+            if (self._parse_dt(row.get("last_seen_at")) or datetime.min) >= threshold
+        )
 
     def _count_recent_records(self, records: list[dict], *, hours: int = 24) -> int:
         threshold = datetime.now() - timedelta(hours=hours)
-        return sum(1 for row in records if (self._parse_dt(row.get("ts")) or datetime.min) >= threshold)
+        return sum(
+            1 for row in records if (self._parse_dt(row.get("ts")) or datetime.min) >= threshold
+        )
 
     def _count_unique_audit_users(
         self,
@@ -102,8 +109,6 @@ class AdminService:
         daily = self._count_unique_audit_users(records, hours=24, include_owner=include_owner)
         return total, daily
 
-
-
     def _get_storage_stats(self) -> dict:
         store = self.get_storage()
         if store is None:
@@ -124,7 +129,11 @@ class AdminService:
             cached_ts = float(self._audit_cache.get("ts", 0.0) or 0.0)
             cached_limit = int(self._audit_cache.get("limit", 0) or 0)
             cached_records = list(self._audit_cache.get("records", []))
-        if (now - cached_ts) <= AUDIT_RECORDS_CACHE_TTL_SECONDS and cached_limit >= safe_limit and cached_records:
+        if (
+            (now - cached_ts) <= AUDIT_RECORDS_CACHE_TTL_SECONDS
+            and cached_limit >= safe_limit
+            and cached_records
+        ):
             return cached_records[:safe_limit]
         records = list(reversed(self.usage_audit_service.get_recent_records(limit=safe_limit)))
         with self._cache_lock:
@@ -191,7 +200,9 @@ class AdminService:
                 subs_rows.append(
                     {
                         "name": data.get("name", "未命名"),
-                        "remaining": self.format_traffic(data.get("remaining", 0)) if data.get("remaining") is not None else "-",
+                        "remaining": self.format_traffic(data.get("remaining", 0))
+                        if data.get("remaining") is not None
+                        else "-",
                         "expire": (data.get("expire_time") or "-")[:10],
                         "cache": cache_text,
                     }
@@ -234,7 +245,7 @@ class AdminService:
         total_pages = max(1, (total + limit - 1) // limit)
         safe_page = max(1, min(page, total_pages))
         start = (safe_page - 1) * limit
-        rows = all_rows[start: start + limit]
+        rows = all_rows[start : start + limit]
         return {
             "public_mode": "开启" if self.access_service.is_allow_all_users_enabled() else "关闭",
             "allow_all_users": self.access_service.is_allow_all_users_enabled(),
@@ -244,7 +255,9 @@ class AdminService:
             "users": rows,
         }
 
-    def _is_subscription_available(self, data: dict, *, now: datetime) -> tuple[bool, datetime | None, int | None]:
+    def _is_subscription_available(
+        self, data: dict, *, now: datetime
+    ) -> tuple[bool, datetime | None, int | None]:
         if str(data.get("last_check_status", "success")).lower() == "failed":
             return False, None, None
         expire_time = self._parse_dt(data.get("expire_time"))
@@ -290,7 +303,7 @@ class AdminService:
             "total": total,
             "page": safe_page,
             "total_pages": total_pages,
-            "rows": rows[start: start + safe_limit],
+            "rows": rows[start : start + safe_limit],
         }
 
     def to_batch_result(self, results: list[SubscriptionEntity | dict]) -> BatchCheckResult:
@@ -339,11 +352,19 @@ class AdminService:
                 counts["owner"] += 1
             else:
                 counts["others"] += 1
-            if mode_safe == "all" or (mode_safe == "owner" and is_owner) or (mode_safe == "others" and not is_owner):
+            if (
+                mode_safe == "all"
+                or (mode_safe == "owner" and is_owner)
+                or (mode_safe == "others" and not is_owner)
+            ):
                 filtered.append(row)
-        title = {"others": "其他用户", "owner": "管理员", "all": "全部用户"}.get(mode_safe, "其他用户")
+        title = {"others": "其他用户", "owner": "管理员", "all": "全部用户"}.get(
+            mode_safe, "其他用户"
+        )
         threshold = datetime.now() - timedelta(hours=24)
-        recent = [row for row in filtered if (self._parse_dt(row.get("ts")) or datetime.min) >= threshold]
+        recent = [
+            row for row in filtered if (self._parse_dt(row.get("ts")) or datetime.min) >= threshold
+        ]
         grouped: dict[int, dict] = {}
         for row in recent:
             uid = int(row.get("user_id", 0) or 0)
@@ -372,12 +393,16 @@ class AdminService:
         return self._cache_set(cache_key, payload)
 
     def get_recent_users_summary(self, *, include_owner: bool = False, limit: int = 10) -> dict:
-        profiles = self.user_profile_service.get_recent_profiles(limit=1000, include_owner=include_owner)
+        profiles = self.user_profile_service.get_recent_profiles(
+            limit=1000, include_owner=include_owner
+        )
         rows = []
         for profile in profiles[: max(1, limit)]:
             rows.append(
                 {
-                    "identity": self.user_profile_service.format_user_identity(profile.get("user_id")),
+                    "identity": self.user_profile_service.format_user_identity(
+                        profile.get("user_id")
+                    ),
                     "last_seen": profile.get("last_seen_at", "-"),
                     "source": str(profile.get("last_source", "-")),
                 }
@@ -392,13 +417,17 @@ class AdminService:
             "total_pages": 1,
         }
 
-    def get_recent_exports_summary(self, *, include_owner: bool = False, page: int = 1, limit: int = 10) -> dict:
+    def get_recent_exports_summary(
+        self, *, include_owner: bool = False, page: int = 1, limit: int = 10
+    ) -> dict:
         cache_key = f"recent_exports:{int(include_owner)}:{int(page or 1)}:{int(limit or 10)}"
         cached = self._cache_get(cache_key, DASHBOARD_SUMMARY_CACHE_TTL_SECONDS)
         if cached is not None:
             return cached
         audit_records = self._get_audit_records(limit=self.usage_audit_service.max_read_records)
-        records = self._get_recent_export_records(include_owner=include_owner, limit=1000, records=audit_records)
+        records = self._get_recent_export_records(
+            include_owner=include_owner, limit=1000, records=audit_records
+        )
         yaml_count = sum(1 for row in records if row.get("source") == f"{EXPORT_AUDIT_PREFIX}yaml")
         txt_count = sum(1 for row in records if row.get("source") == f"{EXPORT_AUDIT_PREFIX}txt")
         safe_limit = max(1, int(limit or 1))
@@ -413,7 +442,9 @@ class AdminService:
             first_url = str(urls[0] if urls else "-")
             rows.append(
                 {
-                    "identity": self.user_profile_service.format_user_identity(record.get("user_id", 0)),
+                    "identity": self.user_profile_service.format_user_identity(
+                        record.get("user_id", 0)
+                    ),
                     "ts": record.get("ts", "-"),
                     "fmt": str(record.get("source", "-").split(":", 1)[-1].upper()),
                     "target": first_url[:80] + ("..." if len(first_url) > 80 else ""),
@@ -437,9 +468,13 @@ class AdminService:
         if cached is not None:
             return cached
         stats = self._get_storage_stats()
-        recent_profiles = self.user_profile_service.get_recent_profiles(limit=1000, include_owner=False)
+        recent_profiles = self.user_profile_service.get_recent_profiles(
+            limit=1000, include_owner=False
+        )
         audit_records = self._get_audit_records(limit=self.usage_audit_service.max_read_records)
-        recent_exports = self._get_recent_export_records(include_owner=False, limit=1000, records=audit_records)
+        recent_exports = self._get_recent_export_records(
+            include_owner=False, limit=1000, records=audit_records
+        )
         cache_summary = self._summarize_cache_entries()
         public_mode = "开启" if self.access_service.is_allow_all_users_enabled() else "关闭"
         payload = {
@@ -469,7 +504,9 @@ class AdminService:
             }
         if section == "users":
             total_users = len(self.user_manager.get_all())
-            recent_profiles = self.user_profile_service.get_recent_profiles(limit=1000, include_owner=False)
+            recent_profiles = self.user_profile_service.get_recent_profiles(
+                limit=1000, include_owner=False
+            )
             return {
                 "section": "users",
                 "authorized_users": total_users,
@@ -482,6 +519,7 @@ class AdminService:
             public_mode = "开启" if self.access_service.is_allow_all_users_enabled() else "关闭"
             return {"section": "maint_access", "public_mode": public_mode}
         return {"section": section}
+
     def get_recent_checks_summary(self, *, mode: str = "others", limit: int = 20) -> dict:
         safe_limit = max(1, min(limit, 100))
         audit_records = self._get_audit_records(limit=self.usage_audit_service.max_read_records)
@@ -511,9 +549,6 @@ class AdminService:
             "rows": rows,
         }
 
-
-
-
     def make_export_file_path(self) -> tuple[str, str]:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         export_file = os.path.join("data", f"export_{timestamp}.json")
@@ -529,6 +564,3 @@ class AdminService:
             f"授权用户: {len(self.user_manager.get_all())}\n"
             f"缓存条目: {len(self.export_cache_service.get_index_snapshot())}"
         )
-
-
-

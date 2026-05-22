@@ -17,28 +17,30 @@ from colorama import Fore, Style
 
 from app import config as _cfg
 
-MIHOMO_DIR = os.path.join(str(_cfg.BASE_DIR), 'bin')
-MIHOMO_EXE = os.path.join(MIHOMO_DIR, 'mihomo.exe')
+MIHOMO_DIR = os.path.join(str(_cfg.BASE_DIR), "bin")
+MIHOMO_EXE = os.path.join(MIHOMO_DIR, "mihomo.exe")
 
 
 def get_sys_arch() -> tuple[str, str]:
     import platform
+
     sys_name = platform.system().lower()
     arch = platform.machine().lower()
-    
+
     # 针对部分发布包带有 -compatible 尾缀的特殊处理
     if sys_name == "windows":
         target = "windows-amd64-compatible" if "amd64" in arch else "windows-arm-compatible"
         ext = ".zip"
     elif sys_name == "linux":
         target = "linux-amd64-compatible" if "x86_64" in arch else "linux-arm64"
-        ext = ".gz" 
+        ext = ".gz"
     elif sys_name == "darwin":
         target = "darwin-amd64-compatible" if "x86_64" in arch else "darwin-arm64"
         ext = ".gz"
     else:
-        target, ext = "windows-amd64-compatible", ".zip" # 降级容灾
+        target, ext = "windows-amd64-compatible", ".zip"  # 降级容灾
     return target, ext
+
 
 async def get_latest_mihomo_url(session: aiohttp.ClientSession) -> tuple[str, str]:
     """
@@ -47,7 +49,9 @@ async def get_latest_mihomo_url(session: aiohttp.ClientSession) -> tuple[str, st
     """
     target, ext = get_sys_arch()
     try:
-        async with session.get("https://api.github.com/repos/MetaCubeX/mihomo/releases/latest", timeout=10) as resp:
+        async with session.get(
+            "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest", timeout=10
+        ) as resp:
             resp.raise_for_status()
             data = await resp.json()
             dl_url = ""
@@ -65,7 +69,7 @@ async def get_latest_mihomo_url(session: aiohttp.ClientSession) -> tuple[str, st
     # 提供备用链接（无 sha256）
     return (
         "https://github.com/MetaCubeX/mihomo/releases/download/v1.18.3/mihomo-windows-amd64-compatible-v1.18.3.zip",
-        ""
+        "",
     )
 
 
@@ -77,16 +81,18 @@ async def download_mihomo() -> bool:
     os.makedirs(MIHOMO_DIR, exist_ok=True)
     zip_path = os.path.join(MIHOMO_DIR, "mihomo.zip")
 
-    print(f"{Fore.YELLOW}正在初次下载测速引擎 (Mihomo/ClashMeta)...这可能需要几分钟，请耐心等待。{Style.RESET_ALL}")
+    print(
+        f"{Fore.YELLOW}正在初次下载测速引擎 (Mihomo/ClashMeta)...这可能需要几分钟，请耐心等待。{Style.RESET_ALL}"
+    )
 
     async with aiohttp.ClientSession() as session:
         url, sha256_url = await get_latest_mihomo_url(session)
         try:
             async with session.get(url, timeout=300) as response:
                 response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))
+                total_size = int(response.headers.get("content-length", 0))
                 downloaded = 0
-                with open(zip_path, 'wb') as file:
+                with open(zip_path, "wb") as file:
                     async for chunk in response.content.iter_chunked(65536):
                         downloaded += len(chunk)
                         file.write(chunk)
@@ -109,25 +115,31 @@ async def download_mihomo() -> bool:
                             sha_resp.raise_for_status()
                             sha_text = await sha_resp.text()
                             expected_hash = sha_text.strip().split()[0].lower()
-                            
+
                             h = hashlib.sha256()
-                            with open(zip_path, 'rb') as hf:
-                                for chunk in iter(lambda: hf.read(65536), b''):
+                            with open(zip_path, "rb") as hf:
+                                for chunk in iter(lambda: hf.read(65536), b""):
                                     h.update(chunk)
                             actual_hash = h.hexdigest().lower()
-                            
+
                             if actual_hash != expected_hash:
-                                print(f"{Fore.RED}❌ sha256 校验失败！文件可能已损墙，拒绝使用。{Style.RESET_ALL}")
+                                print(
+                                    f"{Fore.RED}❌ sha256 校验失败！文件可能已损墙，拒绝使用。{Style.RESET_ALL}"
+                                )
                                 os.remove(zip_path)
                                 return False
                             print(f"{Fore.GREEN}✔ sha256 校验通过，正在解压...{Style.RESET_ALL}")
                     except Exception as e:
-                        print(f"{Fore.YELLOW}⚠️  无法执行 sha256 校验（{e}），跳过校验继续安装。{Style.RESET_ALL}")
+                        print(
+                            f"{Fore.YELLOW}⚠️  无法执行 sha256 校验（{e}），跳过校验继续安装。{Style.RESET_ALL}"
+                        )
                 else:
-                    print(f"{Fore.YELLOW}⚠️  未找到对应 sha256 资产，跳过完整性校验。{Style.RESET_ALL}")
+                    print(
+                        f"{Fore.YELLOW}⚠️  未找到对应 sha256 资产，跳过完整性校验。{Style.RESET_ALL}"
+                    )
 
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    exe_files = [name for name in zip_ref.namelist() if name.endswith('.exe')]
+                with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                    exe_files = [name for name in zip_ref.namelist() if name.endswith(".exe")]
                     if not exe_files:
                         raise RuntimeError("压缩包中未找到 .exe 文件")
                     exe_name = exe_files[0]
@@ -166,15 +178,16 @@ def kill_process_tree(pid: int):
     except psutil.NoSuchProcess:
         pass
 
+
 def kill_orphan_mihomo() -> None:
     """清理可能残留的孤儿 Mihomo 进程，根据精细的规则判断"""
     try:
         curr_proc_dir = os.path.abspath(_cfg.BASE_DIR)
-        for _p in psutil.process_iter(['name', 'exe', 'pid']):
+        for _p in psutil.process_iter(["name", "exe", "pid"]):
             try:
-                name = _p.info.get('name', '')
-                exe = _p.info.get('exe', '')
-                if name and 'mihomo' in name.lower():
+                name = _p.info.get("name", "")
+                exe = _p.info.get("exe", "")
+                if name and "mihomo" in name.lower():
                     # 基于 exe 路径精确捕获属于本项目 bin 目录内的 mihomo，避免误杀用户系统的 Clash
                     if exe and os.path.abspath(exe).startswith(curr_proc_dir):
                         kill_process_tree(_p.pid)
@@ -184,7 +197,9 @@ def kill_orphan_mihomo() -> None:
         pass
     except Exception as e:
         from core.session_logger import get_logger
+
         get_logger().print_warning(f"清理孤儿 Mihomo 进程时出现异常: {e}")
+
 
 # 注册到 atexit，主进程退出时自动清理相关 Mihomo 进程
 atexit.register(kill_orphan_mihomo)
@@ -195,8 +210,9 @@ def _read_errors(p) -> list:
     try:
         if sys.platform != "win32":
             r, _, _ = select.select([p.stdout], [], [], 0.1)
-            if not r: return []
-        
+            if not r:
+                return []
+
         out, _ = p.communicate(timeout=0.5)
         text = out.decode("utf-8", errors="replace") if out else ""
         return [l for l in text.splitlines() if "fatal" in l.lower() or "error" in l.lower()]
@@ -204,7 +220,9 @@ def _read_errors(p) -> list:
         return []
 
 
-async def run_mihomo(nodes: list, state: dict, config_path: str, session: aiohttp.ClientSession) -> bool:
+async def run_mihomo(
+    nodes: list, state: dict, config_path: str, session: aiohttp.ClientSession
+) -> bool:
     """
     保证 Mihomo 以给定节点配置运行。
     使用 aiohttp 检查 API 就绪状态。
@@ -214,17 +232,18 @@ async def run_mihomo(nodes: list, state: dict, config_path: str, session: aiohtt
 
     # SS2022 密码质量预校验
     _SS2022 = {
-        '2022-blake3-aes-128-gcm':       16,
-        '2022-blake3-aes-256-gcm':        32,
-        '2022-blake3-chacha20-poly1305': 32,
+        "2022-blake3-aes-128-gcm": 16,
+        "2022-blake3-aes-256-gcm": 32,
+        "2022-blake3-chacha20-poly1305": 32,
     }
     valid_nodes, skipped = [], 0
     for node in nodes:
-        if node.get('type') == 'ss' and node.get('cipher') in _SS2022:
-            req = _SS2022[node['cipher']]
+        if node.get("type") == "ss" and node.get("cipher") in _SS2022:
+            req = _SS2022[node["cipher"]]
             try:
                 import binascii
-                key = base64.b64decode(str(node.get('password', '')) + '==')
+
+                key = base64.b64decode(str(node.get("password", "")) + "==")
                 if len(key) != req:
                     skipped += 1
                     continue
@@ -238,21 +257,23 @@ async def run_mihomo(nodes: list, state: dict, config_path: str, session: aiohtt
 
     nodes = valid_nodes
     if not nodes:
-        print(f"{Fore.RED}  ❌ 所有节点因 SS2022 密码格式不合法被跳过，无法启动内核。{Style.RESET_ALL}")
+        print(
+            f"{Fore.RED}  ❌ 所有节点因 SS2022 密码格式不合法被跳过，无法启动内核。{Style.RESET_ALL}"
+        )
         return False
 
     # 写入临时配置
     cfg_data = {
         "external-controller": f"127.0.0.1:{_cfg.API_PORT}",
-        "mode":      "rule",
+        "mode": "rule",
         "log-level": "silent",
-        "proxies":   nodes,
+        "proxies": nodes,
     }
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.dump(cfg_data, f, allow_unicode=True, sort_keys=False)
 
     for attempt in range(_MAX_RETRIES + 1):
-        proc = state.get('proc')
+        proc = state.get("proc")
 
         if proc is None or proc.poll() is not None:
             creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -263,7 +284,7 @@ async def run_mihomo(nodes: list, state: dict, config_path: str, session: aiohtt
                 stderr=subprocess.STDOUT,
                 creationflags=creationflags,
             )
-            state['proc'] = new_proc
+            state["proc"] = new_proc
             wait, total_waited, max_wait = 0.2, 0.0, 12.0
             while total_waited < max_wait:
                 await asyncio.sleep(wait)
@@ -279,7 +300,7 @@ async def run_mihomo(nodes: list, state: dict, config_path: str, session: aiohtt
                 wait = min(wait * 1.5, 1.5)
 
             if attempt < _MAX_RETRIES:
-                state['proc'] = None
+                state["proc"] = None
             continue
 
         # 情况B：热重载配置
@@ -305,7 +326,7 @@ async def run_mihomo(nodes: list, state: dict, config_path: str, session: aiohtt
             proc.wait(timeout=3)
         except OSError:
             pass
-        state['proc'] = None
+        state["proc"] = None
 
     return False
 
@@ -315,13 +336,15 @@ import aiohttp
 import urllib.parse
 from core.plugins.base_engine import BaseTestEngine
 
+
 class MihomoEngine(BaseTestEngine):
     """
     基于 Mihomo/ClashMeta 的测速引擎实现。
     使用 aiohttp 进行全异步通信。
     """
+
     def __init__(self):
-        self._state = {'proc': None}
+        self._state = {"proc": None}
         self.api_port = _cfg.API_PORT
         self.api_base = f"http://127.0.0.1:{self.api_port}"
 
@@ -344,31 +367,38 @@ class MihomoEngine(BaseTestEngine):
         """异步启动内核"""
         self.api_port = port
         self.api_base = f"http://127.0.0.1:{self.api_port}"
-            
+
         temp_dir = _cfg.BASE_DIR / _cfg.TEMP_DIR_NAME
         temp_dir.mkdir(parents=True, exist_ok=True)
         self._config_path = str(temp_dir / f"temp_mihomo_cfg_{os.getpid()}.yaml")
-            
+
         return await run_mihomo(nodes, self._state, self._config_path, session)
 
     def stop(self) -> None:
         """停止内核并释放资源"""
-        proc = self._state.get('proc')
+        proc = self._state.get("proc")
         if proc and proc.poll() is None:
             try:
                 proc.terminate()
                 proc.wait(timeout=3)
             except OSError:
                 pass
-        self._state['proc'] = None
-        
-        if hasattr(self, '_config_path') and os.path.exists(self._config_path):
+        self._state["proc"] = None
+
+        if hasattr(self, "_config_path") and os.path.exists(self._config_path):
             try:
                 os.remove(self._config_path)
             except OSError:
                 pass
 
-    async def async_test_node(self, node_name: str, timeout_ms: int, test_url: str, session: aiohttp.ClientSession, sem: asyncio.Semaphore) -> dict:
+    async def async_test_node(
+        self,
+        node_name: str,
+        timeout_ms: int,
+        test_url: str,
+        session: aiohttp.ClientSession,
+        sem: asyncio.Semaphore,
+    ) -> dict:
         """发起异步并发测速请求"""
         async with sem:
             encoded_name = urllib.parse.quote(node_name)
@@ -378,10 +408,15 @@ class MihomoEngine(BaseTestEngine):
                     if resp.status == 200:
                         data = await resp.json()
                         delay = data.get("delay", -1)
-                        if delay == 0: delay = 1
+                        if delay == 0:
+                            delay = 1
                         return {"name": node_name, "status": "valid", "delay": delay}
                     else:
-                        return {"name": node_name, "status": "error", "error": f"HTTP {resp.status}"}
+                        return {
+                            "name": node_name,
+                            "status": "error",
+                            "error": f"HTTP {resp.status}",
+                        }
             except asyncio.TimeoutError:
                 return {"name": node_name, "status": "error", "error": "TimeoutError"}
             except aiohttp.ClientError as e:

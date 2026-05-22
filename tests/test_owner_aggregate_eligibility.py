@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta
 
-from web.server import _is_subscription_eligible
+from web.aggregate.collector import _is_subscription_eligible
 
 
 class OwnerAggregateEligibilityTest(unittest.TestCase):

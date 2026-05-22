@@ -1,4 +1,5 @@
 """User-level preference persistence for monitor alert delivery."""
+
 from __future__ import annotations
 
 import time

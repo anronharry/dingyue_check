@@ -6,7 +6,14 @@ from core.parser import SubscriptionParser
 
 
 class _FakeResponse:
-    def __init__(self, *, status: int, body: str, headers: dict[str, str] | None = None, charset: str | None = "utf-8"):
+    def __init__(
+        self,
+        *,
+        status: int,
+        body: str,
+        headers: dict[str, str] | None = None,
+        charset: str | None = "utf-8",
+    ):
         self.status = status
         self._body = body.encode("utf-8")
         self.headers = headers or {}
@@ -36,22 +43,39 @@ class _FakeSession:
         return self._responses.pop(0)
 
 
+class _StaticDownloadParser(SubscriptionParser):
+    def __init__(self, text: str, headers: dict[str, str]):
+        super().__init__()
+        self._text = text
+        self._headers = headers
+
+    async def _download_subscription(self, url):
+        _ = url
+        return self._text, self._headers
+
+
 class ParserDownloadFallbackTest(unittest.IsolatedAsyncioTestCase):
     async def test_download_retries_with_browser_ua_after_waf_block(self):
         session = _FakeSession(
             [
-                _FakeResponse(status=403, body="safeline waf blocked", headers={"content-type": "text/html"}),
+                _FakeResponse(
+                    status=403, body="safeline waf blocked", headers={"content-type": "text/html"}
+                ),
                 _FakeResponse(status=200, body="trojan://password@example.org:443#JP01"),
                 _FakeResponse(
                     status=200,
                     body="trojan://password@example.org:443#JP01",
-                    headers={"subscription-userinfo": "upload=1; download=2; total=10; expire=2000000000"},
+                    headers={
+                        "subscription-userinfo": "upload=1; download=2; total=10; expire=2000000000"
+                    },
                 ),
             ]
         )
         parser = SubscriptionParser(session=session)
 
-        text, headers = await parser._download_subscription("https://139.196.241.76:18181/api/v1/client/subscribe?token=abc")
+        text, headers = await parser._download_subscription(
+            "https://139.196.241.76:18181/api/v1/client/subscribe?token=abc"
+        )
         ua_candidates = list(SubscriptionParser._resolve_subscription_user_agents())
 
         self.assertIn("trojan://", text)
@@ -60,6 +84,15 @@ class ParserDownloadFallbackTest(unittest.IsolatedAsyncioTestCase):
             session.user_agents,
             ua_candidates[:3],
         )
+
+    async def test_parse_rejects_pseudo_200_html_error_page(self):
+        parser = _StaticDownloadParser(
+            "<html><body>forbidden by firewall</body></html>",
+            {"content-type": "text/html; charset=utf-8"},
+        )
+
+        with self.assertRaisesRegex(Exception, "伪装响应页面"):
+            await parser.parse("https://example.com/sub?token=secret-token")
 
     async def test_download_uses_single_request_when_first_response_is_valid(self):
         session = _FakeSession(

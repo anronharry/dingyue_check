@@ -1,4 +1,5 @@
 """Telegram-facing message formatters."""
+
 from __future__ import annotations
 
 import html
@@ -18,7 +19,10 @@ def _format_skipped_protocols(quick_check: dict) -> str:
     skipped_protocols = quick_check.get("skipped_protocols") or {}
     if not skipped_protocols:
         return ""
-    parts = [f"{html.escape(protocol.upper())} {count}" for protocol, count in sorted(skipped_protocols.items())]
+    parts = [
+        f"{html.escape(protocol.upper())} {count}"
+        for protocol, count in sorted(skipped_protocols.items())
+    ]
     return "；跳过协议：" + " / ".join(parts)
 
 
@@ -93,6 +97,7 @@ def _format_quick_check_highlight(info: dict) -> list[str]:
         f"<b>存活率：</b> {create_progress_bar(metrics['rate'], length=10)} {metrics['rate']:.1f}%",
     ]
 
+
 def _render_latency_top(info: dict) -> list[str]:
     quick_check = info.get("quick_check") or {}
     latency_top = quick_check.get("latency_top") or []
@@ -114,7 +119,9 @@ def _build_protocol_summary(info: dict, *, top_n: int = 4) -> str:
         return ""
     parts = [
         f"{html.escape(str(protocol).upper())} {count}"
-        for protocol, count in sorted(protocols.items(), key=lambda item: item[1], reverse=True)[:top_n]
+        for protocol, count in sorted(protocols.items(), key=lambda item: item[1], reverse=True)[
+            :top_n
+        ]
     ]
     return " / ".join(parts)
 
@@ -126,7 +133,9 @@ def _build_country_summary(info: dict, *, top_n: int = 4) -> str:
         return ""
     parts = [
         f"{get_country_flag(country)}{html.escape(country)} {count}"
-        for country, count in sorted(countries.items(), key=lambda item: item[1], reverse=True)[:top_n]
+        for country, count in sorted(countries.items(), key=lambda item: item[1], reverse=True)[
+            :top_n
+        ]
     ]
     return " / ".join(parts)
 
@@ -192,7 +201,9 @@ def _format_usage(info: dict) -> tuple[str, str, str]:
 
 def _build_details(info: dict, *, node_limit: int, node_char_budget: int) -> str:
     lines = []
-    node_lines, hidden_count = _render_node_lines(info, max_items=node_limit, char_budget=node_char_budget)
+    node_lines, hidden_count = _render_node_lines(
+        info, max_items=node_limit, char_budget=node_char_budget
+    )
     if node_lines:
         lines.append(f"<b>节点列表（共 {info.get('node_count') or len(node_lines)} 个）</b>")
         lines.extend(node_lines)
@@ -236,24 +247,36 @@ def format_subscription_info(info, url=None):
 
     if info.get("usage_percent") is not None:
         percent = float(info["usage_percent"])
-        summary_lines.append(f"<b>使用进度：</b> {create_progress_bar(percent, length=8)} {percent:.1f}%")
+        summary_lines.append(
+            f"<b>使用进度：</b> {create_progress_bar(percent, length=8)} {percent:.1f}%"
+        )
 
     summary_lines.extend(_format_quick_check_highlight(info))
 
-    remain_text = format_remaining_time(info.get("expire_time", ""), include_seconds=False) if info.get("expire_time") else ""
+    remain_text = (
+        format_remaining_time(info.get("expire_time", ""), include_seconds=False)
+        if info.get("expire_time")
+        else ""
+    )
     if remain_text:
         summary_lines.append(f"<b>剩余时间：</b> {html.escape(remain_text)}")
 
     summary_block = "<blockquote>\n" + "\n".join(summary_lines) + "\n</blockquote>"
     details = _build_details(info, node_limit=100, node_char_budget=1800)
-    message = "\n".join(header_lines) + "\n\n" + summary_block + ("\n\n" + details if details else "")
+    message = (
+        "\n".join(header_lines) + "\n\n" + summary_block + ("\n\n" + details if details else "")
+    )
 
     if len(message) > MAX_TELEGRAM_TEXT:
         details = _build_details(info, node_limit=40, node_char_budget=1000)
-        message = "\n".join(header_lines) + "\n\n" + summary_block + ("\n\n" + details if details else "")
+        message = (
+            "\n".join(header_lines) + "\n\n" + summary_block + ("\n\n" + details if details else "")
+        )
     if len(message) > MAX_TELEGRAM_TEXT:
         details = _build_details(info, node_limit=20, node_char_budget=650)
-        message = "\n".join(header_lines) + "\n\n" + summary_block + ("\n\n" + details if details else "")
+        message = (
+            "\n".join(header_lines) + "\n\n" + summary_block + ("\n\n" + details if details else "")
+        )
 
     return message[:MAX_TELEGRAM_TEXT]
 
@@ -305,15 +328,18 @@ def format_node_analysis_compact(info, url=None):
     countries = stats.get("countries") or {}
     if countries:
         top_countries = sorted(countries.items(), key=lambda item: item[1], reverse=True)[:3]
-        country_text = " / ".join(f"{html.escape(str(country))} {count}" for country, count in top_countries)
+        country_text = " / ".join(
+            f"{html.escape(str(country))} {count}" for country, count in top_countries
+        )
         lines.append(f"<b>地区：</b> {country_text}")
 
     protocols = stats.get("protocols") or {}
     if protocols:
         top_protocols = sorted(protocols.items(), key=lambda item: item[1], reverse=True)[:3]
-        protocol_text = " / ".join(f"{html.escape(str(protocol).upper())} {count}" for protocol, count in top_protocols)
+        protocol_text = " / ".join(
+            f"{html.escape(str(protocol).upper())} {count}" for protocol, count in top_protocols
+        )
         lines.append(f"<b>协议：</b> {protocol_text}")
 
     lines.append("<b>说明：</b> 纯节点列表，不含订阅流量和到期信息")
     return "\n".join(lines)
-

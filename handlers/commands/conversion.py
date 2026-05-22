@@ -1,4 +1,5 @@
 """Conversion and deep-check command handlers."""
+
 from __future__ import annotations
 
 
@@ -32,7 +33,11 @@ def make_to_yaml_command(*, is_authorized, send_no_permission_msg, conversion_se
                 await processing_msg.edit_text(f"❌ 转换失败：{result['error']}")
                 return
             with open(result["output_path"], "rb") as handle:
-                await update.message.reply_document(document=handle, filename=result["output_name"], caption="✅ 转换成功 (Clash YAML 格式)")
+                await update.message.reply_document(
+                    document=handle,
+                    filename=result["output_name"],
+                    caption="✅ 转换成功 (Clash YAML 格式)",
+                )
             await processing_msg.delete()
         except Exception as exc:
             await processing_msg.edit_text(f"❌ 转换失败：{exc}")
@@ -70,7 +75,11 @@ def make_to_txt_command(*, is_authorized, send_no_permission_msg, conversion_ser
                 await processing_msg.edit_text(f"❌ 转换失败：{result['error']}")
                 return
             with open(result["output_path"], "rb") as handle:
-                await update.message.reply_document(document=handle, filename=result["output_name"], caption="✅ 转换成功 (明文 TXT 格式)")
+                await update.message.reply_document(
+                    document=handle,
+                    filename=result["output_name"],
+                    caption="✅ 转换成功 (明文 TXT 格式)",
+                )
             await processing_msg.delete()
         except Exception as exc:
             await processing_msg.edit_text(f"❌ 转换失败：{exc}")

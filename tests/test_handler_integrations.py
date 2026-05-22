@@ -159,12 +159,17 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
             admin_service=_admin_ns(
-                build_usage_audit_report=lambda **kwargs: ("report", {"mode": "others", "page": 1, "total_pages": 3, "records": [1, 2]}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "report",
+                    {"mode": "others", "page": 1, "total_pages": 3, "records": [1, 2]},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
             ),
             export_cache_service=None,
@@ -197,16 +202,27 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
             admin_service=_admin_ns(
-                build_usage_audit_report=lambda **kwargs: ("report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "report",
+                    {"mode": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
-                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 2, "records": [1, 2]}),
+                build_recent_users_page=lambda **kwargs: (
+                    "recent users",
+                    {"scope": "others", "page": 1, "total_pages": 2, "records": [1, 2]},
+                ),
                 build_recent_users_detail=lambda **kwargs: "recent detail",
-                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_page=lambda **kwargs: (
+                    "recent exports",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_exports_detail=lambda **kwargs: "recent exports detail",
             ),
             export_cache_service=None,
@@ -241,16 +257,27 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
             admin_service=_admin_ns(
-                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": [1]}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "audit report",
+                    {"mode": "others", "page": 1, "total_pages": 1, "records": [1]},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
-                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_page=lambda **kwargs: (
+                    "recent users",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_users_detail=lambda **kwargs: "recent detail",
-                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_page=lambda **kwargs: (
+                    "recent exports",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_exports_detail=lambda **kwargs: "recent exports detail",
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
@@ -286,16 +313,27 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
             admin_service=_admin_ns(
-                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": [1]}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "audit report",
+                    {"mode": "others", "page": 1, "total_pages": 1, "records": [1]},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
-                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_page=lambda **kwargs: (
+                    "recent users",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_users_detail=lambda **kwargs: "recent detail",
-                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_page=lambda **kwargs: (
+                    "recent exports",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_exports_detail=lambda **kwargs: "recent exports detail",
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
@@ -336,16 +374,27 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
             admin_service=_admin_ns(
-                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": [1]}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "audit report",
+                    {"mode": "others", "page": 1, "total_pages": 1, "records": [1]},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
-                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_page=lambda **kwargs: (
+                    "recent users",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_users_detail=lambda **kwargs: "recent detail",
-                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_page=lambda **kwargs: (
+                    "recent exports",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_exports_detail=lambda **kwargs: "recent exports detail",
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
@@ -367,7 +416,9 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         handled = await handler(update, context, "panel", "maint_backup")
         self.assertTrue(handled)
         self.assertTrue(query.edits[-1][0])
-        self.assertEqual(query.edits[-1][1]["reply_markup"], [["panel", {"section": "maint_backup"}]])
+        self.assertEqual(
+            query.edits[-1][1]["reply_markup"], [["panel", {"section": "maint_backup"}]]
+        )
 
     async def test_owner_panel_callback_routes_maint_ops_to_dedicated_keyboard(self):
         query = _FakeQuery()
@@ -382,17 +433,28 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
             admin_service=_admin_ns(
                 get_usage_user_counts=lambda **kwargs: (2, 1),
-                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": [1]}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "audit report",
+                    {"mode": "others", "page": 1, "total_pages": 1, "records": [1]},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
-                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_page=lambda **kwargs: (
+                    "recent users",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_users_detail=lambda **kwargs: "recent detail",
-                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_page=lambda **kwargs: (
+                    "recent exports",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_exports_detail=lambda **kwargs: "recent exports detail",
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
@@ -432,7 +494,9 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
@@ -440,16 +504,27 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 get_usage_user_counts=lambda **kwargs: (2, 1),
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
-                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "audit report",
+                    {"mode": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
-                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_page=lambda **kwargs: (
+                    "recent users",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_users_detail=lambda **kwargs: "recent detail",
-                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_page=lambda **kwargs: (
+                    "recent exports",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_exports_detail=lambda **kwargs: "recent exports detail",
                 build_user_list_message=lambda: "user list",
                 build_globallist_report=lambda: "global list",
             ),
-            access_service=SimpleNamespace(set_allow_all_users=lambda enabled: (access_calls.append(enabled) or True, True)),
+            access_service=SimpleNamespace(
+                set_allow_all_users=lambda enabled: (access_calls.append(enabled) or True, True)
+            ),
             post_init=None,
             export_cache_service=None,
             usage_audit_service=SimpleNamespace(log_check=lambda **kwargs: None),
@@ -481,7 +556,9 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
@@ -489,11 +566,20 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 get_usage_user_counts=lambda **kwargs: (2, 1),
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
-                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "audit report",
+                    {"mode": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
-                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_page=lambda **kwargs: (
+                    "recent users",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_users_detail=lambda **kwargs: "recent detail",
-                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_page=lambda **kwargs: (
+                    "recent exports",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_exports_detail=lambda **kwargs: "recent exports detail",
                 build_user_list_message=lambda: "user list",
                 build_globallist_report=lambda: "global list",
@@ -511,7 +597,11 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             logger=SimpleNamespace(error=lambda *a, **k: None, warning=lambda *a, **k: None),
         )
         update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=1))
-        context = SimpleNamespace(user_data={"pending_owner_broadcast_text": "hello everyone"}, application=SimpleNamespace(), bot=fake_bot)
+        context = SimpleNamespace(
+            user_data={"pending_owner_broadcast_text": "hello everyone"},
+            application=SimpleNamespace(),
+            bot=fake_bot,
+        )
         handled = await handler(update, context, "panel", "maint_broadcast_send")
         self.assertTrue(handled)
         self.assertEqual(len(fake_bot.sent), 2)
@@ -534,7 +624,9 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             document_service=None,
             format_subscription_info=lambda *args, **kwargs: "",
             make_sub_keyboard=lambda url, owner_mode=False: None,
-            backup_service=SimpleNamespace(restore_backup_bytes=lambda content: ["data/db/users.json"]),
+            backup_service=SimpleNamespace(
+                restore_backup_bytes=lambda content: ["data/db/users.json"]
+            ),
             usage_audit_service=None,
             logger=SimpleNamespace(warning=lambda *a, **k: None, error=lambda *a, **k: None),
         )
@@ -549,7 +641,7 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_node_text_handler_sends_verbose_only(self):
         scheduled = []
-        
+
         class _DocService:
             async def analyze_node_text(self, **kwargs):
                 return {"name": "节点列表", "node_count": 3}
@@ -583,7 +675,9 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             handle_subscription=lambda update, context: None,
             handle_node_text=lambda update, context: None,
             tag_forbidden_msg="forbidden",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
         )
         update = SimpleNamespace(
@@ -612,7 +706,9 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
@@ -620,11 +716,20 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 get_usage_user_counts=lambda **kwargs: (2, 1),
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
-                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "audit report",
+                    {"mode": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
-                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_page=lambda **kwargs: (
+                    "recent users",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_users_detail=lambda **kwargs: "recent detail",
-                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_page=lambda **kwargs: (
+                    "recent exports",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_exports_detail=lambda **kwargs: "recent exports detail",
                 build_user_list_message=lambda: "user list",
                 build_globallist_report=lambda: "global list",
@@ -680,7 +785,9 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
@@ -690,11 +797,20 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 build_owner_panel_section_text=lambda section: f"section:{section}",
                 make_export_file_path=lambda: (str(tmp_file), tmp_file.name),
                 build_backup_caption=lambda **kwargs: "caption",
-                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "audit report",
+                    {"mode": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
-                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_page=lambda **kwargs: (
+                    "recent users",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_users_detail=lambda **kwargs: "recent detail",
-                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_page=lambda **kwargs: (
+                    "recent exports",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_exports_detail=lambda **kwargs: "recent exports detail",
                 build_user_list_message=lambda: "user list",
                 build_globallist_report=lambda: "global list",
@@ -732,7 +848,11 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
             async def analyze_document_nodes(self, **kwargs):
                 calls.append(kwargs)
-                return {"name": "nodes.txt (节点列表)", "node_count": 1, "_normalized_nodes": [{"name": "HK01"}]}
+                return {
+                    "name": "nodes.txt (节点列表)",
+                    "node_count": 1,
+                    "_normalized_nodes": [{"name": "HK01"}],
+                }
 
         handler = make_document_handler(
             is_authorized=lambda update: True,
@@ -769,7 +889,9 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         async def parse(_url):
             return {
                 "_raw_nodes": [{"name": "raw-only", "protocol": "vmess"}],
-                "_normalized_nodes": [{"name": "HK01", "server": "1.1.1.1", "port": 443, "protocol": "vmess"}],
+                "_normalized_nodes": [
+                    {"name": "HK01", "server": "1.1.1.1", "port": 443, "protocol": "vmess"}
+                ],
             }
 
         async def get_parser():
@@ -778,7 +900,10 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         query = _FakeQuery()
         query.message = _FakeMessage()
         handler = make_subscription_callback_handler(
-            get_storage=lambda: SimpleNamespace(get_all=lambda: {"https://example.com/sub": {"owner_uid": 1}}, get_by_user=lambda uid: {}),
+            get_storage=lambda: SimpleNamespace(
+                get_all=lambda: {"https://example.com/sub": {"owner_uid": 1}},
+                get_by_user=lambda uid: {},
+            ),
             is_owner=lambda update: True,
             get_parser=get_parser,
             format_subscription_info=None,
@@ -788,16 +913,27 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=SimpleNamespace(ping_all_nodes=ping_all_nodes),
             admin_service=_admin_ns(
-                build_usage_audit_report=lambda **kwargs: ("audit report", {"mode": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_usage_audit_report=lambda **kwargs: (
+                    "audit report",
+                    {"mode": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_usage_audit_detail=lambda **kwargs: "detail text",
-                build_recent_users_page=lambda **kwargs: ("recent users", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_users_page=lambda **kwargs: (
+                    "recent users",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_users_detail=lambda **kwargs: "recent detail",
-                build_recent_exports_page=lambda **kwargs: ("recent exports", {"scope": "others", "page": 1, "total_pages": 1, "records": []}),
+                build_recent_exports_page=lambda **kwargs: (
+                    "recent exports",
+                    {"scope": "others", "page": 1, "total_pages": 1, "records": []},
+                ),
                 build_recent_exports_detail=lambda **kwargs: "recent exports detail",
                 build_owner_panel_text=lambda: "owner panel",
                 build_owner_panel_section_text=lambda section: f"section:{section}",
@@ -847,7 +983,9 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
             tag_forbidden_msg="forbidden",
             tag_exists_alert="exists",
             confirm_delete_label="confirm",
-            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(text=text, callback_data=callback_data),
+            inline_keyboard_button=lambda text, callback_data: SimpleNamespace(
+                text=text, callback_data=callback_data
+            ),
             inline_keyboard_markup=lambda rows: rows,
             get_short_callback_data=lambda action, url: f"{action}:{url}",
             latency_tester=None,
@@ -873,4 +1011,3 @@ class HandlerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         handled = await handler(update, context, "unmute_alerts", "on")
         self.assertTrue(handled)
         self.assertNotIn(321, prefs.muted)
-

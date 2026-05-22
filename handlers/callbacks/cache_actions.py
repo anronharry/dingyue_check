@@ -1,4 +1,5 @@
 """Cache export and delete callback actions."""
+
 from __future__ import annotations
 
 import os
@@ -11,7 +12,9 @@ ERROR_FILE_MISSING = "file_missing"
 ERROR_UNKNOWN = "unknown"
 
 
-def make_cache_callback_handler(*, get_storage, is_owner, export_cache_service, usage_audit_service):
+def make_cache_callback_handler(
+    *, get_storage, is_owner, export_cache_service, usage_audit_service
+):
     in_flight: dict[tuple[int, str, str], float] = {}
     recent_actions: dict[tuple[int, str, str], float] = {}
 

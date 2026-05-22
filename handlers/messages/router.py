@@ -1,4 +1,5 @@
 """Message routing handlers for plain text user input."""
+
 from __future__ import annotations
 
 
@@ -54,10 +55,18 @@ def make_message_handler(
             if inline_keyboard_button and inline_keyboard_markup:
                 keyboard = inline_keyboard_markup(
                     [
-                        [inline_keyboard_button("发送广播", callback_data="panel:maint_broadcast_send")],
                         [
-                            inline_keyboard_button("重新编辑", callback_data="panel:maint_broadcast_edit"),
-                            inline_keyboard_button("取消", callback_data="panel:maint_broadcast_cancel"),
+                            inline_keyboard_button(
+                                "发送广播", callback_data="panel:maint_broadcast_send"
+                            )
+                        ],
+                        [
+                            inline_keyboard_button(
+                                "重新编辑", callback_data="panel:maint_broadcast_edit"
+                            ),
+                            inline_keyboard_button(
+                                "取消", callback_data="panel:maint_broadcast_cancel"
+                            ),
                         ],
                     ]
                 )

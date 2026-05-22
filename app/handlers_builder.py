@@ -1,13 +1,24 @@
 """Handler registration assembly."""
+
 from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from app.constants import BTN_CONFIRM_DELETE, BTN_DELETE, BTN_RECHECK, BTN_TAG, OWNER_ONLY_MSG, TAG_EXISTS_ALERT, TAG_FORBIDDEN_MSG
+from app.constants import (
+    BTN_CONFIRM_DELETE,
+    BTN_DELETE,
+    BTN_RECHECK,
+    BTN_TAG,
+    OWNER_ONLY_MSG,
+    TAG_EXISTS_ALERT,
+    TAG_FORBIDDEN_MSG,
+)
 from app.runtime import Runtime
 from features import latency_tester
-from handlers.callbacks.router import make_button_callback
-from handlers.callbacks.subscription_actions import make_subscription_callback_handler
+from handlers.callbacks.subscription_actions import (
+    make_button_callback,
+    make_subscription_callback_handler,
+)
 from handlers.commands.admin import (
     make_add_user_command,
     make_backup_command,
@@ -28,21 +39,46 @@ from handlers.commands.admin import (
     make_usage_audit_command,
 )
 from handlers.commands.basic import make_help_command, make_start_command, make_stats_command
-from handlers.commands.conversion import make_deepcheck_command, make_to_txt_command, make_to_yaml_command
-from handlers.commands.subscriptions import make_check_command, make_list_command
+from handlers.commands.conversion import (
+    make_deepcheck_command,
+    make_to_txt_command,
+    make_to_yaml_command,
+)
+from handlers.commands.subscription_check import make_check_command
+from handlers.commands.subscription_list import make_list_command
 from handlers.messages.documents import make_document_handler, make_node_text_handler
 from handlers.messages.router import make_message_handler
 from handlers.messages.subscriptions import make_subscription_handler
 from renderers.formatters import format_subscription_compact, format_subscription_info
-from renderers.telegram_keyboards import build_owner_panel_keyboard, build_recent_activity_keyboard, build_usage_audit_keyboard
+from renderers.telegram_keyboards import (
+    build_owner_panel_keyboard,
+    build_recent_activity_keyboard,
+    build_usage_audit_keyboard,
+)
 from utils.utils import InputDetector, format_traffic, is_valid_url
 
 
 def build_handlers(runtime: Runtime, *, post_init):
     handlers = {}
-    handlers["start"] = make_start_command(is_authorized=runtime.is_authorized, is_owner=runtime.is_owner, send_no_permission_msg=runtime.send_no_permission_msg, logger=runtime.logger)
-    handlers["help"] = make_help_command(is_authorized=runtime.is_authorized, is_owner=runtime.is_owner, send_no_permission_msg=runtime.send_no_permission_msg, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["stats"] = make_stats_command(is_authorized=runtime.is_authorized, is_owner=runtime.is_owner, send_no_permission_msg=runtime.send_no_permission_msg, get_storage=runtime.get_storage, schedule_auto_delete=runtime.schedule_auto_delete)
+    handlers["start"] = make_start_command(
+        is_authorized=runtime.is_authorized,
+        is_owner=runtime.is_owner,
+        send_no_permission_msg=runtime.send_no_permission_msg,
+        logger=runtime.logger,
+    )
+    handlers["help"] = make_help_command(
+        is_authorized=runtime.is_authorized,
+        is_owner=runtime.is_owner,
+        send_no_permission_msg=runtime.send_no_permission_msg,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["stats"] = make_stats_command(
+        is_authorized=runtime.is_authorized,
+        is_owner=runtime.is_owner,
+        send_no_permission_msg=runtime.send_no_permission_msg,
+        get_storage=runtime.get_storage,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
     handlers["check"] = make_check_command(
         is_authorized=runtime.is_authorized,
         is_owner=runtime.is_owner,
@@ -84,9 +120,26 @@ def build_handlers(runtime: Runtime, *, post_init):
         schedule_auto_delete=runtime.schedule_auto_delete,
         logger=runtime.logger,
     )
-    handlers["allowall"] = make_set_public_access_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, access_service=runtime.access_service, enabled=True, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["denyall"] = make_set_public_access_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, access_service=runtime.access_service, enabled=False, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["usageaudit"] = make_usage_audit_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
+    handlers["allowall"] = make_set_public_access_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        access_service=runtime.access_service,
+        enabled=True,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["denyall"] = make_set_public_access_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        access_service=runtime.access_service,
+        enabled=False,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["usageaudit"] = make_usage_audit_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        admin_service=runtime.admin_service,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
     handlers["delete"] = make_delete_command(
         is_authorized=runtime.is_authorized,
         send_no_permission_msg=runtime.send_no_permission_msg,
@@ -98,21 +151,91 @@ def build_handlers(runtime: Runtime, *, post_init):
         inline_keyboard_markup=InlineKeyboardMarkup,
         schedule_auto_delete=runtime.schedule_auto_delete,
     )
-    handlers["export"] = make_export_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, get_storage=runtime.get_storage, schedule_auto_delete=runtime.schedule_auto_delete, admin_service=runtime.admin_service)
-    handlers["import"] = make_import_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["backup"] = make_backup_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, backup_service=runtime.backup_service, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["restore"] = make_restore_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["adduser"] = make_add_user_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, user_manager=runtime.user_manager, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["deluser"] = make_del_user_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, user_manager=runtime.user_manager, owner_id=runtime.admin_service.owner_id, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["listusers"] = make_list_users_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["ownerpanel"] = make_owner_panel_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["recentusers"] = make_recent_users_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["recentexports"] = make_recent_exports_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["refresh_menu"] = make_refresh_menu_command(is_owner=runtime.is_owner, post_init=post_init)
-    handlers["globallist"] = make_globallist_command(is_owner=runtime.is_owner, owner_only_msg=OWNER_ONLY_MSG, admin_service=runtime.admin_service, schedule_auto_delete=runtime.schedule_auto_delete)
-    handlers["to_yaml"] = make_to_yaml_command(is_authorized=runtime.is_authorized, send_no_permission_msg=runtime.send_no_permission_msg, conversion_service=runtime.conversion_service)
-    handlers["to_txt"] = make_to_txt_command(is_authorized=runtime.is_authorized, send_no_permission_msg=runtime.send_no_permission_msg, conversion_service=runtime.conversion_service)
-    handlers["deepcheck"] = make_deepcheck_command(is_authorized=runtime.is_authorized, send_no_permission_msg=runtime.send_no_permission_msg, conversion_service=runtime.conversion_service, logger=runtime.logger)
+    handlers["export"] = make_export_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        get_storage=runtime.get_storage,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+        admin_service=runtime.admin_service,
+    )
+    handlers["import"] = make_import_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["backup"] = make_backup_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        backup_service=runtime.backup_service,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["restore"] = make_restore_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["adduser"] = make_add_user_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        user_manager=runtime.user_manager,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["deluser"] = make_del_user_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        user_manager=runtime.user_manager,
+        owner_id=runtime.admin_service.owner_id,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["listusers"] = make_list_users_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        admin_service=runtime.admin_service,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["ownerpanel"] = make_owner_panel_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        admin_service=runtime.admin_service,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["recentusers"] = make_recent_users_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        admin_service=runtime.admin_service,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["recentexports"] = make_recent_exports_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        admin_service=runtime.admin_service,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["refresh_menu"] = make_refresh_menu_command(
+        is_owner=runtime.is_owner, post_init=post_init
+    )
+    handlers["globallist"] = make_globallist_command(
+        is_owner=runtime.is_owner,
+        owner_only_msg=OWNER_ONLY_MSG,
+        admin_service=runtime.admin_service,
+        schedule_auto_delete=runtime.schedule_auto_delete,
+    )
+    handlers["to_yaml"] = make_to_yaml_command(
+        is_authorized=runtime.is_authorized,
+        send_no_permission_msg=runtime.send_no_permission_msg,
+        conversion_service=runtime.conversion_service,
+    )
+    handlers["to_txt"] = make_to_txt_command(
+        is_authorized=runtime.is_authorized,
+        send_no_permission_msg=runtime.send_no_permission_msg,
+        conversion_service=runtime.conversion_service,
+    )
+    handlers["deepcheck"] = make_deepcheck_command(
+        is_authorized=runtime.is_authorized,
+        send_no_permission_msg=runtime.send_no_permission_msg,
+        conversion_service=runtime.conversion_service,
+        logger=runtime.logger,
+    )
     handlers["handle_document"] = make_document_handler(
         is_authorized=runtime.is_authorized,
         send_no_permission_msg=runtime.send_no_permission_msg,
@@ -184,7 +307,11 @@ def build_handlers(runtime: Runtime, *, post_init):
         subscription_check_service=runtime.subscription_check_service,
         alert_preference_service=runtime.alert_preference_service,
     )
-    handlers["button_callback"] = make_button_callback(is_authorized=runtime.is_authorized, no_permission_alert=runtime.access_service.get_no_permission_alert(), subscription_callback_handler=subscription_callback_handler)
+    handlers["button_callback"] = make_button_callback(
+        is_authorized=runtime.is_authorized,
+        no_permission_alert=runtime.access_service.get_no_permission_alert(),
+        subscription_callback_handler=subscription_callback_handler,
+    )
 
     sources = {
         "start": lambda u, c: "/start",
@@ -213,8 +340,13 @@ def build_handlers(runtime: Runtime, *, post_init):
         "to_yaml": lambda u, c: "/to_yaml",
         "to_txt": lambda u, c: "/to_txt",
         "deepcheck": lambda u, c: "/deepcheck",
-        "handle_document": lambda u, c: f"document:{getattr(u.message.document, 'file_name', 'unknown')}",
+        "handle_document": lambda u, c: (
+            f"document:{getattr(u.message.document, 'file_name', 'unknown')}"
+        ),
         "handle_message": lambda u, c: "text_message",
         "button_callback": lambda u, c: f"callback:{getattr(u.callback_query, 'data', 'unknown')}",
     }
-    return {name: runtime.with_profile_tracking(handler, sources[name]) for name, handler in handlers.items()}
+    return {
+        name: runtime.with_profile_tracking(handler, sources[name])
+        for name, handler in handlers.items()
+    }

@@ -1,4 +1,5 @@
 """New project entrypoint."""
+
 from __future__ import annotations
 
 

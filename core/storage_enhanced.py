@@ -1,4 +1,5 @@
 """Enhanced subscription storage with owner/tag/import-export support."""
+
 from __future__ import annotations
 
 import asyncio
@@ -43,13 +44,19 @@ class SubscriptionStorage:
         try:
             with open(self.data_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if isinstance(data, dict):
-                return data
-            logger.warning("Invalid subscriptions data type: %s", type(data).__name__)
-            return {}
-        except Exception as exc:
-            logger.error("Failed to load subscriptions data: %s", exc)
-            return {}
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Subscriptions state file is corrupted: {self.data_file}") from exc
+        except OSError as exc:
+            raise RuntimeError(
+                f"Failed to read subscriptions state file: {self.data_file}"
+            ) from exc
+        except UnicodeDecodeError as exc:
+            raise RuntimeError(
+                f"Subscriptions state file is not valid UTF-8: {self.data_file}"
+            ) from exc
+        if isinstance(data, dict):
+            return data
+        raise RuntimeError(f"Subscriptions state file must contain a JSON object: {self.data_file}")
 
     def _save_data_blocking(self) -> bool:
         """Durable synchronous save with atomic replace."""
@@ -162,7 +169,11 @@ class SubscriptionStorage:
 
     def get_by_user(self, user_id: int) -> Dict[str, Dict[str, Any]]:
         with self._lock:
-            return {url: data for url, data in self.subscriptions.items() if data.get("owner_uid", 0) == user_id}
+            return {
+                url: data
+                for url, data in self.subscriptions.items()
+                if data.get("owner_uid", 0) == user_id
+            }
 
     def get_grouped_by_user(self) -> Dict[int, Dict[str, Dict[str, Any]]]:
         grouped: Dict[int, Dict[str, Dict[str, Any]]] = {}
@@ -186,7 +197,9 @@ class SubscriptionStorage:
 
     def get_by_tag(self, tag: str) -> Dict[str, Dict[str, Any]]:
         with self._lock:
-            return {url: data for url, data in self.subscriptions.items() if tag in data.get("tags", [])}
+            return {
+                url: data for url, data in self.subscriptions.items() if tag in data.get("tags", [])
+            }
 
     def get_user_statistics(self, user_id: int) -> Dict[str, Any]:
         user_subs = self.get_by_user(user_id)
@@ -199,7 +212,9 @@ class SubscriptionStorage:
             if require_owner and operator_uid:
                 sub_owner = self.subscriptions[url].get("owner_uid", 0)
                 if sub_owner and sub_owner != operator_uid:
-                    logger.warning("UID %s attempted to delete UID %s subscription", operator_uid, sub_owner)
+                    logger.warning(
+                        "UID %s attempted to delete UID %s subscription", operator_uid, sub_owner
+                    )
                     return False
             name = self.subscriptions[url].get("name", "Unknown")
             del self.subscriptions[url]
@@ -207,7 +222,9 @@ class SubscriptionStorage:
         logger.info("Deleted subscription: %s", name)
         return True
 
-    def mark_check_failed(self, url: str, error: str, operator_uid: int = 0, require_owner: bool = False) -> bool:
+    def mark_check_failed(
+        self, url: str, error: str, operator_uid: int = 0, require_owner: bool = False
+    ) -> bool:
         if not self._can_modify_subscription(url, operator_uid, require_owner):
             return False
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -219,7 +236,9 @@ class SubscriptionStorage:
         self._mark_dirty()
         return True
 
-    def _can_modify_subscription(self, url: str, operator_uid: int = 0, require_owner: bool = False) -> bool:
+    def _can_modify_subscription(
+        self, url: str, operator_uid: int = 0, require_owner: bool = False
+    ) -> bool:
         with self._lock:
             if url not in self.subscriptions:
                 logger.warning("Subscription not found: %s", url)
@@ -227,11 +246,15 @@ class SubscriptionStorage:
             if require_owner and operator_uid:
                 sub_owner = self.subscriptions[url].get("owner_uid", 0)
                 if sub_owner and sub_owner != operator_uid:
-                    logger.warning("UID %s attempted to modify UID %s subscription", operator_uid, sub_owner)
+                    logger.warning(
+                        "UID %s attempted to modify UID %s subscription", operator_uid, sub_owner
+                    )
                     return False
         return True
 
-    def add_tag(self, url: str, tag: str, operator_uid: int = 0, require_owner: bool = False) -> bool:
+    def add_tag(
+        self, url: str, tag: str, operator_uid: int = 0, require_owner: bool = False
+    ) -> bool:
         if not self._can_modify_subscription(url, operator_uid, require_owner):
             return False
         with self._lock:
@@ -246,7 +269,9 @@ class SubscriptionStorage:
         logger.info("Added tag %s to %s", tag, name)
         return True
 
-    def remove_tag(self, url: str, tag: str, operator_uid: int = 0, require_owner: bool = False) -> bool:
+    def remove_tag(
+        self, url: str, tag: str, operator_uid: int = 0, require_owner: bool = False
+    ) -> bool:
         if not self._can_modify_subscription(url, operator_uid, require_owner):
             return False
         with self._lock:

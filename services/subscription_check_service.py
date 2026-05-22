@@ -3,6 +3,7 @@
 This service centralizes parser invocation + persistence side effects so
 handlers can focus on interaction flow.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -87,7 +88,9 @@ class SubscriptionCheckService:
             store = self.get_storage()
             store.add_or_update(url, result, user_id=owner_uid)
             if self.export_cache_service:
-                self.export_cache_service.save_subscription_cache(owner_uid=owner_uid, source=url, result=result)
+                self.export_cache_service.save_subscription_cache(
+                    owner_uid=owner_uid, source=url, result=result
+                )
         except Exception as exc:
             err = self._normalize_error(exc)
             duration_ms = (time.perf_counter() - start) * 1000.0
@@ -112,9 +115,13 @@ class SubscriptionCheckService:
         )
         return result
 
-    async def parse_subscription_urls(self, *, subscription_urls: list[str], owner_uid: int) -> list[dict]:
+    async def parse_subscription_urls(
+        self, *, subscription_urls: list[str], owner_uid: int
+    ) -> list[dict]:
         store = self.get_storage()
-        semaphore = asyncio.Semaphore(min(self.global_concurrency, max(1, self.user_concurrency * 2)))
+        semaphore = asyncio.Semaphore(
+            min(self.global_concurrency, max(1, self.user_concurrency * 2))
+        )
 
         async def _parse_one(index: int, url: str) -> dict:
             async with semaphore:
@@ -139,7 +146,9 @@ class SubscriptionCheckService:
 
         store.begin_batch()
         try:
-            return await asyncio.gather(*[_parse_one(index, url) for index, url in enumerate(subscription_urls, 1)])
+            return await asyncio.gather(
+                *[_parse_one(index, url) for index, url in enumerate(subscription_urls, 1)]
+            )
         finally:
             store.end_batch(save=True)
 
@@ -169,7 +178,9 @@ class SubscriptionCheckService:
                 await asyncio.sleep(delay)
         if last_exc:
             raise last_exc
-        raise SubscriptionProcessError(code="unknown_error", user_message="订阅解析失败，请稍后重试。")
+        raise SubscriptionProcessError(
+            code="unknown_error", user_message="订阅解析失败，请稍后重试。"
+        )
 
     async def _observe(
         self,
@@ -255,16 +266,35 @@ class SubscriptionCheckService:
         if any(token in lowered for token in ("timeout", "timed out", "超时")):
             return SubscriptionProcessError("timeout", "订阅请求超时，请稍后重试。", raw)
         if any(token in lowered for token in ("ssl", "certificate", "证书")):
-            return SubscriptionProcessError("ssl_error", "SSL 证书校验失败，请检查订阅地址或稍后重试。", raw)
+            return SubscriptionProcessError(
+                "ssl_error", "SSL 证书校验失败，请检查订阅地址或稍后重试。", raw
+            )
         if any(token in lowered for token in ("403", "401", "forbidden", "unauthorized", "权限")):
-            return SubscriptionProcessError("auth_error", "订阅链接无权限或已失效，请更新后重试。", raw)
+            return SubscriptionProcessError(
+                "auth_error", "订阅链接无权限或已失效，请更新后重试。", raw
+            )
         if any(token in lowered for token in ("404", "not found")):
-            return SubscriptionProcessError("not_found", "订阅链接不存在，请确认地址是否正确。", raw)
-        if any(token in lowered for token in ("502", "503", "504", "bad gateway", "service unavailable")):
-            return SubscriptionProcessError("upstream_error", "上游服务暂时不可用，请稍后重试。", raw)
-        if any(token in lowered for token in ("下载订阅失败", "connection", "connector", "dns", "network", "连接")):
+            return SubscriptionProcessError(
+                "not_found", "订阅链接不存在，请确认地址是否正确。", raw
+            )
+        if any(
+            token in lowered
+            for token in ("502", "503", "504", "bad gateway", "service unavailable")
+        ):
+            return SubscriptionProcessError(
+                "upstream_error", "上游服务暂时不可用，请稍后重试。", raw
+            )
+        if any(
+            token in lowered
+            for token in ("下载订阅失败", "connection", "connector", "dns", "network", "连接")
+        ):
             return SubscriptionProcessError("network_error", "网络连接异常，请稍后重试。", raw)
-        if any(token in lowered for token in ("无法识别订阅内容", "未解析到任何有效节点", "unrecognized-content")):
-            return SubscriptionProcessError("invalid_content", "无法识别订阅内容，请确认链接是否为有效订阅。", raw)
+        if any(
+            token in lowered
+            for token in ("无法识别订阅内容", "未解析到任何有效节点", "unrecognized-content")
+        ):
+            return SubscriptionProcessError(
+                "invalid_content", "无法识别订阅内容，请确认链接是否为有效订阅。", raw
+            )
 
         return SubscriptionProcessError("unknown_error", "订阅解析失败，请稍后重试。", raw)

@@ -4,6 +4,7 @@ Telegram subscription checker and converter (async version).
 This module keeps the runtime entrypoint, PTB lifecycle hooks,
 and the handler exports used by the existing project layout.
 """
+
 from __future__ import annotations
 
 import logging
@@ -20,11 +21,17 @@ from app import config
 from app.bootstrap import build_application, log_startup_banner, register_handlers, run_polling
 from app.runtime import build_handlers, create_runtime
 from app.settings import AppSettings
-from renderers.telegram_keyboards import build_owner_panel_keyboard, build_recent_activity_keyboard, build_usage_audit_keyboard
-from web.server import build_web_app
+from renderers.telegram_keyboards import (
+    build_owner_panel_keyboard,
+    build_recent_activity_keyboard,
+    build_usage_audit_keyboard,
+)
+from web import build_web_app
 
 load_dotenv()
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -91,7 +98,9 @@ async def post_init(application: Application):
                 BotCommand("ownerpanel", "Owner control panel"),
                 BotCommand("refresh_menu", "Refresh command menu"),
             ]
-            await application.bot.set_my_commands(owner_commands, scope=BotCommandScopeChat(chat_id=owner_id))
+            await application.bot.set_my_commands(
+                owner_commands, scope=BotCommandScopeChat(chat_id=owner_id)
+            )
         if config.ENABLE_MONITOR:
             from features import monitor
 
@@ -214,6 +223,7 @@ async def _run_unified_async(application: Application) -> None:
                 web_admin_login_window_seconds=settings.web_admin_login_window_seconds,
                 web_admin_login_max_attempts=settings.web_admin_login_max_attempts,
                 web_admin_redis_url=settings.web_admin_redis_url,
+                web_admin_redis_allow_memory_fallback=settings.web_admin_redis_allow_memory_fallback,
             )
             runner = web.AppRunner(web_app)
             await runner.setup()

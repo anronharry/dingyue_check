@@ -1,4 +1,5 @@
 """Runtime construction helpers."""
+
 from __future__ import annotations
 
 import logging
@@ -24,12 +25,21 @@ from services.user_profile_service import UserProfileService
 from utils.utils import format_traffic
 
 
-def create_runtime(*, logger: logging.Logger, proxy_port: int, url_cache_max_size: int, url_cache_ttl_seconds: int, allowed_user_ids: set[int]) -> Runtime:
+def create_runtime(
+    *,
+    logger: logging.Logger,
+    proxy_port: int,
+    url_cache_max_size: int,
+    url_cache_ttl_seconds: int,
+    allowed_user_ids: set[int],
+) -> Runtime:
     ws_manager = WorkspaceManager("data")
     access_state_store = AccessStateStore(os.path.join("data", "db", "access_state.json"))
     usage_audit_service = UsageAuditService(os.path.join("data", "logs", "usage_audit.jsonl"))
     user_profile_service = UserProfileService(os.path.join("data", "db", "user_profiles.json"))
-    alert_preference_service = AlertPreferenceService(os.path.join("data", "db", "alert_preferences.json"))
+    alert_preference_service = AlertPreferenceService(
+        os.path.join("data", "db", "alert_preferences.json")
+    )
     export_cache_service = ExportCacheService(
         index_path=os.path.join("data", "db", "export_cache_index.json"),
         cache_dir=os.path.join("data", "cache_exports"),

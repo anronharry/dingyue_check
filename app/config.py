@@ -3,6 +3,7 @@ Project feature flags and runtime configuration.
 
 All options can be overridden through environment variables in `.env`.
 """
+
 from __future__ import annotations
 
 import os
@@ -32,9 +33,30 @@ else:
     # SERVER_PROFILE = "256mb"
 
 _defaults = {
-    "256mb": dict(latency_tester=False, monitor=True, geo_lookup=False, concurrency=10, timeout=10, parse_limit=150),
-    "512mb": dict(latency_tester=True, monitor=True, geo_lookup=True, concurrency=25, timeout=12, parse_limit=300),
-    "1gb": dict(latency_tester=True, monitor=True, geo_lookup=True, concurrency=50, timeout=15, parse_limit=500),
+    "256mb": dict(
+        latency_tester=False,
+        monitor=True,
+        geo_lookup=False,
+        concurrency=10,
+        timeout=10,
+        parse_limit=150,
+    ),
+    "512mb": dict(
+        latency_tester=True,
+        monitor=True,
+        geo_lookup=True,
+        concurrency=25,
+        timeout=12,
+        parse_limit=300,
+    ),
+    "1gb": dict(
+        latency_tester=True,
+        monitor=True,
+        geo_lookup=True,
+        concurrency=50,
+        timeout=15,
+        parse_limit=500,
+    ),
 }
 _profile = _defaults.get(SERVER_PROFILE, _defaults["1gb"])
 
@@ -58,7 +80,9 @@ OWNER_ID: int = int(os.getenv("OWNER_ID", "0"))
 # ============================================================
 URL_CACHE_MAX_SIZE: int = int(os.getenv("URL_CACHE_MAX_SIZE", "5000"))
 URL_CACHE_TTL_SECONDS: int = int(os.getenv("URL_CACHE_TTL_SECONDS", "86400"))
-LATENCY_TEST_CONCURRENCY: int = int(os.getenv("LATENCY_TEST_CONCURRENCY", str(_profile["concurrency"])))
+LATENCY_TEST_CONCURRENCY: int = int(
+    os.getenv("LATENCY_TEST_CONCURRENCY", str(_profile["concurrency"]))
+)
 GEO_LOOKUP_MAX_WORKERS: int = int(os.getenv("GEO_LOOKUP_MAX_WORKERS", "8"))
 MAX_NODES_PER_PARSE: int = int(os.getenv("MAX_NODES_PER_PARSE", str(_profile["parse_limit"])))
 MAX_GEO_QUERIES: int = int(os.getenv("MAX_GEO_QUERIES", "50"))

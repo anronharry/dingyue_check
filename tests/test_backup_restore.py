@@ -22,8 +22,12 @@ class BackupRestoreTest(unittest.TestCase):
         Path("data/cache_exports").mkdir(parents=True, exist_ok=True)
         Path("data/db/subscriptions.json").write_text(json.dumps({"a": 1}), encoding="utf-8")
         Path("data/db/users.json").write_text(json.dumps([1]), encoding="utf-8")
-        Path("data/db/access_state.json").write_text(json.dumps({"allow_all_users": False}), encoding="utf-8")
-        Path("data/db/user_profiles.json").write_text(json.dumps({"1": {"user_id": 1}}), encoding="utf-8")
+        Path("data/db/access_state.json").write_text(
+            json.dumps({"allow_all_users": False}), encoding="utf-8"
+        )
+        Path("data/db/user_profiles.json").write_text(
+            json.dumps({"1": {"user_id": 1}}), encoding="utf-8"
+        )
         Path("data/db/export_cache_index.json").write_text(json.dumps({}), encoding="utf-8")
         Path("data/logs/usage_audit.jsonl").write_text('{"a":1}\n', encoding="utf-8")
         Path("data/cache_exports/cache.yaml").write_text("proxies: []", encoding="utf-8")

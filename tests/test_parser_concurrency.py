@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import unittest
@@ -8,7 +8,9 @@ from core.parser import SubscriptionParser
 
 class _CountingParser(SubscriptionParser):
     def __init__(self):
-        super().__init__(max_parse_concurrency=2, success_cache_ttl_seconds=30, success_cache_max_size=32)
+        super().__init__(
+            max_parse_concurrency=2, success_cache_ttl_seconds=30, success_cache_max_size=32
+        )
         self.download_calls = 0
 
     async def _download_subscription(self, url):
@@ -17,7 +19,11 @@ class _CountingParser(SubscriptionParser):
         return "trojan://password@example.org:443#JP01", {}
 
     async def _analyze_nodes(self, nodes):
-        return {"protocols": {"trojan": len(nodes)}, "countries": {"其他": len(nodes)}, "locations": []}
+        return {
+            "protocols": {"trojan": len(nodes)},
+            "countries": {"其他": len(nodes)},
+            "locations": [],
+        }
 
 
 class ParserConcurrencyTest(unittest.IsolatedAsyncioTestCase):

@@ -1,4 +1,5 @@
 """Persistent runtime access mode flags."""
+
 from __future__ import annotations
 
 
@@ -24,15 +25,22 @@ class AccessStateStore:
             with open(self.path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             self.allow_all_users = bool(data.get("allow_all_users", False))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Access state file is corrupted: {self.path}") from exc
+        except OSError as exc:
+            raise RuntimeError(f"Failed to read access state file: {self.path}") from exc
+        except UnicodeDecodeError as exc:
+            raise RuntimeError(f"Access state file is not valid UTF-8: {self.path}") from exc
         except Exception as exc:
-            logger.error("加载访问控制状态失败: %s", exc)
-            self.allow_all_users = False
+            raise RuntimeError(f"Access state file is invalid: {self.path}") from exc
 
     def _save(self) -> bool:
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             with open(self.path, "w", encoding="utf-8") as f:
-                json.dump({"allow_all_users": self.allow_all_users}, f, ensure_ascii=False, indent=2)
+                json.dump(
+                    {"allow_all_users": self.allow_all_users}, f, ensure_ascii=False, indent=2
+                )
             return True
         except Exception as exc:
             logger.error("保存访问控制状态失败: %s", exc)

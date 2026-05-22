@@ -1,4 +1,5 @@
 """File parsing helpers for TXT/YAML node lists and subscription links."""
+
 from __future__ import annotations
 
 import base64
@@ -71,7 +72,9 @@ class FileHandler:
             if not parsed_node:
                 continue
 
-            parsed_node["protocol"] = parsed_node.get("protocol") or parsed_node.get("type", "unknown")
+            parsed_node["protocol"] = parsed_node.get("protocol") or parsed_node.get(
+                "type", "unknown"
+            )
             parsed_node["raw"] = line
             parsed_node["name"] = parsed_node.get("name") or FileHandler._extract_node_name(line)
             nodes.append(parsed_node)
@@ -103,7 +106,9 @@ class FileHandler:
                     port = port or int(candidate_port)
 
         if not server or not port:
-            logger.debug("Skip untestable %s node because server/port is missing: %s", protocol, line)
+            logger.debug(
+                "Skip untestable %s node because server/port is missing: %s", protocol, line
+            )
             return {
                 "protocol": protocol,
                 "name": FileHandler._extract_node_name(line),

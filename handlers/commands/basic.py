@@ -1,4 +1,5 @@
 """Basic user command handlers built from injected dependencies."""
+
 from __future__ import annotations
 
 from services.report_service import build_help_message, build_start_message, build_stats_message
@@ -10,7 +11,9 @@ def make_start_command(*, is_authorized, is_owner, send_no_permission_msg, logge
             logger.warning("未授权访问 /start，用户 ID: %s", update.effective_user.id)
             await send_no_permission_msg(update)
             return
-        await update.message.reply_text(build_start_message(owner_mode=is_owner(update)), parse_mode="HTML")
+        await update.message.reply_text(
+            build_start_message(owner_mode=is_owner(update)), parse_mode="HTML"
+        )
 
     return start_command
 

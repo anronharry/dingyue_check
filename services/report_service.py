@@ -1,4 +1,5 @@
 """用户侧文案报表构建器。"""
+
 from __future__ import annotations
 
 import logging
@@ -12,26 +13,28 @@ def build_start_message(*, owner_mode: bool) -> str:
     owner_tip = ""
     if owner_mode:
         owner_tip = (
-            "\n<b>管理员增强功能</b>\n"
-            "你还可以管理授权用户，并查看全部用户上传和检测过的订阅。"
+            "\n<b>管理员入口</b>\n高频运维可用 /checkall 和 /backup；低频管理请进入 Web Admin。"
         )
 
     return f"""
-<b>欢迎使用订阅转换与检测机器人</b>
+<b>欢迎使用 dingyue-check</b>
 
-我可以帮你完成 3 件事：
-1) 发送<b>订阅链接</b>，帮你检测是否可用
-2) 上传<b>TXT / YAML 文件</b>，帮你互相转换
-3) 自动提醒<b>即将到期</b>和<b>低流量</b>订阅
+主路径很简单：
+1) 发送<b>订阅链接</b>，自动检查并保存
+2) 使用 <code>/list</code> 管理订阅和标签
+3) 使用 <code>/check</code> 复查订阅状态
 
-<b>快速使用</b>
+也可以：
+上传 TXT / YAML 文件做节点转换
+查看即将到期或低流量订阅提醒
+
+<b>直接开始</b>
 直接发送订阅链接
-直接上传 TXT / YAML 文件
-直接粘贴节点文本（如 `vmess://`、`ss://`）
+直接上传 TXT / YAML 文件或粘贴节点文本
 
 <b>常用命令</b>
-/check - 检测我的订阅状态
 /list - 查看我的订阅
+/check - 检测我的订阅状态
 /to_yaml - TXT 节点转 YAML
 /to_txt - YAML 转 TXT
 /help - 查看完整帮助{owner_tip}
@@ -44,31 +47,27 @@ def build_help_message(*, owner_mode: bool) -> str:
     message = """
 <b>使用帮助</b>
 
-<b>一、日常怎么用</b>
-发送订阅链接：自动解析并保存到你的订阅列表
-上传 TXT 文件：自动识别是“订阅链接列表”还是“节点列表”
-上传 YAML 文件：可分析内容，或配合命令转换为 TXT
-粘贴节点文本：自动识别并统计节点数量与协议分布
+<b>一、主路径</b>
+发送订阅链接：自动解析、检查并保存到你的订阅列表
+/list：查看订阅，继续复查、打标签或删除
+/check：复查全部订阅；/check [标签] 只检查某个标签
 
-<b>二、最常用命令</b>
+<b>二、常用命令</b>
+/list - 查看订阅列表
 /check - 检测我的全部订阅
-/check [标签] - 仅检测某个标签下的订阅
-/list - 查看订阅列表，并可直接重新检测 / 加标签 / 删除
 /stats - 查看我的订阅统计
+/delete - 查看删除帮助
 
 <b>三、格式转换</b>
-/to_yaml - 回复一个 TXT 文件使用，将节点列表转为 Clash YAML
-/to_txt - 回复一个 YAML 文件使用，将配置转为明文 TXT 节点列表
+/to_yaml - 回复 TXT 文件，将节点列表转为 Clash YAML
+/to_txt - 回复 YAML 文件，将配置转为 TXT 节点列表
 
-<b>四、深度检测</b>
-/deepcheck - 回复一个 TXT / YAML 文件使用，做更深入的节点连通性测试
+<b>四、检测边界</b>
+/check 主要检查订阅状态、流量、到期和节点数量
+节点连通性测试是显式操作，不会在每次 /check 中重跑
+/deepcheck 仅在回复 TXT / YAML 文件时做更深入的节点测试
 
-<b>五、删除与整理</b>
-/delete - 查看删除帮助
-/delete &lt;订阅链接&gt; - 删除指定订阅
-/list 与检测结果下方按钮也支持快捷操作
-
-<b>六、自动预警规则</b>
+<b>五、自动预警规则</b>
 到期时间 <= 3 天，会触发到期预警
 剩余流量 < 10% 或低于 5 GB，会触发流量预警
 /check 结果中的“需关注”与自动预警使用同一规则
@@ -77,14 +76,10 @@ def build_help_message(*, owner_mode: bool) -> str:
         message += """
 
 <b>七、管理员增强功能</b>
-/adduser /deluser /listusers - 管理授权用户
-/allowall /denyall - 一键切换公开访问模式
-/usageaudit - 查看最近谁用过机器人、检测了哪些链接
 /checkall - 检测所有用户订阅
-/globallist - 查看全局订阅与剩余流量
-/broadcast - 向所有授权用户发送通知
-/export /import - 导出或导入订阅数据库
 /backup /restore - 备份与恢复完整数据
+/broadcast - 向授权用户发送通知
+授权、审计、导出、全局订阅和聚合订阅等低频管理动作建议在 Web Admin 中完成
 """.rstrip()
     return message
 

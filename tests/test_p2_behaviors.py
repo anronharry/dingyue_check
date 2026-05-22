@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
-from handlers.commands.admin import make_checkall_command
+from handlers.commands.admin import make_checkall_command, make_owner_panel_command
 from handlers.commands.basic import make_start_command
 from services.usage_audit_service import UsageAuditService
 
@@ -115,8 +115,12 @@ class P2BehaviorTest(unittest.IsolatedAsyncioTestCase):
             get_parser=get_parser,
             make_sub_keyboard=lambda url: url,
             admin_service=SimpleNamespace(
-                to_batch_result=lambda results: SimpleNamespace(total=len(results), success=results, failed=[]),
-                user_profile_service=SimpleNamespace(format_user_identity=lambda uid: f"user-{uid}"),
+                to_batch_result=lambda results: SimpleNamespace(
+                    total=len(results), success=results, failed=[]
+                ),
+                user_profile_service=SimpleNamespace(
+                    format_user_identity=lambda uid: f"user-{uid}"
+                ),
             ),
             usage_audit_service=audit,
             schedule_auto_delete=lambda *args, **kwargs: None,
@@ -128,6 +132,23 @@ class P2BehaviorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(audit.calls), 1)
         self.assertEqual(audit.calls[0]["source"], "/checkall")
         self.assertEqual(audit.calls[0]["urls"], ["https://example.com/sub"])
+
+    async def test_owner_panel_points_low_frequency_views_to_web_admin(self):
+        cmd = make_owner_panel_command(
+            is_owner=lambda update: True,
+            owner_only_msg="owner only",
+            admin_service=SimpleNamespace(),
+            schedule_auto_delete=lambda *args, **kwargs: None,
+        )
+
+        update = _FakeUpdate(user_id=42)
+        with patch.dict(os.environ, {"WEB_ADMIN_PUBLIC_URL": "https://example.com/admin"}):
+            await cmd(update, _FakeContext())
+
+        text = update.message.replies[-1].text
+        self.assertIn("低频管理视图已迁移到 Web Admin", text)
+        self.assertIn("https://example.com/admin", text)
+        self.assertIn("/checkall", text)
 
     def test_usage_audit_service_keeps_full_url_and_trims(self):
         tmpdir = Path("data/test_tmp")
@@ -166,7 +187,9 @@ class P2BehaviorTest(unittest.IsolatedAsyncioTestCase):
             user = SimpleNamespace(id=7, username="u", full_name="User")
             service.log_check(user=user, urls=["https://example.com/sub/0"], source="test")
 
-            with patch.object(service, "_write_lines_locked", wraps=service._write_lines_locked) as mocked_write:
+            with patch.object(
+                service, "_write_lines_locked", wraps=service._write_lines_locked
+            ) as mocked_write:
                 service.log_check(user=user, urls=["https://example.com/sub/1"], source="test")
 
             self.assertEqual(mocked_write.call_count, 1)

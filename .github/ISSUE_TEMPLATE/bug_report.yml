@@ -1,0 +1,80 @@
+name: Bug report
+description: Report a reproducible defect.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not paste tokens, real subscription links, API keys, user IDs, chat IDs, or other private data. Redact secrets in logs and examples.
+  - type: input
+    id: environment
+    attributes:
+      label: Runtime environment
+      description: OS, architecture, and shell or service manager.
+      placeholder: Windows 11 / Ubuntu 22.04, PowerShell / systemd
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: Python 3.12.10
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment method
+      options:
+        - Local virtualenv
+        - systemd or service manager
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reproducible sequence. Use redacted sample URLs only.
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log excerpt
+      description: Redact tokens, subscription URLs, user IDs, chat IDs, and private hostnames before submitting.
+      render: text
+  - type: dropdown
+    id: web-admin
+    attributes:
+      label: Does this involve Web Admin?
+      options:
+        - "No"
+        - "Yes"
+        - "Not sure"
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I have removed tokens, real subscription links, credentials, and private user data.
+          required: true

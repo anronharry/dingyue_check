@@ -1,4 +1,5 @@
 """Full-state backup and restore helpers."""
+
 from __future__ import annotations
 
 import json
@@ -67,7 +68,7 @@ class BackupService:
             return None, None
         if os.path.isabs(normalized):
             return None, None
-        if normalized == ".." or normalized.startswith(".."+os.sep):
+        if normalized == ".." or normalized.startswith(".." + os.sep):
             return None, None
 
         first_part = normalized.split(os.sep, 1)[0]
@@ -115,7 +116,9 @@ class BackupService:
             raise ValueError(
                 f"Backup package too large: {len(content_bytes)} > {self.max_restore_total_bytes}"
             )
-        tmp_path = os.path.join(self.backups_dir, f"restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip")
+        tmp_path = os.path.join(
+            self.backups_dir, f"restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        )
         with open(tmp_path, "wb") as handle:
             handle.write(content_bytes)
         try:

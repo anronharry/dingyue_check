@@ -1,0 +1,1 @@
+"""Owner aggregate subscription modules."""

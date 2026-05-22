@@ -1,4 +1,5 @@
 """Access control service decoupled from Telegram handlers."""
+
 from __future__ import annotations
 
 
@@ -6,7 +7,9 @@ from app.constants import NO_PERMISSION_ALERT, NO_PERMISSION_MSG
 
 
 class AccessService:
-    def __init__(self, user_manager, access_state_store, static_allowed_user_ids: set[int] | None = None):
+    def __init__(
+        self, user_manager, access_state_store, static_allowed_user_ids: set[int] | None = None
+    ):
         self.user_manager = user_manager
         self.access_state_store = access_state_store
         self.static_allowed_user_ids = static_allowed_user_ids or set()

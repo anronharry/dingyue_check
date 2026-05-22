@@ -1,4 +1,5 @@
 """Periodic cache cleanup job."""
+
 from __future__ import annotations
 
 

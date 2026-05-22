@@ -1,4 +1,5 @@
 """Formatting helpers shared by renderers and legacy modules."""
+
 from __future__ import annotations
 
 

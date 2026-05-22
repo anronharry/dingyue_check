@@ -118,7 +118,14 @@ class SubscriptionCheckServiceConcurrencyTest(unittest.IsolatedAsyncioTestCase):
         svc = SubscriptionCheckService(
             get_parser=get_parser,
             get_storage=lambda: store,
-            logger=type("L", (), {"error": staticmethod(lambda *a, **k: None), "warning": staticmethod(lambda *a, **k: None)})(),
+            logger=type(
+                "L",
+                (),
+                {
+                    "error": staticmethod(lambda *a, **k: None),
+                    "warning": staticmethod(lambda *a, **k: None),
+                },
+            )(),
             global_concurrency=4,
             user_concurrency=2,
             retry_attempts=2,
@@ -142,7 +149,14 @@ class SubscriptionCheckServiceConcurrencyTest(unittest.IsolatedAsyncioTestCase):
         svc = SubscriptionCheckService(
             get_parser=get_parser,
             get_storage=lambda: store,
-            logger=type("L", (), {"error": staticmethod(lambda *a, **k: None), "warning": staticmethod(lambda *a, **k: None)})(),
+            logger=type(
+                "L",
+                (),
+                {
+                    "error": staticmethod(lambda *a, **k: None),
+                    "warning": staticmethod(lambda *a, **k: None),
+                },
+            )(),
             global_concurrency=2,
             user_concurrency=1,
             retry_attempts=1,

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
@@ -24,7 +24,13 @@ class ResultCollapseTest(unittest.IsolatedAsyncioTestCase):
 
         class _DocService:
             async def parse_subscription_urls(self, *, subscription_urls, owner_uid):
-                return [{"status": "success", "url": subscription_urls[0], "data": {"name": "A", "remaining": 1, "node_count": 2}}]
+                return [
+                    {
+                        "status": "success",
+                        "url": subscription_urls[0],
+                        "data": {"name": "A", "remaining": 1, "node_count": 2},
+                    }
+                ]
 
         def schedule_result_collapse(**kwargs):
             scheduled.append(kwargs)
@@ -35,7 +41,9 @@ class ResultCollapseTest(unittest.IsolatedAsyncioTestCase):
             document_service=_DocService(),
             format_subscription_info=lambda info, url=None: f"verbose:{info['name']}",
             make_sub_keyboard=lambda url, owner_mode=False: f"kb:{url}:{owner_mode}",
-            usage_audit_service=SimpleNamespace(log_check=lambda **kwargs: audit_calls.append(kwargs)),
+            usage_audit_service=SimpleNamespace(
+                log_check=lambda **kwargs: audit_calls.append(kwargs)
+            ),
             logger=SimpleNamespace(warning=lambda *a, **k: None, error=lambda *a, **k: None),
         )
         update = SimpleNamespace(effective_user=SimpleNamespace(id=7), message=_FakeMessage())

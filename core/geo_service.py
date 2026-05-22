@@ -3,6 +3,7 @@ IP 地理位置查询服务。
 
 使用 ip-api.com 免费接口查询 IP 归属地，并带本地缓存。
 """
+
 from __future__ import annotations
 
 
@@ -71,7 +72,11 @@ class GeoLocationService:
         if not self._cache_dirty:
             return
 
-        should_save = force or self._cache_new_entries >= 20 or (time.monotonic() - self._last_cache_save) >= 30
+        should_save = (
+            force
+            or self._cache_new_entries >= 20
+            or (time.monotonic() - self._last_cache_save) >= 30
+        )
         if not should_save:
             return
 

@@ -1,4 +1,5 @@
 """Temporary export artifact cache for parsed subscriptions and conversion outputs."""
+
 from __future__ import annotations
 
 import hashlib
@@ -61,11 +62,17 @@ class ExportCacheService:
             return None
 
         source_key = self.make_source_key(source, owner_uid=owner_uid)
-        yaml_path, txt_path, raw_path = self._build_paths(owner_uid=owner_uid, source_key=source_key)
+        yaml_path, txt_path, raw_path = self._build_paths(
+            owner_uid=owner_uid, source_key=source_key
+        )
         content_format = (result.get("_content_format") or "unknown").lower()
         nodes = result.get("_normalized_nodes") or result.get("_raw_nodes") or []
-        yaml_text = self._build_yaml_text(content_format=content_format, raw_content=raw_content, nodes=nodes)
-        txt_text = self._build_txt_text(content_format=content_format, raw_content=raw_content, nodes=nodes)
+        yaml_text = self._build_yaml_text(
+            content_format=content_format, raw_content=raw_content, nodes=nodes
+        )
+        txt_text = self._build_txt_text(
+            content_format=content_format, raw_content=raw_content, nodes=nodes
+        )
         self._write_text(yaml_path, yaml_text)
         self._write_text(txt_path, txt_text)
         self._write_text(raw_path, str(raw_content))
@@ -84,9 +91,18 @@ class ExportCacheService:
         self.store.save()
         return self._index[source_key]
 
-    def save_generated_artifact(self, *, owner_uid: int, source: str, yaml_text: str | None = None, txt_text: str | None = None) -> dict:
+    def save_generated_artifact(
+        self,
+        *,
+        owner_uid: int,
+        source: str,
+        yaml_text: str | None = None,
+        txt_text: str | None = None,
+    ) -> dict:
         source_key = self.make_source_key(source, owner_uid=owner_uid)
-        yaml_path, txt_path, raw_path = self._build_paths(owner_uid=owner_uid, source_key=source_key)
+        yaml_path, txt_path, raw_path = self._build_paths(
+            owner_uid=owner_uid, source_key=source_key
+        )
         now = self._now()
 
         if yaml_text is not None:
@@ -218,7 +234,9 @@ class ExportCacheService:
             "last_exported_at": entry.get("last_exported_at"),
         }
 
-    def resolve_export_path(self, *, owner_uid: int, source: str, fmt: str, requester_uid: int, is_owner: bool) -> tuple[str | None, str | None]:
+    def resolve_export_path(
+        self, *, owner_uid: int, source: str, fmt: str, requester_uid: int, is_owner: bool
+    ) -> tuple[str | None, str | None]:
         entry = self.get_entry(owner_uid=owner_uid, source=source)
         if not entry:
             return None, ERROR_CACHE_MISSING
@@ -234,7 +252,14 @@ class ExportCacheService:
         self.store.save()
         return path, None
 
-    def delete_entry(self, *, owner_uid: int, source: str, requester_uid: int | None = None, is_owner: bool = False) -> tuple[bool, str | None]:
+    def delete_entry(
+        self,
+        *,
+        owner_uid: int,
+        source: str,
+        requester_uid: int | None = None,
+        is_owner: bool = False,
+    ) -> tuple[bool, str | None]:
         source_key = self.make_source_key(source, owner_uid=owner_uid)
         entry = self._index.get(source_key)
         if not entry:

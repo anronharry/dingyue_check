@@ -1,4 +1,5 @@
 """Owner-facing usage audit logging."""
+
 from __future__ import annotations
 
 import asyncio
@@ -210,14 +211,14 @@ class UsageAuditService:
 
         if not os.path.exists(self.path):
             return
-        
+
         chunk_size = 64 * 1024
-        async with aiofiles.open(self.path, 'rb') as f:
+        async with aiofiles.open(self.path, "rb") as f:
             await f.seek(0, os.SEEK_END)
             filesize = await f.tell()
             pointer = filesize
             buffer = b""
-            
+
             while pointer > 0:
                 step = min(pointer, chunk_size)
                 pointer -= step
@@ -225,7 +226,7 @@ class UsageAuditService:
                 chunk = await f.read(step)
                 buffer = chunk + buffer
                 lines = buffer.split(b"\n")
-                
+
                 # The first element might be incomplete if it's not the start of the file
                 # Save it for the next iteration
                 if pointer > 0:
@@ -233,13 +234,13 @@ class UsageAuditService:
                     lines = lines[1:]
                 else:
                     buffer = b""
-                
+
                 for line in reversed(lines):
                     line = line.strip()
                     if not line:
                         continue
                     try:
-                        yield json.loads(line.decode('utf-8'))
+                        yield json.loads(line.decode("utf-8"))
                     except (json.JSONDecodeError, UnicodeDecodeError):
                         continue
 
@@ -253,7 +254,11 @@ class UsageAuditService:
         records: list[dict] | None = None,
         predicate=None,
     ) -> dict:
-        source_records = list(records) if records is not None else list(reversed(self.get_recent_records(limit=self.max_read_records)))
+        source_records = (
+            list(records)
+            if records is not None
+            else list(reversed(self.get_recent_records(limit=self.max_read_records)))
+        )
         if mode == "owner":
             filtered = [row for row in source_records if row.get("user_id") == owner_id]
         elif mode == "all":
@@ -282,7 +287,7 @@ class UsageAuditService:
         mode: str = "others",
         page: int = 1,
         page_size: int = 5,
-        predicate=None
+        predicate=None,
     ) -> dict:
         """
         Efficiently query records with filtering and pagination without loading everything.
@@ -292,11 +297,11 @@ class UsageAuditService:
         safe_size = max(1, page_size)
         start_idx = (safe_page - 1) * safe_size
         end_idx = start_idx + safe_size
-        
+
         scanned_count = 0
         filtered_count = 0
         page_records = []
-        
+
         async for row in self._yield_records_reverse():
             scanned_count += 1
             if scanned_count > self.max_read_records:
@@ -305,21 +310,23 @@ class UsageAuditService:
             uid = row.get("user_id")
             # Apply mode filter first
             if mode == "owner":
-                if uid != owner_id: continue
+                if uid != owner_id:
+                    continue
             elif mode == "others":
-                if uid == owner_id: continue
+                if uid == owner_id:
+                    continue
             # Else 'all', no filter
-            
+
             if predicate and not predicate(row):
                 continue
-            
+
             if filtered_count >= start_idx and filtered_count < end_idx:
                 page_records.append(row)
-            
+
             filtered_count += 1
 
         total_pages = max(1, (filtered_count + safe_size - 1) // safe_size)
-        
+
         return {
             "mode": mode,
             "page": safe_page,
@@ -338,7 +345,11 @@ class UsageAuditService:
         include_owner: bool = True,
         records: list[dict] | None = None,
     ) -> list[dict]:
-        source_records = list(records) if records is not None else list(reversed(self.get_recent_records(limit=self.max_read_records)))
+        source_records = (
+            list(records)
+            if records is not None
+            else list(reversed(self.get_recent_records(limit=self.max_read_records)))
+        )
         filtered = []
         for row in source_records:
             source = row.get("source", "")

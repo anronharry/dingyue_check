@@ -1,292 +1,140 @@
-# Telegram Subscription Bot
+# dingyue-check
 
-一个适合部署在云服务器上的 Telegram 订阅检测与转换机器人。  
-核心目标是把「订阅可用性检查、流量到期查看、节点文件转换、缓存导出、基础运维」统一在 TG 内完成。
+[![CI](https://github.com/anronharry/dingyue_check/actions/workflows/ci.yml/badge.svg)](https://github.com/anronharry/dingyue_check/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/anronharry/dingyue_check)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
 
-## 1. 功能概览
+`dingyue-check` 是一个自托管 Telegram 订阅检查与节点转换工具，包含可选 Web Admin，用于管理用户、订阅、审计、导出和 Owner 聚合订阅。
 
-- 检测订阅链接并显示流量、到期时间、节点数量
-- 支持 `TXT` / `YAML` 节点文件分析与互转
-- 支持导出缓存（48 小时有效）
-- 支持节点快速连通性检查
-- 支持 Owner 管理功能：授权、审计、广播、全局巡检
-- 支持 `/backup` 与 `/restore` 进行状态迁移
-- 内置测试用例，支持 `pytest`
+## Features
 
-### 1.1 预警与提醒策略（新增）
+- 检查订阅链接，展示流量、到期时间和节点数量。
+- 解析并转换 `TXT` / `YAML` 节点文件。
+- 执行节点连通性检查和 Owner 全局巡检。
+- 管理授权用户、审计记录、广播通知、备份与恢复。
+- 提供可选 Web Admin 和 Owner 聚合订阅入口。
 
-- 自动预警消息支持用户级提醒偏好：可在消息内点击 `🔕 关闭预警提醒`，后续不再推送同类预警。
-- 关闭后可通过 `🔔 恢复预警提醒`重新开启，状态会持久化保存，重启后仍生效。
-- 该策略用于降低重复告警打扰，避免用户因高频预警而忽略真正重要的风险信号。
-## 2. 环境要求
+## Quick Start
 
-- Linux 云服务器（推荐 Ubuntu 22.04+）
-- Python 3.10+
-- Git
-- 一个 Telegram Bot Token（来自 `@BotFather`）
-- Owner 的 Telegram 用户 ID（可通过 `@userinfobot` 获取）
-
-## 3. 首次部署（云服务器）
-
-### 3.1 克隆项目
+准备：Python 3.10-3.12、Git、Telegram Bot Token、Owner 的 Telegram 数字用户 ID。
 
 ```bash
 git clone https://github.com/anronharry/dingyue_check.git
 cd dingyue_check
-```
-
-### 3.2 配置环境变量
-
-```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -r requirements.txt
 cp .env.example .env
 ```
 
-至少填写：
+Windows PowerShell 使用：
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -U pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+编辑 `.env`，至少填写：
 
 ```env
 TELEGRAM_BOT_TOKEN=你的Token
 OWNER_ID=你的Telegram数字ID
-APP_RUN_MODE=legacy_polling
-ENABLE_WEB_ADMIN=false
-WEB_ADMIN_HOST=127.0.0.1
-WEB_ADMIN_PORT=8080
-WEB_ADMIN_TOKEN=请设置一个高强度随机字符串
-WEB_ADMIN_PUBLIC_URL=http://127.0.0.1:8080/admin
-WEB_ADMIN_USERNAME=admin
-WEB_ADMIN_SESSION_TTL_SECONDS=28800
-WEB_ADMIN_ALLOW_HEADER_TOKEN=false
-WEB_ADMIN_COOKIE_SECURE=true
-WEB_ADMIN_TRUST_PROXY=false
-WEB_ADMIN_LOGIN_WINDOW_SECONDS=600
-WEB_ADMIN_LOGIN_MAX_ATTEMPTS=10
-WEB_ADMIN_REDIS_URL=
 ```
 
-说明：
-- `WEB_ADMIN_TOKEN` 作为登录口令使用，不要设置弱口令。
-- `WEB_ADMIN_USERNAME` 默认为 `admin`，建议在生产环境改名。
-- `WEB_ADMIN_ALLOW_HEADER_TOKEN=false` 为默认更安全配置（仅网页登录）；若有脚本访问需求再设为 `true`。
-- `WEB_ADMIN_COOKIE_SECURE=true` 为默认更安全配置（仅 HTTPS 发送 Cookie）；仅在纯 HTTP 临时环境下再手动设为 `false`。
-- `WEB_ADMIN_TRUST_PROXY=true` 时会使用 `X-Forwarded-For` 作为限流来源 IP（仅在可信反向代理后开启）。
-- `WEB_ADMIN_LOGIN_WINDOW_SECONDS` + `WEB_ADMIN_LOGIN_MAX_ATTEMPTS` 控制登录限流窗口与次数。
-- `WEB_ADMIN_REDIS_URL` 配置后将使用 Redis 保存会话与登录限流状态（多实例/重启更稳）；留空则使用内存后端。
-- 启动时会输出 Web 安全姿态告警（例如 `cookie_secure` 与 `http://` 地址冲突）。
-- `GET /healthz` 会返回当前 Web 安全关键配置，便于巡检。
+启动：
 
-### 3.3 启动（推荐用脚本）
+```bash
+python main.py
+```
+
+也可以运行 `bash start.sh`，脚本会创建虚拟环境、安装依赖并启动。启动后在 Telegram 中向 Bot 发送 `/start` 或 `/help` 验证。
+
+## Configuration
+
+完整配置以 [.env.example](.env.example) 为准。生产环境不要提交 `.env`，也不要在 Issue 中粘贴真实 Token、订阅链接或导出数据。
+
+| Name | Required | Default | Notes |
+| ---- | -------- | ------- | ----- |
+| `TELEGRAM_BOT_TOKEN` | Yes | empty | Bot Token，来自 `@BotFather`。 |
+| `OWNER_ID` | Yes | `0` | Owner 的 Telegram 数字用户 ID。 |
+| `ALLOWED_USER_IDS` | No | empty | 逗号分隔的静态授权用户 ID。 |
+| `APP_RUN_MODE` | No | `legacy_polling` | Web Admin 建议使用 `unified_async`。 |
+| `ENABLE_WEB_ADMIN` | No | `false` | 是否启用 Web Admin。 |
+| `WEB_ADMIN_TOKEN` | Web enabled | empty | Web 登录口令和签名密钥。 |
+| `WEB_ADMIN_PUBLIC_URL` | No | empty | Bot 消息中展示的 Web Admin 地址。 |
+| `WEB_ADMIN_REDIS_URL` | No | empty | 为空使用内存会话；配置后 Redis 不可用会启动失败。 |
+
+布尔配置只接受 `1/0`、`true/false`、`yes/no`、`on/off`。用户显式配置非法值时会启动失败。
+
+## Web Admin
+
+Web Admin 默认关闭。启用时建议：
+
+```env
+APP_RUN_MODE=unified_async
+ENABLE_WEB_ADMIN=true
+WEB_ADMIN_HOST=127.0.0.1
+WEB_ADMIN_PORT=8080
+WEB_ADMIN_PUBLIC_URL=https://example.com/admin
+WEB_ADMIN_TOKEN=请设置高强度随机字符串
+```
+
+不要把 Web Admin 直接公开到公网，除非同时具备 HTTPS、强口令和来源 IP 限制。配置 `WEB_ADMIN_REDIS_URL` 后，Redis 依赖缺失、URL 错误或连接失败会启动失败；只有显式设置 `WEB_ADMIN_REDIS_ALLOW_MEMORY_FALLBACK=true` 才允许回退内存。
+
+## Common Commands
+
+- `/check`：检测自己的订阅。
+- `/check <tag>`：按标签检测。
+- `/list`：查看订阅列表。
+- `/stats`：查看统计。
+- `/delete`：删除订阅。
+- `/to_yaml`、`/to_txt`：节点文件格式转换。
+- `/checkall`、`/broadcast`、`/backup`、`/restore`：Owner 运维命令。
+
+## Deployment
+
+首次部署或小规模自托管可以直接使用：
 
 ```bash
 chmod +x start.sh
 bash start.sh
 ```
 
-`start.sh` 会自动检查 Python、创建虚拟环境、安装依赖并启动。
-
-## 4. 云服务器更新（重点）
-
-项目提供了自动更新脚本：`update_bot.sh`。
-
-### 4.1 一键更新命令
+更新已有部署：
 
 ```bash
-cd /你的项目目录/dingyue_check
 chmod +x update_bot.sh
 bash update_bot.sh
 ```
 
-### 4.2 `update_bot.sh` 会做什么
+长期运行建议使用 systemd，`ExecStart` 指向项目虚拟环境里的 `python main.py`。`update_bot.sh` 会执行依赖安装、编译检查、测试、Web 配置预检查并重启进程。
 
-脚本按顺序执行：
-
-1. 进入项目目录
-2. 激活 `venv` 或 `.venv`（如果存在）
-3. 检查 `.env` 是否存在，并读取 Web 相关关键配置
-4. 停止旧进程（匹配 `python3 main.py`）
-5. `git pull --ff-only` 拉最新代码
-6. 安装依赖：`pip install -r requirements.txt`（失败会中断，不再吞错误）
-7. 编译检查：`python3 -m compileall app core handlers renderers services shared tests web main.py`
-8. 跑测试：优先 `pytest -q`，若环境未安装 pytest 则自动回退 `unittest discover`
-9. Web 配置预检查与告警：
-   - `ENABLE_WEB_ADMIN=true` 但 `APP_RUN_MODE!=unified_async` 会告警
-   - 配置 `WEB_ADMIN_REDIS_URL` 但缺少 `redis.asyncio` 依赖会告警（运行时回退内存后端）
-10. 后台重启：`nohup python3 main.py > bot.log 2>&1 &`
-11. 输出最近日志并做关键词告警扫描
-
-### 4.3 更新后如何确认成功
+## Development
 
 ```bash
-ps -ef | grep "python3 main.py" | grep -v grep
-tail -n 100 bot.log
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -r requirements-dev.txt
+python -m compileall app core handlers renderers services shared tests web main.py
+python -m pytest -q
+python -m ruff check .
+python -m ruff format --check .
 ```
 
-如果看到进程在、日志没有持续报错，通常表示更新成功。
+## Troubleshooting
 
-### 4.4 常见问题排查
+- 启动时报 Token 或 Owner 问题：确认已经复制 `.env.example` 为 `.env`，并填写真实 `TELEGRAM_BOT_TOKEN` 和数字 `OWNER_ID`。
+- 配置 Redis 后启动失败：修正 `WEB_ADMIN_REDIS_URL`、安装 Redis 依赖并确认 Redis 可连接。
+- JSON 状态文件损坏后启动失败：根据错误里的文件路径修复或从备份恢复，程序不会静默覆盖已有状态。
 
-- `Permission denied`：先执行 `chmod +x update_bot.sh`
-- `fatal: could not read Username`：服务器未配置 GitHub 凭据（PAT 或 SSH Key）
-- 测试失败导致中断：先本地修复后再部署
-- `ENABLE_WEB_ADMIN=true` 但 Web 没启动：检查 `.env` 是否设置 `APP_RUN_MODE=unified_async`
-- 配置了 `WEB_ADMIN_REDIS_URL` 但 healthz 显示 `auth_backend=memory`：确认已安装 `redis` 包且 Redis 地址可达
-- 启动失败：查看 `bot.log` 最后一百行
+## Security
 
-### 4.5 update_bot.sh 测试策略
+不要提交 `.env`、`data/`、日志、缓存文件、真实 Token 或真实订阅链接。安全问题处理方式见 [SECURITY.md](SECURITY.md)。贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-- 默认执行测试：UPDATE_RUN_TESTS=true
-- 默认测试失败不阻塞启动：UPDATE_TESTS_STRICT=false
-- 严格模式：UPDATE_TESTS_STRICT=true bash update_bot.sh
-- 临时跳过测试：UPDATE_RUN_TESTS=false bash update_bot.sh
-
-## 5. 推荐生产部署方式（systemd）
-
-如果你长期运行在云端，建议改用 `systemd` 托管，而不是纯 `nohup`。
-
-示例服务文件 `/etc/systemd/system/dingyue-bot.service`：
-
-```ini
-[Unit]
-Description=Telegram Subscription Bot
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/dingyue_check
-ExecStart=/opt/dingyue_check/.venv/bin/python /opt/dingyue_check/main.py
-Restart=always
-RestartSec=5
-Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
-```
-
-启用与启动：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable dingyue-bot
-sudo systemctl start dingyue-bot
-sudo systemctl status dingyue-bot
-```
-
-查看日志：
-
-```bash
-sudo journalctl -u dingyue-bot -f
-```
-
-> 如果你采用 `systemd`，建议把 `update_bot.sh` 调整为“只更新代码与依赖，不再 `nohup` 启动”，然后改为 `systemctl restart dingyue-bot`。
-
-### 5.1 Web 控制台与端口开放（手机访问）
-
-1. 启用统一事件循环模式并开启 Web：
-```env
-APP_RUN_MODE=unified_async
-ENABLE_WEB_ADMIN=true
-WEB_ADMIN_HOST=0.0.0.0
-WEB_ADMIN_PORT=8080
-WEB_ADMIN_PUBLIC_URL=http://<你的服务器公网IP>:8080/admin
-```
-2. 云服务器安全组放行 `WEB_ADMIN_PORT`（例如 8080/TCP），来源建议限制为你的管理 IP 段。
-3. 服务器防火墙放行端口（Ubuntu `ufw` 示例）：
-```bash
-sudo ufw allow 8080/tcp
-sudo ufw status
-```
-4. 手机浏览器访问 `WEB_ADMIN_PUBLIC_URL`，输入 `WEB_ADMIN_USERNAME + WEB_ADMIN_TOKEN` 登录。
-5. 生产建议：
-   - 优先走 Nginx/Caddy 反代并启用 HTTPS。
-   - 将后台入口再加一层 IP 白名单。
-   - HTTPS 部署时设置 `WEB_ADMIN_COOKIE_SECURE=true`。
-   - 使用反代（Nginx/Caddy）时再设置 `WEB_ADMIN_TRUST_PROXY=true`。
-   - 若不需要脚本访问 API，设置 `WEB_ADMIN_ALLOW_HEADER_TOKEN=false`。
-
-## 6. 常用命令
-
-### 普通用户
-
-- `/start`：欢迎信息
-- `/help`：帮助信息
-- `/check`：检测自己的订阅
-- `/check <tag>`：按标签检测
-- `/list`：查看订阅列表
-- `/stats`：查看统计
-- `/delete`：删除订阅
-- `/to_yaml`：TXT 转 YAML
-- `/to_txt`：YAML 转 TXT
-
-### Owner
-
-- `/adduser <id>`：授权用户
-- `/deluser <id>`：取消授权
-- `/listusers`：授权列表
-- `/allowall` / `/denyall`：全员模式开关
-- `/ownerpanel`：已迁移到 Web（返回迁移提示）
-- `/usageaudit`：已迁移到 Web（返回迁移提示）
-- `/recentusers`：已迁移到 Web（返回迁移提示）
-- `/recentexports`：已迁移到 Web（返回迁移提示）
-- `/globallist`：已迁移到 Web（返回迁移提示）
-- `/checkall`：全局巡检
-- `/broadcast <content>`：广播通知
-- `/export` / `/import`：导入导出订阅数据
-- `/backup` / `/restore`：备份恢复
-
-## 7. 测试与质量检查
-
-```bash
-pytest -q
-python -m compileall app core handlers renderers services shared tests
-```
-
-## 8. 项目结构
-
-```text
-app/         应用装配与运行时
-core/        解析、存储、文件处理等核心能力
-handlers/    Telegram 命令、消息、回调入口
-renderers/   文本格式化与按钮构建
-services/    业务服务层（审计、备份、缓存等）
-shared/      公共工具
-tests/       自动化测试
-scripts/     辅助脚本
-```
-
-## 9. 安全建议
-
-- 不要提交 `.env`、`data/`、日志、缓存文件
-- 不要在 Issue 中贴 Token、订阅原始链接、带敏感参数的导出文件
-- 生产环境建议开启最小权限与防火墙策略
-- 建议定期执行 `/backup` 并异地保存
-
-## 10. 贡献与开源规范
-
-- 贡献指南：[CONTRIBUTING.md](CONTRIBUTING.md)
-- 安全策略：[SECURITY.md](SECURITY.md)
-
-## 11. 最近更新（UX 与管理能力）
-
-- 已提供轻量级 `aiohttp` Web 管理后台，并采用原生静态页面渲染。
-- Web 后台已支持独立登录页（`/admin/login`）与基于 Cookie 的会话鉴权。
-- 新增启动模式切换：
-  - `APP_RUN_MODE=legacy_polling`：默认模式，保持历史行为。
-  - `APP_RUN_MODE=unified_async`：Bot 与 Web 在同一事件循环运行。
-- Web 管理 API 支持 Cookie 会话；当 `WEB_ADMIN_ALLOW_HEADER_TOKEN=true` 时可选支持 `X-Admin-Token`：
-  - `/api/v1/system/overview`
-  - `/api/v1/users/recent`
-  - `/api/v1/exports/recent`
-  - `/api/v1/audit/summary`
-  - `/api/v1/subscriptions/global`
-- Telegram 侧 Owner 查询类命令已软迁移到 Web，当前返回迁移提示：
-  - `/ownerpanel`、`/usageaudit`、`/recentusers`、`/recentexports`、`/globallist`
-- 迁移提示访问地址由 `WEB_ADMIN_PUBLIC_URL` 控制。
-- 回调路由安全加固：回调键由 URL 派生短哈希改为随机短期令牌，降低碰撞导致误操作的风险。
-- 预警提醒策略增强：支持用户级 `关闭提醒 / 恢复提醒`，并持久化保存偏好状态。
-## 12. License
+## License
 
 MIT License，见 [LICENSE](LICENSE)。
-
-
-
-
-

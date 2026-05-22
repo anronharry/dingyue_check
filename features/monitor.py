@@ -1,4 +1,5 @@
 """后台定时巡检与预警模块。"""
+
 from __future__ import annotations
 
 import logging
@@ -97,7 +98,12 @@ async def check_subscriptions_job(
         except Exception as exc:
             logger.error("推送预警失败 user_id=%s: %s", user_id, exc)
 
-    logger.info("巡检完成，共发现 %s 条预警，涉及 %s 个用户，成功推送 %s 个用户。", total_alerts, len(alerts_by_user), pushed_users)
+    logger.info(
+        "巡检完成，共发现 %s 条预警，涉及 %s 个用户，成功推送 %s 个用户。",
+        total_alerts,
+        len(alerts_by_user),
+        pushed_users,
+    )
 
 
 def configure_monitor(

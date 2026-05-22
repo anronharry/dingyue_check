@@ -2,6 +2,7 @@
 Access Control Manager
 负责持久化管理授权用户名单，并处理四级权限校验。
 """
+
 from __future__ import annotations
 
 
@@ -12,9 +13,10 @@ from typing import Set
 
 logger = logging.getLogger(__name__)
 
+
 class UserManager:
     """管理授权用户名单"""
-    
+
     def __init__(self, db_path: str, owner_id: int):
         self.db_path = db_path
         self.owner_id = owner_id
@@ -25,13 +27,22 @@ class UserManager:
         """从文件加载授权用户"""
         if os.path.exists(self.db_path):
             try:
-                with open(self.db_path, 'r', encoding='utf-8') as f:
+                with open(self.db_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if isinstance(data, list):
-                        self.authorized_users = set(data)
-            except Exception as e:
-                logger.error(f"加载授权用户失败: {e}")
-        
+                if not isinstance(data, list):
+                    raise RuntimeError(
+                        f"Authorized users file must contain a JSON list: {self.db_path}"
+                    )
+                self.authorized_users = set(data)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"Authorized users file is corrupted: {self.db_path}") from exc
+            except OSError as exc:
+                raise RuntimeError(f"Failed to read authorized users file: {self.db_path}") from exc
+            except UnicodeDecodeError as exc:
+                raise RuntimeError(
+                    f"Authorized users file is not valid UTF-8: {self.db_path}"
+                ) from exc
+
         # 确保 Owner 始终在授权名单中
         if self.owner_id > 0:
             self.authorized_users.add(self.owner_id)
@@ -40,7 +51,7 @@ class UserManager:
         """保存授权用户到文件"""
         try:
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-            with open(self.db_path, 'w', encoding='utf-8') as f:
+            with open(self.db_path, "w", encoding="utf-8") as f:
                 json.dump(list(self.authorized_users), f, indent=2)
         except Exception as e:
             logger.error(f"保存授权用户失败: {e}")
@@ -56,7 +67,7 @@ class UserManager:
     def remove_user(self, user_id: int) -> bool:
         """移除授权用户"""
         if user_id == self.owner_id:
-            return False # 不能移除 Owner
+            return False  # 不能移除 Owner
         if user_id in self.authorized_users:
             self.authorized_users.remove(user_id)
             self._save()

@@ -1,4 +1,5 @@
 """Runtime container and shared runtime helpers."""
+
 from __future__ import annotations
 
 import time
@@ -67,7 +68,9 @@ class Runtime:
         if self.shared_session is None:
             import aiohttp
 
-            self.shared_session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=100, limit_per_host=20))
+            self.shared_session = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(limit=100, limit_per_host=20)
+            )
         if self.parser is None:
             self.parser = SubscriptionParser(
                 proxy_port=self.proxy_port,
@@ -102,7 +105,9 @@ class Runtime:
             user_actions_expanded=user_actions_expanded,
         )
 
-    def get_short_callback_data(self, action: str, url: str, *, operator_uid: int | None = None) -> str:
+    def get_short_callback_data(
+        self, action: str, url: str, *, operator_uid: int | None = None
+    ) -> str:
         token = secrets.token_hex(8)
         while token in self.url_cache:
             token = secrets.token_hex(8)
@@ -116,7 +121,11 @@ class Runtime:
 
     def cleanup_url_cache(self) -> None:
         now = time.time()
-        expired_keys = [key for key, value in self.url_cache.items() if now - value.get("ts", 0) > self.url_cache_ttl_seconds]
+        expired_keys = [
+            key
+            for key, value in self.url_cache.items()
+            if now - value.get("ts", 0) > self.url_cache_ttl_seconds
+        ]
         for key in expired_keys:
             self.url_cache.pop(key, None)
         while len(self.url_cache) > self.url_cache_max_size:
@@ -163,12 +172,16 @@ class Runtime:
             if update.message:
                 await update.message.reply_text(msg, parse_mode="HTML")
             elif update.callback_query:
-                await update.callback_query.answer(self.access_service.get_no_permission_alert(), show_alert=True)
+                await update.callback_query.answer(
+                    self.access_service.get_no_permission_alert(), show_alert=True
+                )
         except Exception as exc:
             self.logger.warning("发送权限拒绝提示失败: %s", exc)
 
     @staticmethod
-    def schedule_auto_delete(context: ContextTypes.DEFAULT_TYPE, user_msg=None, bot_msg=None, delay=30):
+    def schedule_auto_delete(
+        context: ContextTypes.DEFAULT_TYPE, user_msg=None, bot_msg=None, delay=30
+    ):
         async def _delete_job(cb_context: ContextTypes.DEFAULT_TYPE):
             del cb_context
             try:
@@ -197,7 +210,9 @@ class Runtime:
                     disable_web_page_preview=True,
                 )
             except Exception as exc:
-                logging.getLogger(__name__).error("Auto-collapse edit_text failed: %s", exc, exc_info=True)
+                logging.getLogger(__name__).error(
+                    "Auto-collapse edit_text failed: %s", exc, exc_info=True
+                )
 
         if context.job_queue:
             context.job_queue.run_once(_collapse_job, delay)
@@ -205,7 +220,14 @@ class Runtime:
             logging.getLogger(__name__).warning("Job queue not available, skipping auto-collapse.")
 
 
-def create_runtime(*, logger: logging.Logger, proxy_port: int, url_cache_max_size: int, url_cache_ttl_seconds: int, allowed_user_ids: set[int]) -> Runtime:
+def create_runtime(
+    *,
+    logger: logging.Logger,
+    proxy_port: int,
+    url_cache_max_size: int,
+    url_cache_ttl_seconds: int,
+    allowed_user_ids: set[int],
+) -> Runtime:
     from app.runtime_factory import create_runtime as _create_runtime
 
     return _create_runtime(

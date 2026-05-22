@@ -1,4 +1,5 @@
 """Admin/report message renderers."""
+
 from __future__ import annotations
 
 import html
@@ -36,7 +37,9 @@ def render_subscription_check_report(*, batch: BatchCheckResult, format_traffic)
         lines.append("<b>需关注订阅</b>")
         for item in batch.warning:
             lines.append(f"<b>{html.escape(item.name)}</b>")
-            lines.append(f"剩余: {_fmt_remaining(item.remaining_bytes, format_traffic=format_traffic)} | 到期: {_fmt_expire(item.expire_date)}")
+            lines.append(
+                f"剩余: {_fmt_remaining(item.remaining_bytes, format_traffic=format_traffic)} | 到期: {_fmt_expire(item.expire_date)}"
+            )
             lines.append(f"<code>{html.escape(item.url)}</code>")
             lines.append("")
     if batch.failed:
@@ -54,7 +57,9 @@ def render_subscription_check_report(*, batch: BatchCheckResult, format_traffic)
     return "\n".join(lines).strip()
 
 
-def render_checkall_report(*, batch: BatchCheckResult, viewer_uid: int, format_user_identity) -> str:
+def render_checkall_report(
+    *, batch: BatchCheckResult, viewer_uid: int, format_user_identity
+) -> str:
     others_success = [row for row in batch.success if row.owner_uid != viewer_uid]
     others_failed = [row for row in batch.failed if row.owner_uid != viewer_uid]
     others_total = len(others_success) + len(others_failed)
@@ -142,7 +147,9 @@ def render_usage_audit_summary(data: dict) -> str:
         lines.append("")
         lines.append("<b>Top 用户</b>")
         for idx, row in enumerate(top_users, start=1):
-            lines.append(f"{idx}. {row['identity']} | 检查 {row['checks']} 次 | 链接 {row['urls']} 条")
+            lines.append(
+                f"{idx}. {row['identity']} | 检查 {row['checks']} 次 | 链接 {row['urls']} 条"
+            )
     return "\n".join(lines).strip()
 
 
@@ -154,7 +161,9 @@ def render_recent_users_summary(data: dict) -> str:
         "",
     ]
     for idx, row in enumerate(data.get("rows", []), start=1):
-        lines.append(f"{idx}. {row['identity']} | 最后活跃: {row['last_seen']} | 入口: {html.escape(row['source'])}")
+        lines.append(
+            f"{idx}. {row['identity']} | 最后活跃: {row['last_seen']} | 入口: {html.escape(row['source'])}"
+        )
     if not data.get("rows"):
         lines.append("暂无最近活跃用户记录。")
     return "\n".join(lines).strip()

@@ -24,9 +24,15 @@ class AdminServiceAvailableSubscriptionsTest(unittest.TestCase):
             user_manager=SimpleNamespace(get_all=lambda: [1, 2]),
             owner_id=1,
             format_traffic=format_traffic,
-            access_service=SimpleNamespace(is_allow_all_users_enabled=lambda: False, is_authorized_uid=lambda _uid: True),
-            usage_audit_service=SimpleNamespace(max_read_records=1000, get_recent_records=lambda limit: []),
-            user_profile_service=SimpleNamespace(format_user_identity=lambda uid: f"@user{uid} ({uid})"),
+            access_service=SimpleNamespace(
+                is_allow_all_users_enabled=lambda: False, is_authorized_uid=lambda _uid: True
+            ),
+            usage_audit_service=SimpleNamespace(
+                max_read_records=1000, get_recent_records=lambda limit: []
+            ),
+            user_profile_service=SimpleNamespace(
+                format_user_identity=lambda uid: f"@user{uid} ({uid})"
+            ),
             export_cache_service=SimpleNamespace(get_index_snapshot=lambda: {}),
         )
 
@@ -91,4 +97,3 @@ class AdminServiceAvailableSubscriptionsTest(unittest.TestCase):
         self.assertEqual(page1["total_pages"], 2)
         self.assertEqual(len(page1["rows"]), 2)
         self.assertEqual(len(page2["rows"]), 1)
-

@@ -1,4 +1,5 @@
 """Subscription URL text handlers."""
+
 from __future__ import annotations
 
 
@@ -35,7 +36,9 @@ def make_subscription_handler(
         if not valid_urls:
             return
 
-        usage_audit_service.log_check(user=update.effective_user, urls=valid_urls, source="文本订阅链接")
+        usage_audit_service.log_check(
+            user=update.effective_user, urls=valid_urls, source="文本订阅链接"
+        )
         processing_msg = await update.message.reply_text(
             f"🚀 正在解析订阅，共 {len(valid_urls)} 个...",
             **reply_kwargs,

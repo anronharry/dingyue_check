@@ -24,6 +24,18 @@ class AccessStateTest(unittest.TestCase):
             if path.exists():
                 path.unlink()
 
+    def test_corrupted_access_state_raises_clear_error(self):
+        path = Path("data/test_tmp/access_state_corrupted.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{broken", encoding="utf-8")
+
+        try:
+            with self.assertRaisesRegex(RuntimeError, "Access state file is corrupted"):
+                AccessStateStore(str(path))
+        finally:
+            if path.exists():
+                path.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()

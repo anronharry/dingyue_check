@@ -1,4 +1,5 @@
 """Persistence-backed user profile tracking for owner views."""
+
 from __future__ import annotations
 
 import html

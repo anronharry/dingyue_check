@@ -12,12 +12,16 @@ class AirportNameDetectionTest(unittest.TestCase):
     def test_profile_title_base64_decoded(self) -> None:
         # "alberhong" in base64
         headers = {"profile-title": "YWxiZXJob25n"}
-        name = self.parser._extract_airport_name([], "https://example.com/sub", headers=headers, content=None)
+        name = self.parser._extract_airport_name(
+            [], "https://example.com/sub", headers=headers, content=None
+        )
         self.assertEqual(name, "alberhong")
 
     def test_profile_title_base64_prefix_decoded(self) -> None:
         headers = {"profile-title": "base64:YWxiZXJob25n"}
-        name = self.parser._extract_airport_name([], "https://example.com/sub", headers=headers, content=None)
+        name = self.parser._extract_airport_name(
+            [], "https://example.com/sub", headers=headers, content=None
+        )
         self.assertEqual(name, "alberhong")
 
     def test_known_alias_can_fallback_from_url(self) -> None:
@@ -46,7 +50,9 @@ class AirportNameDetectionTest(unittest.TestCase):
             {"name": "TigerCloud-SG-03"},
             {"name": "TigerCloud-US-04"},
         ]
-        name = self.parser._extract_airport_name(nodes, "https://example.com/sub", headers={}, content=None)
+        name = self.parser._extract_airport_name(
+            nodes, "https://example.com/sub", headers={}, content=None
+        )
         self.assertEqual(name, "TigerCloud")
 
     def test_generic_ai_brand_from_nodes_is_ignored(self) -> None:
@@ -65,12 +71,16 @@ class AirportNameDetectionTest(unittest.TestCase):
 
     def test_x_subscription_title_is_supported(self) -> None:
         headers = {"x-subscription-title": "TigerCloud"}
-        name = self.parser._extract_airport_name([], "https://example.com/sub", headers=headers, content=None)
+        name = self.parser._extract_airport_name(
+            [], "https://example.com/sub", headers=headers, content=None
+        )
         self.assertEqual(name, "TigerCloud")
 
     def test_content_disposition_filename_star_is_supported(self) -> None:
         headers = {"content-disposition": "attachment; filename*=UTF-8''TigerCloud.yaml"}
-        name = self.parser._extract_airport_name([], "https://example.com/sub", headers=headers, content=None)
+        name = self.parser._extract_airport_name(
+            [], "https://example.com/sub", headers=headers, content=None
+        )
         self.assertEqual(name, "TigerCloud")
 
     def test_yaml_top_level_name_has_high_priority(self) -> None:
@@ -82,7 +92,9 @@ proxies:
     server: example.com
     port: 443
 """
-        name = self.parser._extract_airport_name([], "https://foo.example/sub", headers={}, content=content)
+        name = self.parser._extract_airport_name(
+            [], "https://foo.example/sub", headers={}, content=content
+        )
         self.assertEqual(name, "AuroraAir")
 
     def test_profile_title_comment_can_be_detected(self) -> None:
@@ -90,7 +102,9 @@ proxies:
 # profile-title: NeonNet
 vmess://example
 """
-        name = self.parser._extract_airport_name([], "https://foo.example/sub", headers={}, content=content)
+        name = self.parser._extract_airport_name(
+            [], "https://foo.example/sub", headers={}, content=content
+        )
         self.assertEqual(name, "NeonNet")
 
     def test_url_query_name_is_supported(self) -> None:

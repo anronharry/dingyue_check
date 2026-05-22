@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import base64
 import unittest
@@ -46,6 +46,38 @@ class ParserBase64Test(unittest.TestCase):
         self.assertIn("base64-decoded", notes)
         self.assertIn("trojan://", normalized_content)
 
+    def test_parse_nodes_preserves_yaml_proxy_fields(self) -> None:
+        content = """
+proxies:
+  - name: HK-WSS
+    type: ss
+    server: example.com
+    port: 443
+    cipher: aes-256-gcm
+    password: secret
+    udp: true
+    ws-opts:
+      path: /ws
+      headers:
+        Host: cdn.example.com
+"""
+
+        nodes, content_format, normalized_nodes, normalized_content, notes = (
+            self.parser._parse_nodes(content)
+        )
+
+        self.assertEqual(content_format, "yaml")
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(normalized_nodes, nodes)
+        self.assertIn("direct-yaml", notes)
+        self.assertIn("proxies:", normalized_content)
+        self.assertEqual(nodes[0]["type"], "ss")
+        self.assertEqual(nodes[0]["protocol"], "ss")
+        self.assertEqual(nodes[0]["cipher"], "aes-256-gcm")
+        self.assertEqual(nodes[0]["password"], "secret")
+        self.assertTrue(nodes[0]["udp"])
+        self.assertEqual(nodes[0]["ws-opts"]["headers"]["Host"], "cdn.example.com")
+
     def test_parse_nodes_returns_empty_for_blank_input(self) -> None:
         nodes, content_format, _, normalized_content, notes = self.parser._parse_nodes("\n\r\t  ")
 
@@ -66,7 +98,9 @@ class ParserBase64Test(unittest.TestCase):
         self.assertIn("unrecognized-content", notes)
 
     def test_parse_nodes_supports_urlsafe_missing_padding_and_noise(self) -> None:
-        raw_text = "vmess://eyJwcyI6IkhLMDEifQ==\nss://YWVzLTI1Ni1nY206cGFzc0BleGFtcGxlLmNvbTo0NDM=#HK"
+        raw_text = (
+            "vmess://eyJwcyI6IkhLMDEifQ==\nss://YWVzLTI1Ni1nY206cGFzc0BleGFtcGxlLmNvbTo0NDM=#HK"
+        )
         encoded = base64.urlsafe_b64encode(raw_text.encode("utf-8")).decode("ascii").rstrip("=")
         noisy = "\ufeff  " + encoded[:12] + "\n" + encoded[12:] + "$$$\x00"
 

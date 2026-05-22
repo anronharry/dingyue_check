@@ -1,4 +1,5 @@
 """Document parsing and import workflows."""
+
 from __future__ import annotations
 
 import asyncio
@@ -30,18 +31,24 @@ class DocumentService:
     async def import_json(self, *, content_bytes: bytes) -> int:
         loop = asyncio.get_event_loop()
         os.makedirs("data", exist_ok=True)
-        import_file = os.path.join("data", f"import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+        import_file = os.path.join(
+            "data", f"import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        )
         with open(import_file, "wb") as handle:
             handle.write(content_bytes)
         try:
-            return await loop.run_in_executor(None, self.get_storage().import_from_file, import_file)
+            return await loop.run_in_executor(
+                None, self.get_storage().import_from_file, import_file
+            )
         finally:
             try:
                 await loop.run_in_executor(None, os.remove, import_file)
             except OSError:
                 self.logger.warning("删除导入临时文件失败: %s", import_file)
 
-    async def parse_subscription_urls(self, *, subscription_urls: list[str], owner_uid: int) -> list[dict]:
+    async def parse_subscription_urls(
+        self, *, subscription_urls: list[str], owner_uid: int
+    ) -> list[dict]:
         if not self.subscription_check_service:
             raise RuntimeError("subscription_check_service is required for parse_subscription_urls")
         return await self.subscription_check_service.parse_subscription_urls(
