@@ -31,9 +31,7 @@ class DocumentService:
     async def import_json(self, *, content_bytes: bytes) -> int:
         loop = asyncio.get_event_loop()
         os.makedirs("data", exist_ok=True)
-        import_file = os.path.join(
-            "data", f"import_{now_beijing().strftime('%Y%m%d_%H%M%S')}.json"
-        )
+        import_file = os.path.join("data", f"import_{now_beijing().strftime('%Y%m%d_%H%M%S')}.json")
         with open(import_file, "wb") as handle:
             handle.write(content_bytes)
         try:
